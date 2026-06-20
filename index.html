@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.2.30">
+<meta name="application-name" content="ChainLink-v4.2.34">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.2.30</title>
+<title>ChainLink Survey v4.2.34</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -903,7 +903,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.2.30";
+const APP_VERSION = "4.2.34";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1217,7 +1217,7 @@ function loadData() {
   try { lightMode=_lsGet("cl_lightMode")==="true"; } catch(e){ lightMode=false; }
   try { bearingMode=_lsGet("cl_bearingMode")||"az"; } catch(e){ bearingMode="az"; }
   _applyLightMode(); // dark by default
-  tempIntersections=[]; tempGeom=[]; recentShots=[]; _areaLabel=null;
+  tempIntersections=[]; tempGeom=[]; recentShots=[]; _areaLabels=[];
   updateStatus(); plotPoints(); _updateUndoBtn();
 }
 
@@ -4939,7 +4939,7 @@ function _editPointCoords(pt){
           _takeSnapshot("Edit Pt #"+pt.Point);
           pt.Northing=parseFloat(n)||pt.Northing; pt.Easting=parseFloat(e)||pt.Easting;
           pt.Elevation=parseFloat(z)||pt.Elevation; pt.Description=desc;
-          _recomputeAreaLabel(); saveData(); plotPoints();
+          _recomputeAreaLabels(); saveData(); plotPoints();
           showResult(`✓ Pt #${pt.Point} Updated`,[{lbl:"N:",val:pt.Northing.toFixed(3)},{lbl:"E:",val:pt.Easting.toFixed(3)},{lbl:"Z:",val:pt.Elevation.toFixed(3)},{lbl:"Desc:",val:pt.Description}]);
         });
       });
@@ -4989,7 +4989,7 @@ function _correctShot(pt,S){
               c.Elevation=S2.Elevation+(old[c.Point].Z-old[c.From].Z); // carry Z too
             });
           }
-          _recomputeAreaLabel();
+          _recomputeAreaLabels();
           saveData(); plotPoints();
           const rows=[
             {lbl:"Pt #"+pt.Point+":",val:"N "+newN.toFixed(3)+"  E "+newE.toFixed(3)+(do3D?"  Z "+newZ.toFixed(3):"")},
@@ -5193,7 +5193,7 @@ function cogoMenu(){
     mk("Polyline Manager","blue",            ()=>{close();_polylineMenu()});
     mk("Prorate on Line","",                ()=>{close();cogoProrate()});
     mk("Midpoint","",                       ()=>{close();cogoMidpoint()});
-    mk("Deflection Angle","",               ()=>{close();cogoDeflection()});
+    mk("Angle at Point","",                 ()=>{close();cogoDeflection()});
     mk("Cut / Fill","",                     ()=>{close();cogoCutFill()});
     mk("✏ Draw Connection","",              ()=>{close();drawConnection()});
     mk("Rotate / Align","",                 ()=>{close();cogoRotateAlign()});
@@ -5647,7 +5647,6 @@ function _areaCancel(){
   _areaPoly = [];
   _areaArcs = [];
   tempGeom = [];
-  _areaLabel = null;
   const banner = document.getElementById("intersectBanner");
   if(banner){
     banner.classList.remove("visible");
@@ -5884,8 +5883,9 @@ function updateModeHint(){
   if(_ppmEnabled) hint.textContent+=" • PPM:"+_ppmValue.toFixed(0);
 }
 
-// Store last area label — includes point indices for recompute on edit
-let _areaLabel = null;
+// Area labels on the plot — each carries its point numbers so it can be
+// recomputed if those points move. Multiple labels coexist.
+let _areaLabels = [];
 
 function _drawAreaLabel(poly, area, u, arcSigs){
   const cE = poly.reduce((s,p)=>s+p.Easting,  0)/poly.length;
@@ -5895,29 +5895,35 @@ function _drawAreaLabel(poly, area, u, arcSigs){
     : (area/10000).toFixed(4)+" ha";
   // Store point numbers so we can recompute if points move
   const ptNums = poly.map(p=>p.Point);
-  _areaLabel = {E:cE, N:cN, label, ptNums, u, arcSigs:arcSigs||[]};
+  _areaLabels.push({E:cE, N:cN, label, ptNums, u, arcSigs:arcSigs||[]});
   plotPoints();
 }
 
-function _recomputeAreaLabel(){
-  if(!_areaLabel || !_areaLabel.ptNums) return;
-  const poly = _areaLabel.ptNums.map(n=>points.find(p=>p.Point===n)).filter(Boolean);
-  if(poly.length < 3){ _areaLabel=null; return; }
-  // Re-resolve explicitly selected arcs by signature
-  const arcs=(_areaLabel.arcSigs||[]).map(s=>
-    plotConnections.find(c=>c.type==="arc" &&
-      Math.abs(c.centerE-s.cx)<0.01 && Math.abs(c.centerN-s.cy)<0.01 &&
-      Math.abs(c.R-s.R)<0.01)
-  ).filter(Boolean);
-  const {area} = _computePolyArea(poly,arcs);
-  const cE = poly.reduce((s,p)=>s+p.Easting, 0)/poly.length;
-  const cN = poly.reduce((s,p)=>s+p.Northing,0)/poly.length;
-  const u = _areaLabel.u||units;
-  _areaLabel.label = u==="ft"
-    ? (area/43560).toFixed(4)+" ac"
-    : (area/10000).toFixed(4)+" ha";
-  _areaLabel.E = cE;
-  _areaLabel.N = cN;
+function _recomputeAreaLabels(){
+  if(!_areaLabels.length) return;
+  // Recompute each label against current point coordinates; drop any whose
+  // polygon no longer has enough surviving points.
+  _areaLabels = _areaLabels.filter(lbl=>{
+    if(!lbl.ptNums) return false;
+    const poly = lbl.ptNums.map(n=>points.find(p=>p.Point===n)).filter(Boolean);
+    if(poly.length < 3) return false;
+    // Re-resolve explicitly selected arcs by signature
+    const arcs=(lbl.arcSigs||[]).map(s=>
+      plotConnections.find(c=>c.type==="arc" &&
+        Math.abs(c.centerE-s.cx)<0.01 && Math.abs(c.centerN-s.cy)<0.01 &&
+        Math.abs(c.R-s.R)<0.01)
+    ).filter(Boolean);
+    const {area} = _computePolyArea(poly,arcs);
+    const cE = poly.reduce((s,p)=>s+p.Easting, 0)/poly.length;
+    const cN = poly.reduce((s,p)=>s+p.Northing,0)/poly.length;
+    const u = lbl.u||units;
+    lbl.label = u==="ft"
+      ? (area/43560).toFixed(4)+" ac"
+      : (area/10000).toFixed(4)+" ha";
+    lbl.E = cE;
+    lbl.N = cN;
+    return true;
+  });
 }
 
 function elevationShift(){
@@ -6117,17 +6123,17 @@ function cogoTraverseClosure(){
     if(banner){
       banner.textContent=n===0
         ?"Tap first traverse point"
-        :"Tap next point (✓ "+n+" selected) — tap first point again to close, or tap Done";
+        :"Tap next point (✓ "+n+" selected) — end on your closing shot, then tap Done";
       banner.classList.add("visible");
     }
     window._connClickActive=true;
     window._connClickHandler=function(pt){
-      // Tapping the first point again closes the loop
-      if(poly.length>=3 && pt.Point===poly[0].Point){
-        poly.push(pt);
-        window._connClickActive=false;
-        window._connClickHandler=null;
-        _tvFinish();
+      // Re-tapping the original start point is rejected: pushing the same
+      // point object would telescope the leg sum to a perfect zero closure.
+      // A closed loop is closed by its re-measured closing shot, not the start.
+      if(poly.length>0 && pt.Point===poly[0].Point){
+        const banner=document.getElementById("intersectBanner");
+        if(banner) banner.textContent="That's the start point — tap your closing shot instead, then Done";
         return;
       }
       // Avoid duplicate consecutive points
@@ -6146,7 +6152,7 @@ function cogoTraverseClosure(){
   // Show a "Done" button that floats while picking
   openModal((modal,close)=>{
     modal.innerHTML="<h2>Traverse Correction</h2>"+
-      "<p class='info'>Tap traverse points in order on the plot. Tap the first point again to close, or tap Done when finished.</p>";
+      "<p class='info'>Tap traverse points in order, ending on your closing shot (the separate re-observation of the start), then tap Done. Don't re-tap the original start point — that forces a zero closure.</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     mk("Done — Compute","ok",()=>{close();_tvFinish();});
     mk("Cancel","",()=>{
@@ -6882,7 +6888,7 @@ function cogoDeflection(){
       plotPoints();
       zoomToPoints([{E:pA.Easting,N:pA.Northing},{E:pV.Easting,N:pV.Northing},{E:pB.Easting,N:pB.Northing}]);
 
-      showResult("Deflection Angle",[
+      showResult("Angle at Point",[
         {lbl:"Points:",val:"#"+pA.Point+" \u2014 #"+pV.Point+" (vertex) \u2014 #"+pB.Point},
         {lbl:"Az #"+pA.Point+"\u2192#"+pV.Point+":",val:fmtBrg(az1)},
         {lbl:"Az #"+pB.Point+"\u2192#"+pV.Point+":",val:fmtBrg((az2+180)%360)+" (back)"},
@@ -7267,7 +7273,7 @@ function _drawScaleBar(ctx,w,h,scale){
   ctx.restore();
 }
 function plotPoints(extCtx,extW,extH){
-  try{ _recomputeAreaLabel(); }catch(e){} // keep area label current if points moved
+  try{ _recomputeAreaLabels(); }catch(e){} // keep area label current if points moved
   let ctx,w,h;
   if(extCtx && extCtx.canvas && typeof extCtx.fillRect==="function"){
     // Export mode — draw onto a supplied context at the supplied logical size
@@ -7651,18 +7657,18 @@ function plotPoints(extCtx,extW,extH){
     });
   }
 
-  // Area label at polygon centroid
-  if(_areaLabel){
+  // Area labels at each polygon centroid
+  _areaLabels.forEach(AL=>{
     // Store screen coords for tap detection
-    _areaLabel._sx = X(_areaLabel.E);
-    _areaLabel._sy = Y(_areaLabel.N);
-    const ax=_areaLabel._sx, ay=_areaLabel._sy;
+    AL._sx = X(AL.E);
+    AL._sy = Y(AL.N);
+    const ax=AL._sx, ay=AL._sy;
     // Only draw if centroid is on screen
     if(ax>0&&ax<w&&ay>0&&ay<h){
       const fontSize=Math.max(11,Math.min(20,12+viewScale*1.5));
       ctx.save();
       ctx.font=`bold ${fontSize}px 'Rajdhani','Arial Narrow',sans-serif`;
-      const tw=ctx.measureText(_areaLabel.label).width;
+      const tw=ctx.measureText(AL.label).width;
       const pad=6, bh=fontSize+8;
       // Background pill
       ctx.fillStyle=lightMode?"rgba(255,255,255,.92)":"rgba(10,9,5,.82)";
@@ -7682,10 +7688,10 @@ function plotPoints(extCtx,extW,extH){
       ctx.fillStyle="#f0a020";
       ctx.textAlign="center";
       ctx.textBaseline="middle";
-      ctx.fillText(_areaLabel.label, ax, ay);
+      ctx.fillText(AL.label, ax, ay);
       ctx.restore();
     }
-  }
+  });
   if(currentPoint){
     const cp=valid.find(p=>p.Point===currentPoint.Point);
     if(cp){ctx.strokeStyle="#4a9eff";ctx.lineWidth=2;ctx.setLineDash([5,3]);
@@ -8177,14 +8183,15 @@ function zoomToOccupied(){
       return;
     }
 
-    // Check if tap hits area label — show delete option
-    if(_areaLabel && _areaLabel._sx!==undefined){
-      const dx=screenX-_areaLabel._sx, dy=screenY-_areaLabel._sy;
-      if(Math.hypot(dx,dy)<40){
+    // Check if tap hits an area label — show delete option for that one
+    {
+      const hitAL=_areaLabels.find(AL=>AL._sx!==undefined &&
+        Math.hypot(screenX-AL._sx, screenY-AL._sy)<40);
+      if(hitAL){
         openModal((modal,close)=>{
-          modal.innerHTML="<h2>Area Label</h2><p class='info'>"+_areaLabel.label+"</p>";
+          modal.innerHTML="<h2>Area Label</h2><p class='info'>"+hitAL.label+"</p>";
           const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-          mk("Delete Label","danger",()=>{_areaLabel=null;plotPoints();close();});
+          mk("Delete Label","danger",()=>{_areaLabels=_areaLabels.filter(x=>x!==hitAL);plotPoints();close();});
           mk("Keep","",close);
         });
         return;
@@ -8897,11 +8904,11 @@ const HELP_TOPICS = [
     preview:"Compute polygon area — tap points or type numbers",
     body:`<h3>Area & Perimeter</h3>
 <h3>Tap Points on Plot</h3>
-<p>Tap each boundary point in order. An amber outline builds as you go. Tap the first point again to close and compute. The circles and order numbers persist through pan and zoom.</p>
+<p>Tap each boundary point in order — you can also tap a line or arc to pull in its endpoints. An amber outline builds as you go. Tap the first point again to close and compute. The circles and order numbers persist through pan and zoom.</p>
 <h3>Type Point Numbers</h3>
 <p>Enter point numbers separated by spaces or commas.</p>
 <h3>Acreage Label</h3>
-<p>After computing, an amber acreage label appears at the centroid of the polygon on the canvas. It persists until you run another area calculation.</p>
+<p>After computing, an amber acreage label appears at the centroid of the polygon on the canvas. Each calculation adds its own label, so you can show several parcels at once. Tap any label to delete just that one.</p>
 <h3>Arc Correction</h3>
 <p>If any boundary uses a draw-only arc connection, the area uses the true circular segment area rather than chord approximation.</p>
 <div class="warn">Points must be in order around the polygon — CW or CCW. Out-of-order gives a wrong self-intersecting result.</div>`},
@@ -8909,9 +8916,10 @@ const HELP_TOPICS = [
   { id:"cogo-traverse", section:"COGO", title:"Traverse Correction",
     preview:"Check and adjust a traverse loop",
     body:`<h3>Traverse Correction</h3>
-<p>Enter traverse point numbers in order. Shows total distance, closure error, precision ratio, and ΔN/ΔE error.</p>
+<p>Tap traverse points in order on the plot, ending on your closing shot — the separate re-observation of the start. Tap <strong>Done</strong> to compute. Shows total distance, closure error, precision ratio, and ΔN/ΔE error.</p>
+<div class="warn">Don't re-tap the original start point to close. The closing shot is its own point; re-tapping the start forces a zero closure.</div>
 <h3>Bowditch Adjustment</h3>
-<p>Distributes closure error proportionally by distance across all traverse points.</p>
+<p>Distributes closure error proportionally by distance across the traverse points. The closing shot is pulled onto the start coordinate; intermediate points get proportional corrections.</p>
 <div class="warn">Bowditch modifies stored coordinates permanently. Save your CSV first.</div>`},
 
   { id:"cogo-resection", section:"COGO", title:"Resection",
@@ -8960,10 +8968,10 @@ const HELP_TOPICS = [
 <p>Polylines are saved with the job and restore from CSV backups.</p>
 <div class="tip">Classic use: building a road centerline of tangents and curves, then offsetting it to get edge-of-pavement or right-of-way lines.</div>`},
 
-  { id:"cogo-deflection", section:"COGO", title:"Deflection Angle",
-    preview:"Interior, exterior, and deflection angle at a point from three tapped points",
-    body:`<h3>Deflection Angle</h3>
-<p>Tap <strong>COGO → Deflection Angle</strong>, then tap three points on the plot. The middle point is the vertex.</p>
+  { id:"cogo-deflection", section:"COGO", title:"Angle at Point",
+    preview:"Interior, exterior, and deflection angle at a vertex from three tapped points",
+    body:`<h3>Angle at Point</h3>
+<p>Tap <strong>COGO → Angle at Point</strong>, then tap three points on the plot. The middle point is the vertex; the first and third are the two legs.</p>
 <h3>Results</h3>
 <ul>
 <li><strong>Interior Angle</strong> — the smaller angle between the two legs at the vertex</li>
@@ -8971,7 +8979,7 @@ const HELP_TOPICS = [
 <li><strong>Deflection</strong> — signed angle from the first leg to the second: R (right) or L (left)</li>
 </ul>
 <p>The interior angle is drawn as a green arc on the canvas at the vertex, with the angle value labeled. Both legs shown in amber and blue.</p>
-<div class="tip">Classic use: checking the interior angle at a traverse corner, verifying a curve deflection, or measuring the angle at a property corner.</div>`},
+<div class="tip">Classic use: the angle at a traverse corner, the angle at a property corner, or the included angle between two lines.</div>`},
 
   { id:"cogo-midpoint", section:"COGO", title:"Midpoint",
     preview:"Find the midpoint between two stored points",
