@@ -1173,7 +1173,7 @@ function _startNewJob(jn,N,E,Z){
            Type:"Setup",Description:"Start",Flag:"",ih:0}];
   undoStack=[];_snapshots=[];_redoStack=[];pointCounter=2;plotConnections=[];currentPoint=points[0];
   _polylines=[];
-  recentShots=[];tempGeom=[];tempIntersections=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;
+  recentShots=[];tempGeom=[];tempIntersections=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();
   jobName=jn;
   saveData();
   updateStatus();plotPoints();
@@ -1216,6 +1216,7 @@ function loadData() {
   try { satOn=_lsGet("cl_satOn")==="true"&&!!geoAnchor; } catch(e){ satOn=false; }
   try { satOpacity=parseFloat(_lsGet("cl_satOpacity")||"0.85")||0.85; } catch(e){ satOpacity=0.85; }
   try { satRotNudge=parseFloat(_lsGet("cl_satRot")||"0")||0; } catch(e){ satRotNudge=0; }
+  try { if(_lsGet("cl_gpsLive")==="true"&&geoAnchor)startLiveGps(); } catch(e){}
   updateStatus(); plotPoints(); _updateUndoBtn();
 }
 
@@ -1245,6 +1246,7 @@ function saveData() {
   _lsSet("cl_satOn",      String(satOn));
   _lsSet("cl_satOpacity", String(satOpacity));
   _lsSet("cl_satRot",     String(satRotNudge));
+  _lsSet("cl_gpsLive",    String(_gpsWatchId!=null));
   updateStatus(); plotPoints();
   // Auto-save to file if we have a directory handle
   _autoSaveToFile();
@@ -7223,7 +7225,7 @@ function clearAllData(){
       .forEach(k=>_lsRemove(k));
     _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
     surveyMode="2D";jobName="survey";_dirHandle=null;
-    plotConnections=[];_polylines=[];tempIntersections=[];tempGeom=[];undoStack=[];recentShots=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;
+    plotConnections=[];_polylines=[];tempIntersections=[];tempGeom=[];undoStack=[];recentShots=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();
     _defaultState();saveData();
     showResult("Cleared",[{lbl:"Status:",val:"Ready for new job"}]);
   });
@@ -7460,6 +7462,57 @@ function _drawSatellite(ctx,w,h,T){
   ctx.restore();
 }
 
+/* — Live GPS marker — */
+let _gpsWatchId=null,_liveFix=null;
+function _gpsToJob(lat,lon){
+  // Same anchor transform the imagery uses, so the marker sits on the
+  // correct imagery pixel in both grid-coordinate and local-coordinate jobs.
+  const A=geoAnchor; if(!A)return null;
+  const M2U=A.m2u||_m2u();
+  const g=(A.conv+(satRotNudge||0))*Math.PI/180, cg=Math.cos(g), sg=Math.sin(g);
+  const k=Math.cos(A.lat*Math.PI/180);
+  const m=_ll2merc(lat,lon);
+  const dxm=(m.mx-A.mx)*k, dym=(m.my-A.my)*k;
+  return{E:A.E+(dxm*cg-dym*sg)*M2U, N:A.N+(dxm*sg+dym*cg)*M2U};
+}
+function startLiveGps(){
+  if(_gpsWatchId!=null)return;
+  if(!navigator.geolocation){alert("Geolocation isn't available on this device/browser.");return;}
+  _gpsWatchId=navigator.geolocation.watchPosition(
+    pos=>{_liveFix={lat:pos.coords.latitude,lon:pos.coords.longitude,
+                    acc:pos.coords.accuracy,ts:Date.now()};_satRepaint();},
+    err=>{stopLiveGps();alert("Live GPS stopped: "+err.message);saveData();},
+    {enableHighAccuracy:true,maximumAge:2000,timeout:30000});
+}
+function stopLiveGps(){
+  if(_gpsWatchId!=null){try{navigator.geolocation.clearWatch(_gpsWatchId);}catch(e){}}
+  _gpsWatchId=null;_liveFix=null;
+}
+function _drawLiveGps(ctx,w,h,T){
+  if(_gpsWatchId==null||!_liveFix||!geoAnchor)return;
+  const p=_gpsToJob(_liveFix.lat,_liveFix.lon); if(!p)return;
+  const {scale,offX,offY}=T;
+  const sx=p.E*scale+offX, sy=h-(p.N*scale+offY);
+  if(sx<-60||sx>w+60||sy<-60||sy>h+60)return;
+  const stale=Date.now()-_liveFix.ts>15000;
+  const M2U=geoAnchor.m2u||_m2u();
+  ctx.save();
+  ctx.globalAlpha=stale?0.4:1;
+  // Accuracy circle (ground meters -> job units -> px)
+  if(_liveFix.acc){
+    const r=_liveFix.acc*M2U*scale;
+    if(r>6&&r<Math.max(w,h)){
+      ctx.fillStyle="rgba(66,133,244,.12)";
+      ctx.strokeStyle="rgba(66,133,244,.4)";ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(sx,sy,r,0,2*Math.PI);ctx.fill();ctx.stroke();
+    }
+  }
+  // Blue dot, white ring
+  ctx.fillStyle="#4285f4";ctx.strokeStyle="#ffffff";ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.arc(sx,sy,7,0,2*Math.PI);ctx.fill();ctx.stroke();
+  ctx.restore();
+}
+
 /* — Shift every stored coordinate (points, arc centers, polylines, labels) — */
 function _shiftAllCoords(dE,dN){
   points.forEach(p=>{p.Easting+=dE;p.Northing+=dN;});
@@ -7552,6 +7605,7 @@ function _satAfterFix(pt,lat,lon,acc){
         _shiftAllCoords(gE-pt.Easting,gN-pt.Northing);
         _setAnchor(lat,lon,zone,gE,gN);
         satOn=true;saveData();
+        if(points.length<3)_zoomToGround(units==="ft"?300:100);
         showResult("✓ Anchored on "+zone.name,[
           {lbl:"Point "+pt.Point+":",val:"N "+gN.toFixed(2)+" E "+gE.toFixed(2)},
           {lbl:"Imagery:",val:"ON"}]);
@@ -7560,6 +7614,7 @@ function _satAfterFix(pt,lat,lon,acc){
         close();
         _setAnchor(lat,lon,zone,pt.Easting,pt.Northing);
         satOn=true;saveData();
+        if(points.length<3)_zoomToGround(units==="ft"?300:100);
         showResult("✓ Imagery anchored",[
           {lbl:"Point "+pt.Point+":",val:"stays N "+pt.Northing.toFixed(2)+" E "+pt.Easting.toFixed(2)},
           {lbl:"Zone (display only):",val:zone.name}]);
@@ -7588,6 +7643,9 @@ function satelliteMenu(){
     };
     sl("Opacity",satOpacity,0.15,1,0.05,v=>satOpacity=v);
     sl("Rotation nudge (°) — align imagery to plot",satRotNudge,-5,5,0.1,v=>satRotNudge=v);
+    mk(_gpsWatchId!=null?"📍 Live GPS marker: ON — tap to stop":"📍 Live GPS marker: OFF — tap to start",
+       _gpsWatchId!=null?"ok":"blue",
+       ()=>{if(_gpsWatchId!=null){stopLiveGps();}else{startLiveGps();}saveData();close();plotPoints();});
     mk("📡 Re-anchor / GPS again","blue",()=>{close();_satSetupFlow();});
     mk("Remove anchor & imagery","danger",()=>{
       confirmDialog("Remove the imagery anchor? (Coordinates are not changed.)",yes=>{
@@ -7609,7 +7667,8 @@ function _gpsStartFlow(jn){
         const Z=parseFloat(ev);
         _startNewJob(jn,p.N*u,p.E*u,isNaN(Z)?100:Z);
         _setAnchor(lat,lon,zone,p.E*u,p.N*u);
-        satOn=true;saveData();plotPoints();
+        satOn=true;saveData();
+        _zoomToGround(units==="ft"?300:100);
         showResult("✓ GPS Start · "+zone.name,[
           {lbl:"Point 1:",val:"N "+(p.N*u).toFixed(2)+" E "+(p.E*u).toFixed(2)},
           {lbl:"Fix:",val:lat.toFixed(6)+", "+lon.toFixed(6)+(acc!=null?" ±"+(acc*u).toFixed(0)+units:"")},
@@ -7617,6 +7676,15 @@ function _gpsStartFlow(jn){
       });
     });
   });
+}
+function _zoomToGround(unitsAcross){
+  const c=document.getElementById("plotCanvas");
+  const wrap=document.getElementById("canvasWrap");
+  const w=(c&&c.clientWidth)||(wrap&&wrap.clientWidth)||360;
+  const h=(c&&c.clientHeight)||(wrap&&wrap.clientHeight)||480;
+  const T=_viewTransform(w,h); if(!T)return;
+  viewScale=Math.max(.0005,Math.min(100,(w/unitsAcross)/T.base));
+  viewOffsetX=0;viewOffsetY=0;plotPoints();
 }
 function jobNewManual(jn){
   const seq=[["Start Northing","10000"],["Start Easting","10000"],["Start Elevation","100"]];
@@ -8070,6 +8138,7 @@ function plotPoints(extCtx,extW,extH){
       ctx.shadowBlur=0;
     }
   }
+  try{ _drawLiveGps(ctx,w,h,T); }catch(e){}
 }
 
 /* ── PLOT CONTROLS ── */
