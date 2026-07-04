@@ -1218,7 +1218,7 @@ function loadData() {
   try { satOn=_lsGet("cl_satOn")==="true"&&!!geoAnchor; } catch(e){ satOn=false; }
   try { satOpacity=parseFloat(_lsGet("cl_satOpacity")||"0.85")||0.85; } catch(e){ satOpacity=0.85; }
   try { satRotNudge=parseFloat(_lsGet("cl_satRot")||"0")||0; } catch(e){ satRotNudge=0; }
-  try { if(_lsGet("cl_gpsLive")==="true"&&geoAnchor)startLiveGps(); } catch(e){}
+  try { if(geoAnchor&&_lsGet("cl_gpsLive")!=="false")startLiveGps(); } catch(e){}
   updateStatus(); plotPoints(); _updateUndoBtn();
 }
 
@@ -7484,7 +7484,11 @@ function startLiveGps(){
   _gpsWatchId=navigator.geolocation.watchPosition(
     pos=>{_liveFix={lat:pos.coords.latitude,lon:pos.coords.longitude,
                     acc:pos.coords.accuracy,ts:Date.now()};_satRepaint();},
-    err=>{stopLiveGps();alert("Live GPS stopped: "+err.message);saveData();},
+    err=>{
+      // Timeouts / temporary unavailability are normal (indoors, canopy) —
+      // keep the watch alive. Only a permission denial is fatal.
+      if(err&&err.code===1){stopLiveGps();alert("Live GPS stopped: location permission denied.");saveData();plotPoints();}
+    },
     {enableHighAccuracy:true,maximumAge:2000,timeout:30000});
 }
 function stopLiveGps(){
@@ -7492,11 +7496,32 @@ function stopLiveGps(){
   _gpsWatchId=null;_liveFix=null;
 }
 function _drawLiveGps(ctx,w,h,T){
-  if(_gpsWatchId==null||!_liveFix||!geoAnchor)return;
+  if(_gpsWatchId==null||!geoAnchor)return;
+  if(!_liveFix){
+    // Watch is running but no fix yet — show that it's trying
+    ctx.save();
+    ctx.font="9px 'Courier New',monospace";ctx.textAlign="left";ctx.textBaseline="top";
+    const t="📍 acquiring GPS…";
+    ctx.fillStyle="rgba(0,0,0,.55)";ctx.fillRect(6,6,ctx.measureText(t).width+10,15);
+    ctx.fillStyle="#8ab4f8";ctx.fillText(t,11,9);
+    ctx.restore();
+    return;
+  }
   const p=_gpsToJob(_liveFix.lat,_liveFix.lon); if(!p)return;
   const {scale,offX,offY}=T;
   const sx=p.E*scale+offX, sy=h-(p.N*scale+offY);
-  if(sx<-60||sx>w+60||sy<-60||sy>h+60)return;
+  if(sx<-20||sx>w+20||sy<-20||sy>h+20){
+    // Fix is off-screen — draw an edge arrow pointing toward it
+    const cx=w/2, cy=h/2, ang=Math.atan2(sy-cy,sx-cx);
+    const ex=cx+Math.cos(ang)*(Math.min(w,h)/2-24), ey=cy+Math.sin(ang)*(Math.min(w,h)/2-24);
+    ctx.save();
+    ctx.translate(ex,ey);ctx.rotate(ang);
+    ctx.fillStyle="#4285f4";ctx.strokeStyle="#fff";ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(10,0);ctx.lineTo(-6,-6);ctx.lineTo(-6,6);ctx.closePath();
+    ctx.fill();ctx.stroke();
+    ctx.restore();
+    return;
+  }
   const stale=Date.now()-_liveFix.ts>15000;
   const M2U=geoAnchor.m2u||_m2u();
   ctx.save();
