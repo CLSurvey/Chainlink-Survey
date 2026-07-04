@@ -7433,12 +7433,20 @@ function _drawSatellite(ctx,w,h,T){
   ctx.save();
   ctx.globalAlpha=Math.max(0.1,Math.min(1,satOpacity));
   for(let tx=range.tx0;tx<=range.tx1;tx++)for(let ty=range.ty0;ty<=range.ty1;ty++){
-    const img=_getTile(z,tx,ty); if(!img)continue;
+    // Prefer the exact tile; while it loads, draw the matching sub-rect of a
+    // parent tile (up to 3 levels coarser) so the backdrop fills immediately.
+    let img=_getTile(z,tx,ty), sx=0,sy=0,ss=256, xx=tx,yy=ty,zz=z;
+    while(!img&&zz>3&&z-zz<3){
+      sx=sx/2+(xx&1)*128; sy=sy/2+(yy&1)*128; ss/=2;
+      xx>>=1; yy>>=1; zz--;
+      img=_getTile(zz,xx,yy);
+    }
+    if(!img)continue;
     const mx0=tx*range.ts-_MWORLD/2, my0=_MWORLD/2-ty*range.ts;
     const TL=m2s(mx0,my0), TR=m2s(mx0+range.ts,my0), BL=m2s(mx0,my0-range.ts);
     ctx.setTransform(base);
     ctx.transform((TR[0]-TL[0])/256,(TR[1]-TL[1])/256,(BL[0]-TL[0])/256,(BL[1]-TL[1])/256,TL[0],TL[1]);
-    try{ctx.drawImage(img,0,0);}catch(e){}
+    try{ctx.drawImage(img,sx,sy,ss,ss,0,0,256,256);}catch(e){}
   }
   ctx.setTransform(base);
   ctx.restore();
@@ -8065,7 +8073,7 @@ function plotPoints(extCtx,extW,extH){
 }
 
 /* ── PLOT CONTROLS ── */
-function zoomBy(f){viewScale=Math.max(.05,Math.min(100,viewScale*f));plotPoints()}
+function zoomBy(f){viewScale=Math.max(.0005,Math.min(100,viewScale*f));plotPoints()}
 function panBy(px,py){viewOffsetX+=px;viewOffsetY+=py;plotPoints()}
 function resetPlot(){viewScale=1;viewOffsetX=0;viewOffsetY=0;plotPoints()}
 function _applyLightMode(){
@@ -8165,7 +8173,7 @@ function zoomToOccupied(){
     const T = _viewTransform(w, h);
     if(!T) return;
 
-    const newScale = Math.max(.05, Math.min(100, viewScale * factor));
+    const newScale = Math.max(.0005, Math.min(100, viewScale * factor));
     if(newScale === viewScale) return;
 
     // World coords of the finger/pointer position under current transform
