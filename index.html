@@ -1168,6 +1168,7 @@ function jobNew(){
   },100);
 }
 function _startNewJob(jn,N,E,Z){
+  _resetViewState();
   _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
   points=[{Point:1,Northing:N,Easting:E,Elevation:Z,
            Type:"Setup",Description:"Start",Flag:"",ih:0}];
@@ -1194,6 +1195,7 @@ function jobSettings(){ _hideJobScreen(); loadData(); setTimeout(settingsMenu,30
 
 /* ── 3. PERSIST ────────────────────────────────────────────────── */
 function loadData() {
+  _resetViewState();
   try { const s=_lsGet("cl_points"); if(s){ points=JSON.parse(s); pointCounter=points.length?points.reduce((m,p)=>p.Point>m?p.Point:m,0)+1:1; currentPoint=points[0]||null; orientationChosen=true; } else _defaultState(); } catch(e){ _defaultState(); }
   try { plotConnections=JSON.parse(_lsGet("cl_connections")||"[]"); } catch(e){ plotConnections=[]; }
   try { _polylines=JSON.parse(_lsGet("cl_polylines")||"[]"); } catch(e){ _polylines=[]; }
@@ -1220,6 +1222,7 @@ function loadData() {
   updateStatus(); plotPoints(); _updateUndoBtn();
 }
 
+function _resetViewState(){ window._pvState=null; }
 function _defaultState() {
   points=[{Point:1,Northing:10000,Easting:10000,Elevation:100,Type:"Setup",Description:"Start",Flag:"",ih:0}];
   pointCounter=2; undoStack=[]; currentPoint=points[0]; orientationChosen=false;
@@ -7573,6 +7576,7 @@ function _satSetupFlow(){
       const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
       mk("📡 Use Phone GPS","ok",()=>{close();_gpsFix(pos=>{
         if(!pos)return;
+        startLiveGps();
         _satAfterFix(pt,pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy);
       });});
       mk("⌨ Enter Lat / Lon","blue",()=>{close();
@@ -7660,6 +7664,7 @@ function _gpsStartFlow(jn){
   _gpsFix(pos=>{
     if(!pos){jobNewManual(jn);return;}
     const lat=pos.coords.latitude, lon=pos.coords.longitude, acc=pos.coords.accuracy;
+    startLiveGps();
     _zonePick(lat,lon,zone=>{
       if(!zone){jobNewManual(jn);return;}
       const p=_projForward(lat,lon,zone), u=_m2u();
@@ -7678,6 +7683,7 @@ function _gpsStartFlow(jn){
   });
 }
 function _zoomToGround(unitsAcross){
+  _resetViewState();
   const c=document.getElementById("plotCanvas");
   const wrap=document.getElementById("canvasWrap");
   const w=(c&&c.clientWidth)||(wrap&&wrap.clientWidth)||360;
@@ -7726,7 +7732,22 @@ function plotPoints(extCtx,extW,extH){
     ctx.fillStyle="rgba(107,115,143,.3)";ctx.font="13px 'Courier New',monospace";
     ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("No points loaded",w/2,h/2);return;
   }
-  const T=_viewTransform(w,h);if(!T)return;
+  let T=_viewTransform(w,h);if(!T)return;
+  // View stabilization — the transform is relative to the data bbox, so adding
+  // or deleting a point used to implicitly re-fit (and re-zoom) the view.
+  // Compensate viewScale/offsets so the view stays put; ◎ re-fits on demand.
+  if(!extCtx){
+    const pv=window._pvState;
+    if(pv&&pv.w===w&&pv.h===h&&(pv.minE!==T.minE||pv.minN!==T.minN||pv.rng!==T.rng)){
+      const prevScale=pv.base*viewScale;
+      viewScale=Math.max(.0005,Math.min(100,prevScale/T.base));
+      const sc=T.base*viewScale;
+      viewOffsetX+=sc*((T.rng-pv.rng)/2+(T.minE-pv.minE));
+      viewOffsetY+=sc*((T.rng-pv.rng)/2+(T.minN-pv.minN));
+      T=_viewTransform(w,h);
+    }
+    window._pvState={w,h,minE:T.minE,minN:T.minN,rng:T.rng,base:T.base};
+  }
   const{scale,offX,offY}=T;
   const X=e=>e*scale+offX;
   const Y=n=>h-(n*scale+offY);
@@ -8144,7 +8165,7 @@ function plotPoints(extCtx,extW,extH){
 /* ── PLOT CONTROLS ── */
 function zoomBy(f){viewScale=Math.max(.0005,Math.min(100,viewScale*f));plotPoints()}
 function panBy(px,py){viewOffsetX+=px;viewOffsetY+=py;plotPoints()}
-function resetPlot(){viewScale=1;viewOffsetX=0;viewOffsetY=0;plotPoints()}
+function resetPlot(){_resetViewState();viewScale=1;viewOffsetX=0;viewOffsetY=0;plotPoints()}
 function _applyLightMode(){
   if(lightMode) document.documentElement.classList.add("light-mode");
   else document.documentElement.classList.remove("light-mode");
