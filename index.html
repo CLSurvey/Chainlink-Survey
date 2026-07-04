@@ -1157,21 +1157,13 @@ function jobNew(){
     alphaInput("Job Name:","",jn=>{
       if(jn===null){ _showJobScreen(); return; } // cancelled — go back
       if(!jn.trim()){ alert("Please enter a job name."); _showJobScreen(); return; }
-      // Prompt for the starting coordinate — blank/cancel keeps 10000,10000,100
-      const seq=[["Start Northing","10000"],["Start Easting","10000"],["Start Elevation","100"]];
-      const vals=[];let i=0;
-      const finish=()=>{
-        const N=parseFloat(vals[0]); const E=parseFloat(vals[1]); const Z=parseFloat(vals[2]);
-        _startNewJob(jn.trim(),
-          isNaN(N)?10000:N, isNaN(E)?10000:E, isNaN(Z)?100:Z);
-      };
-      const step=()=>{
-        if(i>=seq.length){finish();return}
-        calculatorInput(seq[i][0]+" (default "+seq[i][1]+"):",seq[i][1],v=>{
-          vals.push(v===null||v===""?seq[i][1]:v); i++; step();
-        });
-      };
-      step();
+      const name=jn.trim();
+      openModal((modal,close)=>{
+        modal.innerHTML="<h2>Start Point</h2><p class='info'>Locate Point 1 by phone GPS on the State Plane grid, or use assumed/manual coordinates.</p>";
+        const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+        mk("📡 GPS Start (State Plane)","ok",()=>{close();_gpsStartFlow(name);});
+        mk("⌨ Manual / Assumed (10000,10000)","blue",()=>{close();jobNewManual(name);});
+      });
     });
   },100);
 }
@@ -1181,7 +1173,7 @@ function _startNewJob(jn,N,E,Z){
            Type:"Setup",Description:"Start",Flag:"",ih:0}];
   undoStack=[];_snapshots=[];_redoStack=[];pointCounter=2;plotConnections=[];currentPoint=points[0];
   _polylines=[];
-  recentShots=[];tempGeom=[];tempIntersections=[];
+  recentShots=[];tempGeom=[];tempIntersections=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;
   jobName=jn;
   saveData();
   updateStatus();plotPoints();
@@ -1217,7 +1209,13 @@ function loadData() {
   try { lightMode=_lsGet("cl_lightMode")==="true"; } catch(e){ lightMode=false; }
   try { bearingMode=_lsGet("cl_bearingMode")||"az"; } catch(e){ bearingMode="az"; }
   _applyLightMode(); // dark by default
-  tempIntersections=[]; tempGeom=[]; recentShots=[]; _areaLabels=[];
+  tempIntersections=[]; tempGeom=[]; recentShots=[];
+  try { _areaLabels=JSON.parse(_lsGet("cl_areaLabels")||"[]"); if(!Array.isArray(_areaLabels)) _areaLabels=[]; } catch(e){ _areaLabels=[]; }
+  _recomputeAreaLabels(); // drop labels whose points no longer exist
+  try { const ga=_lsGet("cl_geoAnchor"); geoAnchor=ga?JSON.parse(ga):null; } catch(e){ geoAnchor=null; }
+  try { satOn=_lsGet("cl_satOn")==="true"&&!!geoAnchor; } catch(e){ satOn=false; }
+  try { satOpacity=parseFloat(_lsGet("cl_satOpacity")||"0.85")||0.85; } catch(e){ satOpacity=0.85; }
+  try { satRotNudge=parseFloat(_lsGet("cl_satRot")||"0")||0; } catch(e){ satRotNudge=0; }
   updateStatus(); plotPoints(); _updateUndoBtn();
 }
 
@@ -1242,6 +1240,11 @@ function saveData() {
   _lsSet("cl_showElev",   String(showElevations));
   _lsSet("cl_lightMode",  String(lightMode));
   _lsSet("cl_bearingMode",bearingMode);
+  _lsSet("cl_areaLabels", JSON.stringify(_areaLabels.map(l=>({E:l.E,N:l.N,label:l.label,ptNums:l.ptNums,u:l.u,arcSigs:l.arcSigs||[]}))));
+  _lsSet("cl_geoAnchor",  geoAnchor?JSON.stringify(geoAnchor):"");
+  _lsSet("cl_satOn",      String(satOn));
+  _lsSet("cl_satOpacity", String(satOpacity));
+  _lsSet("cl_satRot",     String(satRotNudge));
   updateStatus(); plotPoints();
   // Auto-save to file if we have a directory handle
   _autoSaveToFile();
@@ -1541,7 +1544,17 @@ function openModal(buildFn, opts){
   const m=document.createElement("div"); m.className="modal";
   ov.appendChild(m); document.body.appendChild(ov); _modalStack.push(ov);
   const close=()=>{ov.remove();_modalStack=_modalStack.filter(x=>x!==ov)};
-  buildFn(m,close); return{ov,m,close};
+  buildFn(m,close);
+  // Desktop-only hint (lives on the overlay so keypad re-renders can't wipe it)
+  try{
+    if(window.matchMedia&&matchMedia("(pointer:fine)").matches){
+      const hint=document.createElement("div");
+      hint.textContent="⌨ type digits · Enter = OK/Store · Tab = next field · Esc = cancel";
+      hint.style.cssText="position:absolute;bottom:46px;left:0;right:0;text-align:center;font-family:var(--font-ui);font-size:.62em;letter-spacing:.05em;color:var(--muted);pointer-events:none;opacity:.8";
+      ov.appendChild(hint);
+    }
+  }catch(e){}
+  return{ov,m,close};
 }
 function closeAllModals(){
   _modalStack.forEach(o=>o.remove());
@@ -5163,6 +5176,7 @@ function moreMenu(){
     mk("🗑 Delete Connection","danger",()=>{close();deleteConnection()});
     mk("🗑 Clear All Data","danger",()=>{close();clearAllData()});
     mk("⇕ Shift All Elevations","blue",()=>{close();elevationShift();});
+    mk("🛰 Satellite Imagery","accent",()=>{close();satelliteMenu();});
     mk("🏠 Job Manager","accent",()=>{closeAllModals();_showJobScreen();});
     mk("🔄 Force Reload App","danger",()=>{
       if(confirm("Reload the app? Any unsaved changes will be lost.")){
@@ -5896,7 +5910,7 @@ function _drawAreaLabel(poly, area, u, arcSigs){
   // Store point numbers so we can recompute if points move
   const ptNums = poly.map(p=>p.Point);
   _areaLabels.push({E:cE, N:cN, label, ptNums, u, arcSigs:arcSigs||[]});
-  plotPoints();
+  saveData();
 }
 
 function _recomputeAreaLabels(){
@@ -7205,11 +7219,11 @@ function deleteConnection(){
 function clearAllData(){
   confirmDialog("Clear ALL points, connections, and cache?",yes=>{
     if(!yes)return;
-    ["cl_points","cl_connections","cl_polylines","cl_orientOffset","cl_surveyMode","cl_jobName","cl_units","cl_showLabels"]
+    ["cl_points","cl_connections","cl_polylines","cl_orientOffset","cl_surveyMode","cl_jobName","cl_units","cl_showLabels","cl_areaLabels","cl_geoAnchor","cl_satOn","cl_satRot"]
       .forEach(k=>_lsRemove(k));
     _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
     surveyMode="2D";jobName="survey";_dirHandle=null;
-    plotConnections=[];_polylines=[];tempIntersections=[];tempGeom=[];undoStack=[];recentShots=[];
+    plotConnections=[];_polylines=[];tempIntersections=[];tempGeom=[];undoStack=[];recentShots=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;
     _defaultState();saveData();
     showResult("Cleared",[{lbl:"Status:",val:"Ready for new job"}]);
   });
@@ -7272,6 +7286,346 @@ function _drawScaleBar(ctx,w,h,scale){
   ctx.fillText(`${nice.toFixed(0)} ${units}`,x,y-7);
   ctx.restore();
 }
+
+/* ── SATELLITE IMAGERY (Esri World Imagery) ─────────────────────
+   Anchors the local plot to Earth via one GPS fix (or manual lat/lon),
+   projects to State Plane (NAD83) where a zone is known, else UTM,
+   and draws Esri World Imagery tiles beneath the plot. Imagery is
+   visual context ONLY — never measure against it. */
+
+let geoAnchor=null;          // {lat,lon,E,N,mx,my,conv,zoneName,m2u}
+let satOn=false, satOpacity=0.85, satRotNudge=0;
+const _tileCache=new Map();  // "z/x/y" -> {img,ok,err}
+let _satRafPending=false;
+function _satRepaint(){ if(_satRafPending)return; _satRafPending=true;
+  requestAnimationFrame(()=>{_satRafPending=false;plotPoints();}); }
+
+/* — Projections (GRS80 / NAD83) — */
+const _GRS80={a:6378137,f:1/298.257222101};
+function _tmForward(lat,lon,z){
+  const a=_GRS80.a,f=_GRS80.f,e2=2*f-f*f,ep2=e2/(1-e2),rad=Math.PI/180;
+  const phi=lat*rad,lam=lon*rad,lam0=z.lon0*rad,phi0=z.lat0*rad;
+  const Nr=a/Math.sqrt(1-e2*Math.sin(phi)**2);
+  const T=Math.tan(phi)**2,C=ep2*Math.cos(phi)**2,A=(lam-lam0)*Math.cos(phi);
+  const M=p=>a*((1-e2/4-3*e2*e2/64-5*e2**3/256)*p
+    -(3*e2/8+3*e2*e2/32+45*e2**3/1024)*Math.sin(2*p)
+    +(15*e2*e2/256+45*e2**3/1024)*Math.sin(4*p)
+    -(35*e2**3/3072)*Math.sin(6*p));
+  const E=z.FE+z.k0*Nr*(A+(1-T+C)*A**3/6+(5-18*T+T*T+72*C-58*ep2)*A**5/120);
+  const N=z.FN+z.k0*(M(phi)-M(phi0)+Nr*Math.tan(phi)*(A*A/2+(5-T+9*C+4*C*C)*A**4/24
+    +(61-58*T+T*T+600*C-330*ep2)*A**6/720));
+  const conv=Math.atan(Math.tan(lam-lam0)*Math.sin(phi))/rad;
+  return{E,N,conv};
+}
+function _lccForward(lat,lon,z){
+  const a=_GRS80.a,f=_GRS80.f,e2=2*f-f*f,e=Math.sqrt(e2),rad=Math.PI/180;
+  const phi=lat*rad,lam=lon*rad,p1=z.lat1*rad,p2=z.lat2*rad,p0=z.lat0*rad,l0=z.lon0*rad;
+  const m=p=>Math.cos(p)/Math.sqrt(1-e2*Math.sin(p)**2);
+  const t=p=>Math.tan(Math.PI/4-p/2)/Math.pow((1-e*Math.sin(p))/(1+e*Math.sin(p)),e/2);
+  const n=(Math.log(m(p1))-Math.log(m(p2)))/(Math.log(t(p1))-Math.log(t(p2)));
+  const F=m(p1)/(n*Math.pow(t(p1),n));
+  const rho=a*F*Math.pow(t(phi),n),rho0=a*F*Math.pow(t(p0),n),th=n*(lam-l0);
+  return{E:z.FE+rho*Math.sin(th),N:z.FN+rho0-rho*Math.cos(th),conv:th/rad};
+}
+function _projForward(lat,lon,z){return z.type==="lcc"?_lccForward(lat,lon,z):_tmForward(lat,lon,z);}
+
+/* SPCS83 zone constants (meters). VERIFY against NGS before relying on a
+   zone for record work — tap a zone in the picker to see its constants.
+   bbox = [latMin,latMax,lonMin,lonMax] for auto-pick (approximate; official
+   zone assignment is by county). */
+const _dm=(d,m)=>(d<0?-1:1)*(Math.abs(d)+m/60);
+const _SPC_ZONES=[
+ {name:"AL East (0101)", type:"tm", lat0:_dm(30,30),lon0:-_dm(85,50),k0:0.99996,        FE:200000,FN:0,bbox:[30.5,35.1,-86.75,-84.8]},
+ {name:"AL West (0102)", type:"tm", lat0:30,       lon0:-_dm(87,30),k0:1-1/15000,      FE:600000,FN:0,bbox:[30.1,35.1,-88.6,-86.75]},
+ {name:"GA East (1001)", type:"tm", lat0:30,       lon0:-_dm(82,10),k0:0.9999,         FE:200000,FN:0,bbox:[30.3,35.1,-83.3,-80.7]},
+ {name:"GA West (1002)", type:"tm", lat0:30,       lon0:-_dm(84,10),k0:0.9999,         FE:700000,FN:0,bbox:[30.3,35.1,-85.7,-83.3]},
+ {name:"MS East (2301)", type:"tm", lat0:_dm(29,30),lon0:-_dm(88,50),k0:0.99995,       FE:300000,FN:0,bbox:[30.0,35.1,-89.7,-88.0]},
+ {name:"MS West (2302)", type:"tm", lat0:_dm(29,30),lon0:-_dm(90,20),k0:0.99995,       FE:700000,FN:0,bbox:[30.0,35.1,-91.8,-89.7]},
+ {name:"FL East (0901)", type:"tm", lat0:_dm(24,20),lon0:-81,        k0:1-1/17000,     FE:200000,FN:0,bbox:[24.4,30.8,-82.3,-79.9]},
+ {name:"FL West (0902)", type:"tm", lat0:_dm(24,20),lon0:-82,        k0:1-1/17000,     FE:200000,FN:0,bbox:[26.3,29.6,-83.5,-81.9]},
+ {name:"FL North (0903)",type:"lcc",lat1:_dm(29,35),lat2:_dm(30,45),lat0:29,lon0:-_dm(84,30),FE:600000,FN:0,bbox:[29.4,31.1,-87.7,-82.0]},
+ {name:"TN (4100)",      type:"lcc",lat1:_dm(35,15),lat2:_dm(36,25),lat0:_dm(34,20),lon0:-86,FE:600000,FN:0,bbox:[34.9,36.7,-90.4,-81.6]},
+ {name:"TX North (4201)",type:"lcc",lat1:_dm(34,39),lat2:_dm(36,11),lat0:34,lon0:-_dm(101,30),FE:200000,FN:1000000,bbox:[34.3,36.6,-103.1,-99.9]},
+ {name:"TX N Central (4202)",type:"lcc",lat1:_dm(32,8),lat2:_dm(33,58),lat0:_dm(31,40),lon0:-_dm(98,30),FE:600000,FN:2000000,bbox:[31.7,34.6,-103.1,-94.0]},
+ {name:"TX Central (4203)",type:"lcc",lat1:_dm(30,7),lat2:_dm(31,53),lat0:_dm(29,40),lon0:-_dm(100,20),FE:700000,FN:3000000,bbox:[29.7,32.3,-106.7,-93.5]},
+ {name:"TX S Central (4204)",type:"lcc",lat1:_dm(28,23),lat2:_dm(30,17),lat0:_dm(27,50),lon0:-99,FE:600000,FN:4000000,bbox:[27.8,30.7,-105.0,-93.7]},
+ {name:"TX South (4205)",type:"lcc",lat1:_dm(26,10),lat2:_dm(27,50),lat0:_dm(25,40),lon0:-_dm(98,30),FE:300000,FN:5000000,bbox:[25.8,28.2,-100.3,-96.8]},
+];
+function _utmZoneFor(lat,lon){
+  const zn=Math.max(1,Math.min(60,Math.floor((lon+180)/6)+1));
+  return{name:"UTM "+zn+(lat>=0?"N":"S"),type:"tm",lat0:0,lon0:-183+zn*6,k0:0.9996,FE:500000,FN:lat>=0?0:10000000};
+}
+function _spcCandidates(lat,lon){
+  const inBox=_SPC_ZONES.filter(z=>lat>=z.bbox[0]&&lat<=z.bbox[1]&&lon>=z.bbox[2]&&lon<=z.bbox[3]);
+  const near=_SPC_ZONES.filter(z=>!inBox.includes(z)&&
+    lat>=z.bbox[0]-0.4&&lat<=z.bbox[1]+0.4&&lon>=z.bbox[2]-0.4&&lon<=z.bbox[3]+0.4);
+  return inBox.concat(near);
+}
+const _m2u=()=>units==="ft"?3937/1200:1; // meters -> US survey ft (or 1 for meters)
+
+/* — Web Mercator helpers — */
+const _MR=6378137,_MWORLD=2*Math.PI*_MR;
+function _ll2merc(lat,lon){return{mx:_MR*lon*Math.PI/180,my:_MR*Math.log(Math.tan(Math.PI/4+lat*Math.PI/360))};}
+
+function _setAnchor(lat,lon,zone,E,N){
+  const m=_ll2merc(lat,lon);
+  const p=_projForward(lat,lon,zone);
+  geoAnchor={lat,lon,E,N,mx:m.mx,my:m.my,conv:p.conv,zoneName:zone.name,m2u:_m2u()};
+}
+
+function _getTile(z,x,y){
+  const n=Math.pow(2,z); x=((x%n)+n)%n;
+  if(y<0||y>=n)return null;
+  const key=z+"/"+x+"/"+y;
+  let t=_tileCache.get(key);
+  if(t)return t.ok?t.img:null;
+  if(_tileCache.size>350){let i=0;for(const k of _tileCache.keys()){_tileCache.delete(k);if(++i>=120)break;}}
+  t={ok:false,err:false,img:new Image()};
+  _tileCache.set(key,t);
+  t.img.crossOrigin="anonymous"; // keeps canvas untainted so PNG/PDF export still works
+  t.img.onload=()=>{t.ok=true;_satRepaint();};
+  t.img.onerror=()=>{t.err=true;t.img=null;};
+  t.img.src="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"+z+"/"+y+"/"+x;
+  return null;
+}
+
+function _drawSatellite(ctx,w,h,T){
+  if(!satOn||!geoAnchor)return;
+  const A=geoAnchor;
+  const M2U=A.m2u||_m2u();
+  const g=(A.conv+(satRotNudge||0))*Math.PI/180, cg=Math.cos(g), sg=Math.sin(g);
+  const k=Math.cos(A.lat*Math.PI/180);
+  const {scale,offX,offY}=T;
+  const X=e=>e*scale+offX, Y=n=>h-(n*scale+offY);
+  const m2s=(mx,my)=>{
+    const dxm=(mx-A.mx)*k, dym=(my-A.my)*k;
+    const dE=(dxm*cg-dym*sg)*M2U, dN=(dxm*sg+dym*cg)*M2U;
+    return[X(A.E+dE),Y(A.N+dN)];
+  };
+  const s2m=(sx,sy)=>{
+    const E=(sx-offX)/scale, N=(h-sy-offY)/scale;
+    const dE=(E-A.E)/M2U, dN=(N-A.N)/M2U;
+    const dxm=dE*cg+dN*sg, dym=-dE*sg+dN*cg;
+    return[A.mx+dxm/k,A.my+dym/k];
+  };
+  // Pick a zoom level whose tile resolution ~ screen resolution
+  const gmpp=1/(scale*M2U);              // ground meters per css px
+  let z=Math.round(Math.log2(_MWORLD*k/(256*gmpp)));
+  z=Math.max(3,Math.min(19,z));
+  // Visible mercator bounds -> tile range (shrink z if too many tiles)
+  let range;
+  const calcRange=()=>{
+    const ts=_MWORLD/Math.pow(2,z);
+    let mnx=1/0,mxx=-1/0,mny=1/0,mxy=-1/0;
+    [[0,0],[w,0],[0,h],[w,h]].forEach(([sx,sy])=>{
+      const[mx,my]=s2m(sx,sy);
+      mnx=Math.min(mnx,mx);mxx=Math.max(mxx,mx);
+      mny=Math.min(mny,my);mxy=Math.max(mxy,my);
+    });
+    const tx0=Math.floor((mnx+_MWORLD/2)/ts), tx1=Math.floor((mxx+_MWORLD/2)/ts);
+    const ty0=Math.floor((_MWORLD/2-mxy)/ts), ty1=Math.floor((_MWORLD/2-mny)/ts);
+    return{ts,tx0,tx1,ty0,ty1,count:(tx1-tx0+1)*(ty1-ty0+1)};
+  };
+  range=calcRange();
+  while(range.count>48&&z>3){z--;range=calcRange();}
+  let base;
+  try{base=ctx.getTransform();}catch(e){return;}
+  ctx.save();
+  ctx.globalAlpha=Math.max(0.1,Math.min(1,satOpacity));
+  for(let tx=range.tx0;tx<=range.tx1;tx++)for(let ty=range.ty0;ty<=range.ty1;ty++){
+    const img=_getTile(z,tx,ty); if(!img)continue;
+    const mx0=tx*range.ts-_MWORLD/2, my0=_MWORLD/2-ty*range.ts;
+    const TL=m2s(mx0,my0), TR=m2s(mx0+range.ts,my0), BL=m2s(mx0,my0-range.ts);
+    ctx.setTransform(base);
+    ctx.transform((TR[0]-TL[0])/256,(TR[1]-TL[1])/256,(BL[0]-TL[0])/256,(BL[1]-TL[1])/256,TL[0],TL[1]);
+    try{ctx.drawImage(img,0,0);}catch(e){}
+  }
+  ctx.setTransform(base);
+  ctx.restore();
+  // Required attribution
+  ctx.save();
+  ctx.font="8px 'Courier New',monospace";ctx.textAlign="right";ctx.textBaseline="bottom";
+  const at="Imagery: Esri, Maxar, Earthstar Geographics";
+  const aw=ctx.measureText(at).width;
+  ctx.fillStyle="rgba(0,0,0,.55)";ctx.fillRect(w-aw-8,h-13,aw+6,11);
+  ctx.fillStyle="rgba(220,228,240,.85)";ctx.fillText(at,w-5,h-4);
+  ctx.restore();
+}
+
+/* — Shift every stored coordinate (points, arc centers, polylines, labels) — */
+function _shiftAllCoords(dE,dN){
+  points.forEach(p=>{p.Easting+=dE;p.Northing+=dN;});
+  plotConnections.forEach(c=>{if(c.type==="arc"){c.centerE+=dE;c.centerN+=dN;}});
+  (typeof _polylines!=="undefined"?_polylines:[]).forEach(pl=>{
+    (pl.verts||[]).forEach(v=>{v.E+=dE;v.N+=dN;});
+    (pl.segs||[]).forEach(sg=>{if(sg&&sg.type==="arc"){sg.centerE+=dE;sg.centerN+=dN;}});
+  });
+  _areaLabels.forEach(l=>{l.E+=dE;l.N+=dN;});
+}
+
+/* — GPS fix with an acquiring modal — */
+function _gpsFix(cb){
+  if(!navigator.geolocation){alert("Geolocation isn't available on this device/browser.");cb(null);return;}
+  let done=false;
+  const {close}=openModal((modal,cl)=>{
+    modal.innerHTML="<h2>📡 GPS Fix</h2><p class='info'>Acquiring position… stand at the point, clear sky view helps. High accuracy mode, up to 25s.</p>";
+    const b=document.createElement("button");b.className="btn danger";b.textContent="Cancel";
+    b.onclick=()=>{done=true;cl();cb(null);};modal.appendChild(b);
+  });
+  navigator.geolocation.getCurrentPosition(
+    pos=>{if(done)return;done=true;close();cb(pos);},
+    err=>{if(done)return;done=true;close();alert("GPS failed: "+err.message);cb(null);},
+    {enableHighAccuracy:true,timeout:25000,maximumAge:0});
+}
+
+/* — Zone picker: auto choice + alternatives + UTM fallback — */
+function _zonePick(lat,lon,cb){
+  const cands=_spcCandidates(lat,lon);
+  const utm=_utmZoneFor(lat,lon);
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Coordinate System</h2><p class='info'>Fix: "+lat.toFixed(6)+", "+lon.toFixed(6)+
+      "<br>Pick the zone (NAD83, "+(units==="ft"?"US survey ft":"meters")+"). Verify constants against NGS before record work.</p>";
+    const mk=(z,tag)=>{
+      const p=_projForward(lat,lon,z), u=_m2u();
+      const b=document.createElement("button");b.className="btn "+(tag?"ok":"blue");
+      b.textContent=(tag?"✓ ":"")+z.name+" — N "+(p.N*u).toFixed(1)+"  E "+(p.E*u).toFixed(1);
+      b.style.fontSize=".78em";
+      b.onclick=()=>{close();cb(z);};
+      modal.appendChild(b);
+    };
+    cands.forEach((z,i)=>mk(z,i===0));
+    mk(utm,cands.length===0);
+    const c=document.createElement("button");c.className="btn";c.textContent="Cancel";
+    c.onclick=()=>{close();cb(null);};modal.appendChild(c);
+  });
+}
+
+/* — Anchor an existing job point via GPS or manual lat/lon — */
+function _satSetupFlow(){
+  const defPt=(currentPoint&&currentPoint.Point)||1;
+  calculatorInput("Anchor at point # (stand HERE for GPS):",String(defPt),pn=>{
+    if(pn===null)return;
+    const pt=points.find(p=>p.Point===parseInt(pn,10));
+    if(!pt){alert("Point "+pn+" not found.");return;}
+    openModal((modal,close)=>{
+      modal.innerHTML="<h2>🛰 Locate Point "+pt.Point+"</h2><p class='info'>One position fix ties the plot to satellite imagery. Phone GPS is ±10 ft class — imagery is visual context, never measure against it.</p>";
+      const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+      mk("📡 Use Phone GPS","ok",()=>{close();_gpsFix(pos=>{
+        if(!pos)return;
+        _satAfterFix(pt,pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy);
+      });});
+      mk("⌨ Enter Lat / Lon","blue",()=>{close();
+        calculatorInput("Latitude (decimal deg, N+):","",la=>{
+          if(la===null||la==="")return;
+          calculatorInput("Longitude (decimal deg, W is −):","",lo=>{
+            if(lo===null||lo==="")return;
+            const lat=parseFloat(la),lon=parseFloat(lo);
+            if(isNaN(lat)||isNaN(lon)||Math.abs(lat)>85||Math.abs(lon)>180){alert("Invalid lat/lon.");return;}
+            _satAfterFix(pt,lat,lon,null);
+          });
+        });
+      });
+      mk("Cancel","",close);
+    });
+  });
+}
+function _satAfterFix(pt,lat,lon,acc){
+  _zonePick(lat,lon,zone=>{
+    if(!zone)return;
+    const p=_projForward(lat,lon,zone), u=_m2u();
+    const gE=p.E*u, gN=p.N*u;
+    openModal((modal,close)=>{
+      modal.innerHTML="<h2>Anchor Point "+pt.Point+"</h2><p class='info'>"+zone.name+"<br>Grid N "+gN.toFixed(2)+"  E "+gE.toFixed(2)+
+        (acc!=null?"<br>GPS accuracy ±"+(acc*_m2u()).toFixed(0)+" "+units:"")+
+        "<br>Convergence "+p.conv.toFixed(3)+"°</p>";
+      const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+      mk("Shift whole job to grid coords","ok",()=>{
+        close();_takeSnapshot("Shift to grid");
+        _shiftAllCoords(gE-pt.Easting,gN-pt.Northing);
+        _setAnchor(lat,lon,zone,gE,gN);
+        satOn=true;saveData();
+        showResult("✓ Anchored on "+zone.name,[
+          {lbl:"Point "+pt.Point+":",val:"N "+gN.toFixed(2)+" E "+gE.toFixed(2)},
+          {lbl:"Imagery:",val:"ON"}]);
+      });
+      mk("Keep local coords (imagery only)","blue",()=>{
+        close();
+        _setAnchor(lat,lon,zone,pt.Easting,pt.Northing);
+        satOn=true;saveData();
+        showResult("✓ Imagery anchored",[
+          {lbl:"Point "+pt.Point+":",val:"stays N "+pt.Northing.toFixed(2)+" E "+pt.Easting.toFixed(2)},
+          {lbl:"Zone (display only):",val:zone.name}]);
+      });
+      mk("Cancel","",close);
+    });
+  });
+}
+
+/* — Satellite menu (from More) — */
+function satelliteMenu(){
+  if(!geoAnchor){_satSetupFlow();return;}
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>🛰 Satellite Imagery</h2><p class='info'>"+geoAnchor.zoneName+
+      " · anchor "+geoAnchor.lat.toFixed(5)+", "+geoAnchor.lon.toFixed(5)+"</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    mk(satOn?"Hide imagery":"Show imagery",satOn?"":"ok",()=>{satOn=!satOn;saveData();close();});
+    const sl=(label,val,min,max,step,set)=>{
+      const wrap=document.createElement("div");
+      wrap.innerHTML="<div class='input-label'>"+label+"</div>";
+      const r=document.createElement("input");r.type="range";r.min=min;r.max=max;r.step=step;r.value=val;
+      r.style.width="100%";
+      r.oninput=()=>{set(parseFloat(r.value));plotPoints();};
+      r.onchange=()=>saveData();
+      wrap.appendChild(r);modal.appendChild(wrap);
+    };
+    sl("Opacity",satOpacity,0.15,1,0.05,v=>satOpacity=v);
+    sl("Rotation nudge (°) — align imagery to plot",satRotNudge,-5,5,0.1,v=>satRotNudge=v);
+    mk("📡 Re-anchor / GPS again","blue",()=>{close();_satSetupFlow();});
+    mk("Remove anchor & imagery","danger",()=>{
+      confirmDialog("Remove the imagery anchor? (Coordinates are not changed.)",yes=>{
+        if(!yes)return;geoAnchor=null;satOn=false;satRotNudge=0;saveData();});
+      close();});
+    mk("Done","",close);
+  });
+}
+
+/* — New-job GPS start — */
+function _gpsStartFlow(jn){
+  _gpsFix(pos=>{
+    if(!pos){jobNewManual(jn);return;}
+    const lat=pos.coords.latitude, lon=pos.coords.longitude, acc=pos.coords.accuracy;
+    _zonePick(lat,lon,zone=>{
+      if(!zone){jobNewManual(jn);return;}
+      const p=_projForward(lat,lon,zone), u=_m2u();
+      calculatorInput("Start Elevation (default 100):","100",ev=>{
+        const Z=parseFloat(ev);
+        _startNewJob(jn,p.N*u,p.E*u,isNaN(Z)?100:Z);
+        _setAnchor(lat,lon,zone,p.E*u,p.N*u);
+        satOn=true;saveData();plotPoints();
+        showResult("✓ GPS Start · "+zone.name,[
+          {lbl:"Point 1:",val:"N "+(p.N*u).toFixed(2)+" E "+(p.E*u).toFixed(2)},
+          {lbl:"Fix:",val:lat.toFixed(6)+", "+lon.toFixed(6)+(acc!=null?" ±"+(acc*u).toFixed(0)+units:"")},
+          {lbl:"Imagery:",val:"ON"}]);
+      });
+    });
+  });
+}
+function jobNewManual(jn){
+  const seq=[["Start Northing","10000"],["Start Easting","10000"],["Start Elevation","100"]];
+  const vals=[];let i=0;
+  const finish=()=>{
+    const N=parseFloat(vals[0]),E=parseFloat(vals[1]),Z=parseFloat(vals[2]);
+    _startNewJob(jn,isNaN(N)?10000:N,isNaN(E)?10000:E,isNaN(Z)?100:Z);
+  };
+  const step=()=>{
+    if(i>=seq.length){finish();return}
+    calculatorInput(seq[i][0]+" (default "+seq[i][1]+"):",seq[i][1],v=>{
+      vals.push(v===null||v===""?seq[i][1]:v);i++;step();
+    });
+  };
+  step();
+}
+
 function plotPoints(extCtx,extW,extH){
   try{ _recomputeAreaLabels(); }catch(e){} // keep area label current if points moved
   let ctx,w,h;
@@ -7300,6 +7654,7 @@ function plotPoints(extCtx,extW,extH){
   const{scale,offX,offY}=T;
   const X=e=>e*scale+offX;
   const Y=n=>h-(n*scale+offY);
+  try{ _drawSatellite(ctx,w,h,T); }catch(e){}
   // Grid — ensure a sensible step even with 1 point (rng=1)
   // Minimum step = enough to show at least 3 grid lines across the view
   const minWorldStep = (Math.max(w,h)) / (T.scale * 3);
@@ -8191,7 +8546,7 @@ function zoomToOccupied(){
         openModal((modal,close)=>{
           modal.innerHTML="<h2>Area Label</h2><p class='info'>"+hitAL.label+"</p>";
           const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-          mk("Delete Label","danger",()=>{_areaLabels=_areaLabels.filter(x=>x!==hitAL);plotPoints();close();});
+          mk("Delete Label","danger",()=>{_areaLabels=_areaLabels.filter(x=>x!==hitAL);saveData();close();});
           mk("Keep","",close);
         });
         return;
@@ -9332,11 +9687,90 @@ window.addEventListener("resize",plotPoints);
 window.addEventListener("keydown",e=>{
   const tag=(e.target&&e.target.tagName||"").toLowerCase();
   if(tag==="input"||tag==="textarea"||(e.target&&e.target.isContentEditable))return;
+  if(_modalStack.length)return; // don't undo canvas edits while a keypad/modal is open
   const mod=e.ctrlKey||e.metaKey;
   if(!mod)return;
   const k=e.key.toLowerCase();
   if(k==="z"&&!e.shiftKey){e.preventDefault();if(_snapshots.length||undoStack.length)undoFromCanvas();}
   else if(k==="y"||(k==="z"&&e.shiftKey)){e.preventDefault();if(_redoStack.length)redoFromCanvas();}
+});
+
+// Physical keyboard support — routes desktop keys to the on-screen keypad
+// buttons in the topmost open modal. No keypad logic is duplicated: we just
+// find the visible button whose label matches the key and click it, so
+// mobile/touch behavior is completely unaffected.
+window.addEventListener("keydown",e=>{
+  if(!_modalStack.length)return;
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const tag=(e.target&&e.target.tagName||"").toLowerCase();
+  if(tag==="input"||tag==="textarea"||(e.target&&e.target.isContentEditable))return;
+  const modal=_modalStack[_modalStack.length-1].querySelector(".modal");
+  if(!modal)return;
+  const btns=[...modal.querySelectorAll("button")].filter(b=>b.offsetParent!==null); // visible only
+  const byText=t=>btns.find(b=>b.textContent===t);
+  const k=e.key;
+
+  // Tab / Shift+Tab cycles fields in the shot form (.sf-val tiles)
+  if(k==="Tab"){
+    const vals=[...modal.querySelectorAll(".sf-val")].filter(v=>v.onclick);
+    if(vals.length>1){
+      e.preventDefault();
+      const i=vals.findIndex(v=>v.classList.contains("active"));
+      vals[(i+(e.shiftKey?-1:1)+vals.length)%vals.length].click();
+    }
+    return;
+  }
+
+  let target=null;
+  if(/^[0-9.]$/.test(k)) target=byText(k);
+  else if(k===",") target=byText(",")||byText(".");            // decimal-comma keyboards
+  else if(k==="-") target=byText("-")||byText("+/-");
+  else if(k==="Backspace") target=byText("⌫")||byText("⌫ DEL");
+  else if(k==="Delete") target=byText("CLR");
+  else if(k==="Enter") target=byText("OK")||byText("✓ STORE SHOT")||byText("✓ Done");
+  else if(k==="Escape"){
+    target=byText("CANCEL")||byText("Cancel")||byText("Close")||byText("No");
+    // Shot form holds in-progress data — require a second Esc within 1.2s
+    if(target && modal.querySelector(".sf-val")){
+      const now=Date.now();
+      if(!window._escArm || now-window._escArm>1200){
+        window._escArm=now; e.preventDefault();
+        target.textContent="Press Esc again to cancel";
+        setTimeout(()=>{ if(target.isConnected) target.textContent="Cancel"; },1200);
+        return;
+      }
+      window._escArm=0;
+    }
+  }
+  else if(k===" ") target=byText("SPC");
+  else if(k==="/") target=byText("/");
+  else if(/^[a-zA-Z]$/.test(k)) target=byText(k.toUpperCase()); // alpha grid + quad N/S/E/W
+
+  if(target){e.preventDefault();target.click();}
+});
+
+// Plot navigation from a physical keyboard — arrows pan the view in the
+// arrow's direction (map convention), +/- zoom, Home resets. Inactive while
+// a modal, the job screen, or the help panel is open, or when typing.
+window.addEventListener("keydown",e=>{
+  if(_modalStack.length)return;
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const tag=(e.target&&e.target.tagName||"").toLowerCase();
+  if(tag==="input"||tag==="textarea"||(e.target&&e.target.isContentEditable))return;
+  const js=document.getElementById("jobScreen");
+  if(js&&getComputedStyle(js).display!=="none")return;
+  const hp=document.getElementById("helpPanel");
+  if(hp&&getComputedStyle(hp).display!=="none")return;
+  const step=e.shiftKey?200:60;
+  switch(e.key){
+    case "ArrowUp":    e.preventDefault(); panBy(0,-step); break;
+    case "ArrowDown":  e.preventDefault(); panBy(0, step); break;
+    case "ArrowLeft":  e.preventDefault(); panBy( step,0); break;
+    case "ArrowRight": e.preventDefault(); panBy(-step,0); break;
+    case "+": case "=": e.preventDefault(); zoomBy(1.25); break;
+    case "-": case "_": e.preventDefault(); zoomBy(0.8);  break;
+    case "Home":       e.preventDefault(); resetPlot();   break;
+  }
 });
 
 /* ── Splash chain canvas ───────────────────────────────────── */
