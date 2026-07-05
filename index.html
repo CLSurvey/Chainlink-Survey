@@ -8639,14 +8639,22 @@ function _gpsStartFlow(jn,fineTune){
   });
 }
 function _zoomToGround(unitsAcross){
-  _resetViewState();
-  const c=document.getElementById("plotCanvas");
-  const wrap=document.getElementById("canvasWrap");
-  const w=(c&&c.clientWidth)||(wrap&&wrap.clientWidth)||360;
-  const h=(c&&c.clientHeight)||(wrap&&wrap.clientHeight)||480;
-  const T=_viewTransform(w,h); if(!T)return;
-  viewScale=Math.max(.0005,Math.min(100,(w/unitsAcross)/T.base));
-  viewOffsetX=0;viewOffsetY=0;plotPoints();
+  const apply=()=>{
+    _resetViewState();
+    const c=document.getElementById("plotCanvas");
+    const wrap=document.getElementById("canvasWrap");
+    const w=(c&&c.clientWidth)||(wrap&&wrap.clientWidth)||360;
+    const h=(c&&c.clientHeight)||(wrap&&wrap.clientHeight)||480;
+    const T=_viewTransform(w,h); if(!T)return;
+    viewScale=Math.max(.0005,Math.min(100,(w/unitsAcross)/T.base));
+    viewOffsetX=0;viewOffsetY=0;plotPoints();
+  };
+  apply();
+  // Layout can still be settling (job screen hiding, browser bars moving) —
+  // re-assert once real dimensions are in, unless the user has already
+  // started zooming/panning themselves.
+  const setAt=viewScale;
+  setTimeout(()=>{ if(viewScale===setAt) apply(); },350);
 }
 function jobNewManual(jn){
   const seq=[["Start Northing","10000"],["Start Easting","10000"],["Start Elevation","100"]];
