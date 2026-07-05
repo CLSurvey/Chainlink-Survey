@@ -7397,7 +7397,14 @@ function _deedNormalize(t){
     // degree lost entirely by OCR/copy: "N 45 00'00\"" still has ' and " anchors
     .replace(/\u00BD/g," 1/2").replace(/\u00BC/g," 1/4").replace(/\u00BE/g," 3/4")
     .replace(/\s+/g," ")
-    .toUpperCase();
+    .toUpperCase()
+    // — OCR dialect repairs (each learned from a real misread) —
+    // doubled quadrant letters: "WW"/"EE"/"NN"/"SS" -> single
+    .replace(/\b([NSEW])\1\b/g,"$1")
+    // minute/second marks misread as degree combos: °' -> ', °" -> ", °° -> °
+    .replace(/°\s*'/g,"'")
+    .replace(/°\s*"/g,'"')
+    .replace(/°\s*°/g,"°");
 }
 
 /* Bearing: returns {q1:'N'|'S', deg, min, sec, q2:'E'|'W'} or cardinal {card:'N'} */
