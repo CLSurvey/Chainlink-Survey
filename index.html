@@ -1170,7 +1170,7 @@ function jobNew(){
     });
   },100);
 }
-function _startNewJob(jn,N,E,Z){
+function _startNewJob(jn,N,E,Z,deferSetup){
   _resetViewState();
   _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
   points=[{Point:1,Northing:N,Easting:E,Elevation:Z,
@@ -1181,8 +1181,10 @@ function _startNewJob(jn,N,E,Z){
   jobName=jn;
   saveData();
   updateStatus();plotPoints();
-  // Show orientation explainer, then offer auto-save folder
-  _showOrientationExplainer(()=>{
+  // Show orientation explainer, then offer auto-save folder.
+  // deferSetup=true parks this chain until the caller is ready (e.g. after
+  // the user long-presses the exact start point on imagery).
+  const _setupChain=()=>_showOrientationExplainer(()=>{
     if(typeof window.showDirectoryPicker==="function"){
       openModal((modal,close)=>{
         modal.innerHTML="<h2>Auto-Save</h2><p class='info'>Pick a folder and ChainLink will automatically save your CSV there after every change.</p>";
@@ -1192,6 +1194,8 @@ function _startNewJob(jn,N,E,Z){
       });
     }
   });
+  if(deferSetup) window._deferredJobSetup=_setupChain;
+  else _setupChain();
 }
 function jobLoad(){ _hideJobScreen(); setTimeout(()=>{loadData();loadFromFile();},200); }
 function jobSettings(){ _hideJobScreen(); loadData(); setTimeout(settingsMenu,300); }
@@ -1552,7 +1556,10 @@ function _ptExists(num){ return points.some(p=>p.Point===num); }
 /* ── 5. MODAL ENGINE ───────────────────────────────────────────── */
 let _modalStack=[];
 function openModal(buildFn, opts){
-  if(typeof _relocateTarget!=="undefined"&&_relocateTarget!=null){_relocateTarget=null;setTimeout(plotPoints,0);}
+  if(typeof _relocateTarget!=="undefined"&&_relocateTarget!=null){
+    _relocateTarget=null;setTimeout(plotPoints,0);
+    if(window._deferredJobSetup){window._pendingSetup=window._deferredJobSetup;window._deferredJobSetup=null;}
+  }
   if(window._deedPobCalls){window._deedPobCalls=null;setTimeout(plotPoints,0);}
   const ov=document.createElement("div"); ov.className="modal-overlay";
   const m=document.createElement("div"); m.className="modal";
@@ -1560,6 +1567,9 @@ function openModal(buildFn, opts){
   const close=()=>{ov.remove();_modalStack=_modalStack.filter(x=>x!==ov);
     if(!_modalStack.length&&window._pendingRelocate!=null){
       _relocateTarget=window._pendingRelocate;window._pendingRelocate=null;plotPoints();
+    }
+    if(!_modalStack.length&&window._pendingSetup){
+      const f=window._pendingSetup;window._pendingSetup=null;setTimeout(f,50);
     }};
   buildFn(m,close);
   // Desktop-only hint (lives on the overlay so keypad re-renders can't wipe it)
@@ -8598,16 +8608,21 @@ function _gpsStartFlow(jn,fineTune){
         const def=ge!=null?ge.toFixed(1):"100";
         calculatorInput("Start Elev"+(src?" ("+src+")":"")+":",def,ev=>{
         const Z=parseFloat(ev===null||ev===""?def:ev);
-        _startNewJob(jn,p.N*u,p.E*u,isNaN(Z)?100:Z);
+        _startNewJob(jn,p.N*u,p.E*u,isNaN(Z)?100:Z,fineTune);
         _setAnchor(lat,lon,zone,p.E*u,p.N*u);
         satOn=true;saveData();_syncSatBtn();
         _zoomToGround(units==="ft"?300:100);
-        if(fineTune)window._pendingRelocate=1;
-        showResult("✓ GPS Start · "+zone.name,[
-          {lbl:"Point 1:",val:"N "+(p.N*u).toFixed(2)+" E "+(p.E*u).toFixed(2)},
-          {lbl:"Elev:",val:(isNaN(Z)?100:Z).toFixed(1)+" "+units+(src?" ("+src+")":"")},
-          {lbl:"Fix:",val:lat.toFixed(6)+", "+lon.toFixed(6)+(acc!=null?" ±"+(acc*u).toFixed(0)+" "+units:"")},
-          ...(fineTune?[{lbl:"Next:",val:"after these dialogs close, long-press the exact spot for Pt 1"}]:[]) ]);
+        if(fineTune){
+          // Free map: no modals — pan/zoom the imagery, then long-press the spot.
+          closeAllModals();
+          _relocateTarget=1;
+          plotPoints();
+        }else{
+          showResult("✓ GPS Start · "+zone.name,[
+            {lbl:"Point 1:",val:"N "+(p.N*u).toFixed(2)+" E "+(p.E*u).toFixed(2)},
+            {lbl:"Elev:",val:(isNaN(Z)?100:Z).toFixed(1)+" "+units+(src?" ("+src+")":"")},
+            {lbl:"Fix:",val:lat.toFixed(6)+", "+lon.toFixed(6)+(acc!=null?" ±"+(acc*u).toFixed(0)+" "+units:"")}]);
+        }
         });
       });
     });
@@ -9283,9 +9298,13 @@ function zoomToOccupied(){
         pt.Easting=worldE; pt.Northing=worldN;
         if(navigator.vibrate)navigator.vibrate(40);
         saveData();updateStatus();
-        showResult("✓ Point #"+pt.Point+" repositioned",[
-          {lbl:"N:",val:worldN.toFixed(3)},{lbl:"E:",val:worldE.toFixed(3)},
-          {lbl:"Basis:",val:"placed on imagery by eye"}]);
+        if(window._deferredJobSetup){
+          const f=window._deferredJobSetup;window._deferredJobSetup=null;f();
+        }else{
+          showResult("✓ Point #"+pt.Point+" repositioned",[
+            {lbl:"N:",val:worldN.toFixed(3)},{lbl:"E:",val:worldE.toFixed(3)},
+            {lbl:"Basis:",val:"placed on imagery by eye"}]);
+        }
       }
       return;
     }
