@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.5">
+<meta name="application-name" content="ChainLink-v4.3.7">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.5</title>
+<title>ChainLink Survey v4.3.7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.5";
+const APP_VERSION = "4.3.7";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -5768,7 +5768,7 @@ function _areaUpdateDisplay(){
   tempGeom = [];
   const n=_areaPoly.length;
   if(n>=2){
-    const edges=_resolvePolyEdges(_areaPoly,_areaArcs);
+    const edges=_resolvePolyEdges(_areaPoly,_areaArcs.concat(_deedAreaArcs()));
     const BRIGHT="rgba(240,160,32,.85)", FAINT="rgba(240,160,32,.35)";
     const push=(i,color)=>{
       const p1=_areaPoly[i], p2=_areaPoly[(i+1)%n];
@@ -5795,14 +5795,16 @@ function _areaFinish(){
   // 2 points are enough when an explicitly tapped arc spans them — arc +
   // closing chord encloses a circular segment. Otherwise 3+ points required.
   if(_areaPoly.length<3){
-    const segOK=_areaPoly.length===2 && _arcForEdge(_areaPoly[0],_areaPoly[1],_areaArcs);
+    const segOK=_areaPoly.length===2 && _arcForEdge(_areaPoly[0],_areaPoly[1],_areaArcs.concat(_deedAreaArcs()));
     if(!segOK){ alert("Need at least 3 points (or 2 spanned by a tapped arc)."); _areaCancel(); return; }
   }
   const poly=_areaPoly.slice();
-  const arcs=_areaArcs.slice();
+  const arcs=_areaArcs.slice().concat(_deedAreaArcs());
   _areaCancel();
 
   const {area, perimeter, arcUsed} = _computePolyArea(poly,arcs);
+  const _edges=_resolvePolyEdges(poly,arcs);
+  const nCurved=_edges.filter(Boolean).length;
   const perim = perimeter;
 
   const ids=poly.map(p=>p.Point);
@@ -5810,6 +5812,7 @@ function _areaFinish(){
   const rows=[
     {lbl:"Points:",val:ids.join("→")},
     {lbl:"Perimeter:",val:perim.toFixed(3)+" "+u},
+    {lbl:"Curves:",val:nCurved>0?(nCurved+" curved edge"+(nCurved>1?"s":"")+" followed ✓"):(arcUsed?"arc points fitted ✓":"none — straight lines between all points")},
   ];
   if(u==="ft"){
     rows.push({lbl:"Area (sq ft):",val:area.toFixed(2)+(arcUsed?" ✓ arc corrected":"")});
@@ -5939,10 +5942,27 @@ function _computePolyArea(poly,explicitArcs){
 // for arcs in explicitArcs — the user must have tapped the arc itself,
 // otherwise an edge between an arc's two endpoints is just a chord.
 // Returns {conn,tA,tB,dt,full} or null.
+/* Deed curves, offered to the area tool in connection-arc form.
+   They count as "explicit" — the deed itself declares the curve intent. */
+function _deedAreaArcs(){
+  const out=[];
+  if(typeof _deedPlot==="undefined"||!_deedPlot)return out;
+  _deedPlot.figures.forEach(f=>{
+    if(!f.computed)return;
+    (f.computed.arcs||[]).forEach(a=>{
+      let sweep;
+      if(a.ccw){sweep=((a.a2-a.a1)%(2*Math.PI)+2*Math.PI)%(2*Math.PI);
+        out.push({type:"arc",centerE:a.cE,centerN:a.cN,R:a.r,startAngle:a.a1,endAngle:a.a1+sweep,_deed:true});}
+      else{sweep=((a.a1-a.a2)%(2*Math.PI)+2*Math.PI)%(2*Math.PI);
+        out.push({type:"arc",centerE:a.cE,centerN:a.cN,R:a.r,startAngle:a.a1,endAngle:a.a1-sweep,_deed:true});}
+    });
+  });
+  return out;
+}
 function _arcForEdge(p1,p2,explicitArcs){
   const tol=0.05;
   const exp=explicitArcs||[];
-  for(const c of plotConnections){
+  for(const c of [...plotConnections, ...exp.filter(x=>x._deed)]){
     if(c.type!=="arc")continue;
     const span=Math.abs(c.endAngle-c.startAngle);
     if(span<1e-9)continue;
@@ -8113,7 +8133,9 @@ function deedPlotterMenu(){
   const net=_deedNetAcres();
   openModal((modal,close)=>{
     modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>"+
-      (_deedPlot.figures.length>1?_deedPlot.figures.map(f=>f.name+(_deedExceptOutside(f)?" ⚠outside parent":"")).join(" · ")+"<br>":"")+
+      (_deedPlot.figures.length>1?_deedPlot.figures.map(f=>f.name+
+        (f.computed&&f.kind!=="easement"?" ("+(_deedArea(f.computed)/43560).toFixed(3)+" ac"+(f.computed.arcs&&f.computed.arcs.length?", arc-true":"")+")":"")+
+        (_deedExceptOutside(f)?" ⚠outside parent":"")).join(" · ")+"<br>":"")+
       (g?("Boundary closure: <b style='color:var(--accent)'>"+g.closeDist.toFixed(2)+" "+units+"</b>"+
       (g.precision?" (1:"+g.precision+")":"")+"<br>"):"")+
       (net!=null?("Net area: <b style='color:var(--accent)'>"+net.toFixed(2)+" ac</b>"+
