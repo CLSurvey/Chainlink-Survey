@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.8">
+<meta name="application-name" content="ChainLink-v4.3.9">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.8</title>
+<title>ChainLink Survey v4.3.9</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.8";
+const APP_VERSION = "4.3.9";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -4208,14 +4208,15 @@ function _doStakeout(target,label,th){
     rows.push({lbl:"Rod (TH):",val:th.toFixed(3)+" "+units});
     rows.push({lbl:"Cut(+)/Fill(−):",val:cutFill.toFixed(3)+" "+units});
   }
-  showResult("Stakeout → "+label,rows,[
-    {txt:"Change Rod Height",cls:"blue",fn:()=>{
-      calculatorInput("Rod height / TH ("+units+"):",th.toFixed(3),newTH=>{
-        if(!newTH)return;
-        _doStakeout(target,label,parseFloat(newTH)||0);
-      });
-    }},
-  ]);
+  showResult("Stakeout → "+label,rows,
+    surveyMode==="3D"?[
+      {txt:"Change Rod Height",cls:"blue",fn:()=>{
+        calculatorInput("Rod height / TH ("+units+"):",th.toFixed(3),newTH=>{
+          if(!newTH)return;
+          _doStakeout(target,label,parseFloat(newTH)||0);
+        });
+      }},
+    ]:[]);
 }
 function stakeToLine(){
   if(!requirePro("Stake to Line / Arc")) return;
@@ -4526,6 +4527,10 @@ function stakeStoredPoint(){
 function stakeEnteredCoords(){
   calculatorInput("Target Northing:","",n=>{if(!n)return;
     calculatorInput("Target Easting:","",e=>{if(!e)return;
+      if(surveyMode!=="3D"){
+        _doStakeout({Northing:parseFloat(n),Easting:parseFloat(e),Elevation:0},`N:${n} E:${e}`);
+        return;
+      }
       calculatorInput("Target Elevation:","0.000",z=>{
         _doStakeout({Northing:parseFloat(n),Easting:parseFloat(e),Elevation:parseFloat(z)||0},`N:${n} E:${e}`);
       });
