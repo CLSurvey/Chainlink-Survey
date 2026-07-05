@@ -1162,7 +1162,8 @@ function jobNew(){
       openModal((modal,close)=>{
         modal.innerHTML="<h2>Start Point</h2><p class='info'>Locate Point 1 by phone GPS on the State Plane grid, or use assumed/manual coordinates.</p>";
         const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-        mk("📡 GPS Start (State Plane)","ok",()=>{close();_gpsStartFlow(name);});
+        mk("📡 GPS Start (State Plane)","ok",()=>{close();_gpsStartFlow(name,false);});
+        mk("📡 GPS Start + tap exact spot on imagery","ok",()=>{close();_gpsStartFlow(name,true);});
         mk("🎯 Known Grid Coordinate (SPC / UTM)","blue",()=>{close();_gridStartFlow(name);});
         mk("⌨ Manual / Assumed (10000,10000)","blue",()=>{close();jobNewManual(name);});
       });
@@ -1556,7 +1557,10 @@ function openModal(buildFn, opts){
   const ov=document.createElement("div"); ov.className="modal-overlay";
   const m=document.createElement("div"); m.className="modal";
   ov.appendChild(m); document.body.appendChild(ov); _modalStack.push(ov);
-  const close=()=>{ov.remove();_modalStack=_modalStack.filter(x=>x!==ov)};
+  const close=()=>{ov.remove();_modalStack=_modalStack.filter(x=>x!==ov);
+    if(!_modalStack.length&&window._pendingRelocate!=null){
+      _relocateTarget=window._pendingRelocate;window._pendingRelocate=null;plotPoints();
+    }};
   buildFn(m,close);
   // Desktop-only hint (lives on the overlay so keypad re-renders can't wipe it)
   try{
@@ -1572,6 +1576,9 @@ function openModal(buildFn, opts){
 function closeAllModals(){
   _modalStack.forEach(o=>o.remove());
   _modalStack=[];
+  if(window._pendingRelocate!=null){
+    _relocateTarget=window._pendingRelocate;window._pendingRelocate=null;plotPoints();
+  }
 }
 
 /* ── 6. INPUT WIDGETS ──────────────────────────────────────────── */
@@ -8579,7 +8586,7 @@ function _gridStartFlow(jn){
 }
 
 /* — New-job GPS start — */
-function _gpsStartFlow(jn){
+function _gpsStartFlow(jn,fineTune){
   _gpsFix(pos=>{
     if(!pos){jobNewManual(jn);return;}
     const lat=pos.coords.latitude, lon=pos.coords.longitude, acc=pos.coords.accuracy;
@@ -8595,16 +8602,12 @@ function _gpsStartFlow(jn){
         _setAnchor(lat,lon,zone,p.E*u,p.N*u);
         satOn=true;saveData();_syncSatBtn();
         _zoomToGround(units==="ft"?300:100);
-        openModal((modal,close)=>{
-          modal.innerHTML="<h2>✓ GPS Start · "+zone.name+"</h2><p class='info'>"+
-            "Point 1: N "+(p.N*u).toFixed(2)+"  E "+(p.E*u).toFixed(2)+"<br>"+
-            "Elev: "+(isNaN(Z)?100:Z).toFixed(1)+" "+units+(src?" ("+src+")":"")+"<br>"+
-            "Fix: "+lat.toFixed(6)+", "+lon.toFixed(6)+(acc!=null?" ±"+(acc*u).toFixed(0)+" "+units:"")+"</p>"+
-            "<p class='info'>GPS jumps around. If you can see the exact spot on the imagery — the corner, the pin, the nail — you can place Point 1 on it precisely.</p>";
-          const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-          mk("✛ Fine-tune Pt 1 on the imagery","ok",()=>{close();_relocateTarget=1;plotPoints();});
-          mk("Keep GPS position","",close);
-        });
+        if(fineTune)window._pendingRelocate=1;
+        showResult("✓ GPS Start · "+zone.name,[
+          {lbl:"Point 1:",val:"N "+(p.N*u).toFixed(2)+" E "+(p.E*u).toFixed(2)},
+          {lbl:"Elev:",val:(isNaN(Z)?100:Z).toFixed(1)+" "+units+(src?" ("+src+")":"")},
+          {lbl:"Fix:",val:lat.toFixed(6)+", "+lon.toFixed(6)+(acc!=null?" ±"+(acc*u).toFixed(0)+" "+units:"")},
+          ...(fineTune?[{lbl:"Next:",val:"after these dialogs close, long-press the exact spot for Pt 1"}]:[]) ]);
         });
       });
     });
