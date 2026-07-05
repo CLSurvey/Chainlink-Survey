@@ -1262,7 +1262,7 @@ function saveData() {
   _lsSet("cl_satOpacity", String(satOpacity));
   _lsSet("cl_satRot",     String(satRotNudge));
   _lsSet("cl_satBase",    satBasemap);
-  _lsSet("cl_deedPlot",   _deedPlot?JSON.stringify({calls:_deedPlot.calls,pobE:_deedPlot.pobE,pobN:_deedPlot.pobN,rot:_deedPlot.rot||0}):"");
+  _lsSet("cl_deedPlot",   _deedPlot?JSON.stringify({calls:_deedPlot.calls,pobE:_deedPlot.pobE,pobN:_deedPlot.pobN,rot:_deedPlot.rot||0,ptNums:_deedPlot.ptNums||[]}):"");
   updateStatus(); plotPoints();
   // Auto-save to file if we have a directory handle
   _autoSaveToFile();
@@ -7582,6 +7582,42 @@ let _deedPlot=null; // {calls,pobE,pobN,rot,computed}
 function _deedRecompute(){
   if(!_deedPlot)return;
   _deedPlot.computed=computeDeed(_deedPlot.calls,_deedPlot.pobE,_deedPlot.pobN,_deedPlot.rot||0);
+  _deedSyncPoints();
+}
+/* Deed corners live as real points (Type:"Deed", cyan diamonds) so every
+   tool — stakeout, inverse, GPS navigate, coordinates — works on them.
+   They stay synced: swing/fit/POB moves update them in place. */
+function _deedSyncPoints(){
+  if(!_deedPlot||!_deedPlot.computed)return;
+  const vs=_deedPlot.computed.verts;
+  if(!_deedPlot.ptNums)_deedPlot.ptNums=[];
+  const elev=(currentPoint?currentPoint.Elevation:100)||100;
+  vs.forEach((v,i)=>{
+    let num=_deedPlot.ptNums[i];
+    let pt=num!=null?points.find(p=>p.Point===num):null;
+    if(!pt){
+      num=pointCounter++;
+      _deedPlot.ptNums[i]=num;
+      pt={Point:num,Northing:v.N,Easting:v.E,Elevation:elev,
+          Type:"Deed",Flag:"",ih:0,
+          Description:i===0?"POB (deed)":"Deed crn "+i};
+      points.push(pt);
+    }else{
+      pt.Northing=v.N;pt.Easting=v.E;
+    }
+  });
+  // deed re-edited to fewer courses — drop orphaned corner points
+  if(_deedPlot.ptNums.length>vs.length){
+    const drop=_deedPlot.ptNums.slice(vs.length);
+    points=points.filter(p=>!(p.Type==="Deed"&&drop.includes(p.Point)));
+    _deedPlot.ptNums=_deedPlot.ptNums.slice(0,vs.length);
+  }
+}
+function _deedRemovePoints(){
+  if(_deedPlot&&_deedPlot.ptNums){
+    const nums=_deedPlot.ptNums;
+    points=points.filter(p=>!(p.Type==="Deed"&&nums.includes(p.Point)));
+  }
 }
 function _deedCallLabel(c,i){
   if(c.type==="line")return (i+1)+". "+_deedAzToBearingStr(_deedBearingToAz(c.bearing))+" — "+c.dist.toFixed(2)+" "+(units==="ft"?"ft":"m eq")+(c.unit&&!/FEET|FT|FOOT/.test(c.unit)?" ("+c.rawVal+" "+c.unit.toLowerCase()+")":"");
@@ -7654,6 +7690,14 @@ function _deedPickPOB(calls){
       });});
     mk("✛ "+_pressWord(true)+" the POB on the map","blue",()=>{close();
       window._deedPobCalls=calls;plotPoints();});
+    mk("🖐 Slide & rotate to fit the imagery","blue",()=>{close();
+      // Drop it at the view center, then hand over to gestures
+      const c=document.getElementById("plotCanvas");
+      const mid=_screenToWorld(c.clientWidth/2,c.clientHeight/2);
+      _deedPlot={calls,pobE:mid?mid.E:0,pobN:mid?mid.N:0,rot:0};
+      _deedRecompute();
+      _deedAdjustStart();
+    });
     if(geoAnchor)mk("🎯 Grid coordinate (SPC/UTM)","blue",()=>{close();
       _gridCoordEntry((lat,lon,zone,Nu,Eu)=>{_deedSet(calls,Eu,Nu);});});
     mk("Cancel","",close);
@@ -7674,18 +7718,22 @@ function _deedSet(calls,E,N){
 }
 function _deedFitTwoPoint(){
   const g=_deedPlot.computed, nC=g.verts.length;
-  calculatorInput("Deed corner # to HOLD (0=POB … "+(nC-1)+"):","0",ci=>{
+  const nums=_deedPlot.ptNums||[];
+  const toIdx=v=>{const n=parseInt(v,10);
+    const byPt=nums.indexOf(n); if(byPt>=0)return byPt;
+    return (n>=0&&n<nC)?n:-1;};
+  calculatorInput("Deed POINT # to HOLD (cyan diamonds):",String(nums[0]||0),ci=>{
     if(ci===null)return;
-    const i=parseInt(ci,10);
-    if(!(i>=0&&i<nC)){alert("Corner must be 0–"+(nC-1)+".");return;}
+    const i=toIdx(ci);
+    if(i<0){alert("Enter one of the cyan deed point numbers.");return;}
     calculatorInput("Hold it ON measured point #:","",pa=>{
       if(pa===null||pa==="")return;
       const A=points.find(p=>p.Point===parseInt(pa,10));
       if(!A){alert("Point "+pa+" not found.");return;}
-      calculatorInput("Second deed corner # (rotate toward):","",cj=>{
+      calculatorInput("Second deed POINT # (rotate toward):","",cj=>{
         if(cj===null)return;
-        const j=parseInt(cj,10);
-        if(!(j>=0&&j<nC)||j===i){alert("Pick a different corner 0–"+(nC-1)+".");return;}
+        const j=toIdx(cj);
+        if(j<0||j===i){alert("Enter a different cyan deed point number.");return;}
         calculatorInput("…onto measured point #:","",pb=>{
           if(pb===null||pb==="")return;
           const B=points.find(p=>p.Point===parseInt(pb,10));
@@ -7826,6 +7874,40 @@ function _deedPasteModal(prefill){
     });
   });
 }
+/* — Slide & rotate mode: manipulate the deed overlay directly on the map,
+     like sliding a mylar on a light table. One finger drags, two fingers
+     rotate about the touch midpoint. Cyan points sync live. — */
+let _deedAdjust=false,_deedAdjSnap=null;
+function _deedAdjustStart(){
+  if(!_deedPlot)return;
+  _deedAdjSnap={pobE:_deedPlot.pobE,pobN:_deedPlot.pobN,rot:_deedPlot.rot||0};
+  _deedAdjust=true;plotPoints();
+}
+function _deedAdjustEnd(lock){
+  if(!lock&&_deedAdjSnap){
+    _deedPlot.pobE=_deedAdjSnap.pobE;_deedPlot.pobN=_deedAdjSnap.pobN;_deedPlot.rot=_deedAdjSnap.rot;
+    _deedRecompute();
+  }
+  _deedAdjust=false;_deedAdjSnap=null;
+  if(lock)saveData(); else plotPoints();
+}
+function _deedTranslate(dE,dN){
+  _deedPlot.pobE+=dE;_deedPlot.pobN+=dN;_deedRecompute();plotPoints();
+}
+function _deedRotateAbout(pivotE,pivotN,dAdeg){
+  const rad=Math.PI/180,c=Math.cos(dAdeg*rad),sn=Math.sin(dAdeg*rad);
+  const rE=_deedPlot.pobE-pivotE,rN=_deedPlot.pobN-pivotN;
+  _deedPlot.pobE=pivotE+(rE*c+rN*sn);
+  _deedPlot.pobN=pivotN+(-rE*sn+rN*c);
+  _deedPlot.rot=(_deedPlot.rot||0)+dAdeg;
+  _deedRecompute();plotPoints();
+}
+function _screenToWorld(sx,sy){
+  const c=document.getElementById("plotCanvas");
+  const w=c.clientWidth,h=c.clientHeight;
+  const T=_viewTransform(w,h);if(!T)return null;
+  return{E:(sx-T.offX)/T.scale,N:(h-sy-T.offY)/T.scale};
+}
 function deedPlotterMenu(){
   if(!_deedPlot){
     _deedPasteModal("");
@@ -7846,6 +7928,7 @@ function deedPlotterMenu(){
     r.oninput=()=>{_deedPlot.rot=parseFloat(r.value);_deedRecompute();plotPoints();};
     r.onchange=()=>saveData();
     w.appendChild(r);modal.appendChild(w);
+    mk("🖐 Slide & rotate on the imagery","ok",()=>{close();_deedAdjustStart();});
     mk("⇲ Fit to 2 measured points","ok",()=>{close();_deedFitTwoPoint();});
     mk("Set exact swing angle","blue",()=>{close();
       calculatorInput("Swing (degrees, + clockwise):",String(_deedPlot.rot||0),v=>{
@@ -7854,25 +7937,29 @@ function deedPlotterMenu(){
       });});
     mk("Move POB","blue",()=>{const calls=_deedPlot.calls;close();_deedPickPOB(calls);});
     mk("Re-edit calls","blue",()=>{const calls=_deedPlot.calls;close();_deedReview(calls);});
-    mk("Convert to points & lines","ok",()=>{close();
-      confirmDialog("Create "+( _deedPlot.computed.verts.length)+" points and connect them? (Curves come in as straight chords.)",yes=>{
+    mk("🔗 Draw lines between deed points","ok",()=>{close();
+      confirmDialog("Connect the deed points with dashed lines? (Curves connect as straight chords.)",yes=>{
         if(!yes)return;
-        _takeSnapshot("Deed → points");
-        let prev=null;
-        _deedPlot.computed.verts.forEach((v,i)=>{
-          const num=pointCounter++;
-          points.push({Point:num,Northing:v.N,Easting:v.E,
-            Elevation:(currentPoint?currentPoint.Elevation:100)||100,
-            Type:"Deed",Flag:"",ih:0,Description:i===0?"POB (deed)":"Deed crn "+i});
-          if(prev!=null)plotConnections.push({type:"line",from:prev,to:num,style:"dashed"});
-          prev=num;
-        });
-        saveData();updateStatus();
-        showResult("✓ Deed converted",[{lbl:"Points:",val:String(_deedPlot.computed.verts.length)}]);
+        _takeSnapshot("Deed lines");
+        const nums=_deedPlot.ptNums||[];
+        for(let i=1;i<nums.length;i++){
+          if(!plotConnections.some(c=>c.type==="line"&&((c.from===nums[i-1]&&c.to===nums[i])||(c.from===nums[i]&&c.to===nums[i-1]))))
+            plotConnections.push({type:"line",from:nums[i-1],to:nums[i],style:"dashed"});
+        }
+        saveData();
       });});
-    mk("Clear deed overlay","danger",()=>{
-      confirmDialog("Remove the deed overlay? (Converted points stay.)",yes=>{
-        if(!yes)return;_deedPlot=null;saveData();});
+    mk("🔓 Detach points (stop syncing to deed)","blue",()=>{close();
+      confirmDialog("Keep the deed points as regular points? They'll no longer move with swing/fit, and the overlay is removed.",yes=>{
+        if(!yes)return;
+        (points.filter(p=>p.Type==="Deed"&&(_deedPlot.ptNums||[]).includes(p.Point))).forEach(p=>{p.Type="COGO";});
+        _deedPlot=null;saveData();updateStatus();
+      });});
+    mk("Clear deed & its points","danger",()=>{
+      confirmDialog("Remove the deed overlay AND its cyan points?",yes=>{
+        if(!yes)return;
+        _takeSnapshot("Clear deed");
+        _deedRemovePoints();
+        _deedPlot=null;saveData();updateStatus();});
       close();});
     mk("Done","",close);
   });
@@ -8419,6 +8506,7 @@ function _shiftAllCoords(dE,dN){
     (pl.segs||[]).forEach(sg=>{if(sg&&sg.type==="arc"){sg.centerE+=dE;sg.centerN+=dN;}});
   });
   _areaLabels.forEach(l=>{l.E+=dE;l.N+=dN;});
+  if(typeof _deedPlot!=="undefined"&&_deedPlot){_deedPlot.pobE+=dE;_deedPlot.pobN+=dN;if(_deedPlot.computed)_deedRecompute();}
 }
 
 /* — GPS fix with an acquiring modal — */
@@ -9009,6 +9097,7 @@ function plotPoints(extCtx,extW,extH){
     if(p.Flag==="control"){color="#4a9eff";shape="triangle"}
     else if(p.Flag==="flagged"){color="#f5a623";shape="diamond"}
     else if(p.Type==="COGO"){color="#a78bfa";shape="square"}
+    else if(p.Type==="Deed"){color="#25c8d8";shape="diamond"}
     else if(p.Type==="Import"){color="#60c8e8"}
     ctx.fillStyle=isOcc?(lightMode?"#1a1a1a":"#ffffff"):color;
     ctx.beginPath();
@@ -9312,14 +9401,33 @@ function plotPoints(extCtx,extW,extH){
       ctx.setLineDash([]);
       ctx.font="bold 10px 'Courier New',monospace";ctx.textAlign="left";
       ctx.fillStyle="#25c8d8";
-      g.verts.forEach((v,i)=>{
-        const vx=X(v.E),vy=Y(v.N);
-        if(i===0){ctx.fillRect(vx-5,vy-5,10,10);ctx.fillText("POB·0",vx+8,vy-8);}
-        else{ctx.beginPath();ctx.arc(vx,vy,3,0,2*Math.PI);ctx.fill();ctx.fillText(String(i),vx+7,vy-6);}
-      });
+      const p0x=X(g.verts[0].E),p0y=Y(g.verts[0].N);
+      ctx.fillRect(p0x-5,p0y-5,10,10);
+      ctx.fillText("POB",p0x+8,p0y-8);
       ctx.restore();
     }
   }catch(e){}
+  if(_deedAdjust&&!extCtx){
+    ctx.save();
+    ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="middle";
+    const hint=(window.matchMedia&&matchMedia("(pointer:fine)").matches)
+      ?"🖐 drag to slide · swing slider to rotate":"🖐 drag to slide · two fingers to rotate";
+    const hw=ctx.measureText(hint).width;
+    ctx.fillStyle="rgba(10,90,100,.85)";ctx.fillRect(w/2-hw/2-12,10,hw+24,24);
+    ctx.fillStyle="#bff3fa";ctx.fillText(hint,w/2,22);
+    // LOCK + CANCEL buttons
+    const bw=130,bh=40,gap=14;
+    const lx=w/2-bw-gap/2, cx2=w/2+gap/2, by=h-bh-16;
+    window._deedLockBtn={x:lx,y:by,w:bw,h:bh};
+    window._deedCancelBtn={x:cx2,y:by,w:bw,h:bh};
+    ctx.fillStyle="rgba(25,110,45,.92)";ctx.strokeStyle="#59d97c";ctx.lineWidth=1.5;
+    ctx.fillRect(lx,by,bw,bh);ctx.strokeRect(lx,by,bw,bh);
+    ctx.fillStyle="#c6ffd8";ctx.fillText("✓ LOCK IN",lx+bw/2,by+bh/2);
+    ctx.fillStyle="rgba(90,25,25,.92)";ctx.strokeStyle="#e07a5f";
+    ctx.fillRect(cx2,by,bw,bh);ctx.strokeRect(cx2,by,bw,bh);
+    ctx.fillStyle="#ffd9cf";ctx.fillText("✕ Cancel",cx2+bw/2,by+bh/2);
+    ctx.restore();
+  }else{window._deedLockBtn=null;window._deedCancelBtn=null;}
   if(window._deedPobCalls&&!extCtx){
     ctx.save();
     ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="top";
@@ -9474,6 +9582,7 @@ function zoomToOccupied(){
     // synthesized contextmenu event — debounce so only one modal opens.
     if(Date.now()-(window._lpLast||0)<1200) return;
     window._lpLast=Date.now();
+    if(_deedAdjust)return;
     // Deed POB pick mode
     if(window._deedPobCalls){
       const calls=window._deedPobCalls; window._deedPobCalls=null;
@@ -9566,6 +9675,14 @@ function zoomToOccupied(){
     const dx=e.clientX-_mLastX, dy=e.clientY-_mLastY;
     if(!_mDragged && Math.hypot(e.clientX-_mLastX,e.clientY-_mLastY)<4)return;
     _mDragged=true;
+    if(_deedAdjust&&_deedPlot){
+      const rect=canvas.getBoundingClientRect();
+      const a=_screenToWorld(_mLastX-rect.left,_mLastY-rect.top);
+      const b=_screenToWorld(e.clientX-rect.left,e.clientY-rect.top);
+      if(a&&b)_deedTranslate(b.E-a.E,b.N-a.N);
+      _mLastX=e.clientX;_mLastY=e.clientY;
+      return;
+    }
     viewOffsetX+=dx;
     viewOffsetY-=dy;
     _mLastX=e.clientX; _mLastY=e.clientY;
@@ -9599,6 +9716,11 @@ function zoomToOccupied(){
   let _lpTimer=null, _lpStartX=0, _lpStartY=0;
 
   canvas.addEventListener("touchstart",e=>{
+    if(_deedAdjust){
+      window._daPrev=[...e.touches].map(t=>({x:t.clientX,y:t.clientY}));
+      clearTimeout(_lpTimer);_lpTimer=null;
+      return;
+    }
     if(e.touches.length===2){
       isPinching = true;
       lastTouches=[...e.touches];
@@ -9635,6 +9757,7 @@ function zoomToOccupied(){
   },{passive:true});
 
   canvas.addEventListener("touchend",e=>{
+    if(_deedAdjust){window._daPrev=e.touches.length?[...e.touches].map(t=>({x:t.clientX,y:t.clientY})):null;}
     clearTimeout(_lpTimer); _lpTimer=null;
     if(isPinching && e.touches.length===1){
       lastX=e.touches[0].clientX;
@@ -9648,6 +9771,30 @@ function zoomToOccupied(){
 
   canvas.addEventListener("touchmove",e=>{
     e.preventDefault();
+    if(_deedAdjust&&_deedPlot){
+      const now=[...e.touches].map(t=>({x:t.clientX,y:t.clientY}));
+      const prev=window._daPrev;
+      if(prev&&prev.length===now.length){
+        const rect=canvas.getBoundingClientRect();
+        if(now.length===1){
+          const a=_screenToWorld(prev[0].x-rect.left,prev[0].y-rect.top);
+          const b=_screenToWorld(now[0].x-rect.left,now[0].y-rect.top);
+          if(a&&b)_deedTranslate(b.E-a.E,b.N-a.N);
+        }else if(now.length>=2){
+          const angP=Math.atan2(prev[1].y-prev[0].y,prev[1].x-prev[0].x);
+          const angN=Math.atan2(now[1].y-now[0].y,now[1].x-now[0].x);
+          let dA=(angN-angP)*180/Math.PI;
+          if(dA>180)dA-=360; if(dA<-180)dA+=360;
+          const mPx=(prev[0].x+prev[1].x)/2-rect.left, mPy=(prev[0].y+prev[1].y)/2-rect.top;
+          const mNx=(now[0].x+now[1].x)/2-rect.left,  mNy=(now[0].y+now[1].y)/2-rect.top;
+          const mP=_screenToWorld(mPx,mPy), mN=_screenToWorld(mNx,mNy);
+          if(mP)_deedRotateAbout(mP.E,mP.N,dA);
+          if(mP&&mN)_deedTranslate(mN.E-mP.E,mN.N-mP.N);
+        }
+      }
+      window._daPrev=now;
+      return;
+    }
     if(e.touches.length===2){
       isPinching = true;
       if(lastTouches){
@@ -9687,6 +9834,20 @@ function zoomToOccupied(){
     const T=_viewTransform(w,h);if(!T)return;
     const rect=c.getBoundingClientRect();
     const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    // Deed adjust mode: only the LOCK/CANCEL buttons are tappable
+    if(_deedAdjust){
+      const inBtn=(b)=>b&&mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h;
+      if(inBtn(window._deedLockBtn)){
+        _deedAdjustEnd(true);
+        const g=_deedPlot.computed;
+        showResult("✓ Deed locked in",[
+          {lbl:"Swing:",val:(_deedPlot.rot||0).toFixed(3)+"°"},
+          {lbl:"Closure:",val:g.closeDist.toFixed(2)+" "+units+(g.precision?" (1:"+g.precision+")":"")},
+          {lbl:"Placement:",val:"by eye on imagery — fit to monuments for record work"}]);
+      }
+      else if(inBtn(window._deedCancelBtn)) _deedAdjustEnd(false);
+      return;
+    }
     // Stop GPS navigation via the ✕ on the panel
     const sb=window._stakeStopBtn;
     if(sb&&Math.hypot(mx-sb.x,my-sb.y)<=sb.r){
