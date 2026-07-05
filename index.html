@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.0">
+<meta name="application-name" content="ChainLink-v4.3.1">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.0</title>
+<title>ChainLink Survey v4.3.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.0";
+const APP_VERSION = "4.3.1";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7824,53 +7824,66 @@ function _deedReviewFigures(figs){
           _deedReview(f.calls,{title:f.name,doneLabel:"✓ Done — back to figures",
             onDone:()=>_deedReviewFigures(figs)});});
     });
-    mk("Plot all figures →","ok",()=>{close();_deedPlaceFigures(figs,0);});
+    mk("Plot the record →","ok",()=>{close();_deedPlaceFigures(figs);});
     mk("Cancel","",()=>{close();
       if(window._deferredJobSetup){window._pendingSetup=window._deferredJobSetup;window._deferredJobSetup=null;}
     });
   });
 }
-function _deedPlaceFigures(figs,idx){
-  if(idx>=figs.length){
-    const placed=figs.filter(f=>f.pobE!=null);
-    if(!placed.length){_deedPlot=null;return;}
-    _deedPlot=_mkDeed(placed,0);
-    _deedRecompute();saveData();
-    const b=_deedPlot.figures.find(f=>f.kind==="boundary");
-    const net=_deedNetAcres();
-    if(window._deferredJobSetup){window._pendingSetup=window._deferredJobSetup;window._deferredJobSetup=null;}
-    showResult("📜 Deed Plotted",[
-      {lbl:"Figures:",val:_deedPlot.figures.map(f=>f.name).join(", ")},
-      ...(b&&b.computed?[{lbl:"Boundary closure:",val:b.computed.closeDist.toFixed(2)+" "+units+(b.computed.precision?" (1:"+b.computed.precision+")":"")}]:[]),
-      ...(net!=null?[{lbl:"Net area:",val:net.toFixed(2)+" acres (boundary − exceptions)"}]:[]),
-      {lbl:"Next:",val:"COGO → Deed Plotter to swing / fit / adjust"}]);
-    return;
-  }
-  const f=figs[idx];
+function _deedResolveFigures(figs,E,N){
+  // The record is rigid: boundary POB is given; every secondary figure with
+  // tie courses is positioned by RUNNING ITS TIES from the parent POB.
+  // Figures with no ties (position given only in prose) stack at the parent
+  // POB, flagged for the per-figure Move tool.
+  let stacked=0;
+  figs.forEach(f=>{
+    if(f.kind==="boundary"){f.pobE=E;f.pobN=N;return;}
+    const ties=f.calls.filter(c=>c.tie).map(c=>Object.assign({},c,{tie:false}));
+    if(ties.length){
+      const t=computeDeed(ties,E,N,0);
+      const last=t.verts[t.verts.length-1];
+      f.pobE=last.E;f.pobN=last.N;
+    }else{
+      f.pobE=E;f.pobN=N;f.autoStacked=true;stacked++;
+    }
+  });
+  _deedPlot=_mkDeed(figs,0);
+  _deedRecompute();saveData();
+  const b=_deedPlot.figures.find(f=>f.kind==="boundary");
+  const net=_deedNetAcres();
+  if(window._deferredJobSetup){window._pendingSetup=window._deferredJobSetup;window._deferredJobSetup=null;}
+  showResult("📜 Deed Plotted — "+figs.length+" figures",[
+    {lbl:"Figures:",val:_deedPlot.figures.map(f=>f.name).join(", ")},
+    ...(b&&b.computed?[{lbl:"Boundary closure:",val:b.computed.closeDist.toFixed(2)+" "+units+(b.computed.precision?" (1:"+b.computed.precision+")":"")}]:[]),
+    ...(net!=null?[{lbl:"Net area:",val:net.toFixed(2)+" acres (boundary − exceptions)"}]:[]),
+    ...(figs.some(f=>f.kind!=="boundary"&&f.calls.some(c=>c.tie))?[{lbl:"Auto-placed:",val:"tied figures positioned by their tie courses from the POB"}]:[]),
+    ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"no tie in the deed — stacked at the POB. Use 🖐 Move one figure to drag into place."}]:[])]);
+}
+function _deedPlaceFigures(figs){
   openModal((modal,close)=>{
-    modal.innerHTML="<h2>Place: "+f.name+"</h2><p class='info'>"+
-      (f.kind==="except"?"Carve-outs usually begin at or near a parent corner — the cyan deed points work as references.":
-       f.kind==="easement"?"Easement lines usually begin at a described point on the boundary.":
-       "Where does the first call start?")+"</p>";
+    modal.innerHTML="<h2>Place the Record</h2><p class='info'>One Point of Beginning places everything: tied carve-outs position themselves from their tie courses; untied figures can be dragged after.</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk("At an existing point # (incl. deed points)","ok",()=>{close();
-      calculatorInput(f.name+" POB at point #:","",pn=>{
-        if(pn===null||pn===""){_deedPlaceFigures(figs,idx);return;}
+    mk("At an existing point #","ok",()=>{close();
+      calculatorInput("Boundary POB at point #:","",pn=>{
+        if(pn===null||pn==="")return;
         const pt=points.find(p=>p.Point===parseInt(pn,10));
-        if(!pt){alert("Point "+pn+" not found.");_deedPlaceFigures(figs,idx);return;}
-        f.pobE=pt.Easting;f.pobN=pt.Northing;_deedPlaceFigures(figs,idx+1);
+        if(!pt){alert("Point "+pn+" not found.");return;}
+        _deedResolveFigures(figs,pt.Easting,pt.Northing);
       });});
-    mk("✛ "+_pressWord(true)+" it on the map","blue",()=>{close();
-      window._deedPobCb=(E,N)=>{f.pobE=E;f.pobN=N;_deedPlaceFigures(figs,idx+1);};
-      window._deedPobLabel=f.name;
-      if(idx>0){
-        const placed=figs.slice(0,idx).filter(x=>x.pobE!=null);
-        if(placed.length){_deedPlot=_mkDeed(placed,0);_deedRecompute();}
-      }
+    mk("✛ "+_pressWord(true)+" the POB on the map","blue",()=>{close();
+      window._deedPobCb=(E,N)=>_deedResolveFigures(figs,E,N);
+      window._deedPobLabel="Boundary POB";
       plotPoints();});
+    mk("🖐 Slide & rotate to fit the imagery","blue",()=>{close();
+      const c=document.getElementById("plotCanvas");
+      const mid=_screenToWorld(c.clientWidth/2,c.clientHeight/2);
+      _deedResolveFigures(figs,mid?mid.E:0,mid?mid.N:0);
+      closeAllModals();
+      _deedAdjustStart();
+    });
     if(geoAnchor)mk("🎯 Grid coordinate (SPC/UTM)","blue",()=>{close();
-      _gridCoordEntry((lat,lon,zone,Nu,Eu)=>{f.pobE=Eu;f.pobN=Nu;_deedPlaceFigures(figs,idx+1);});});
-    mk("Skip this figure","",()=>{close();_deedPlaceFigures(figs,idx+1);});
+      _gridCoordEntry((lat,lon,zone,Nu,Eu)=>{_deedResolveFigures(figs,Eu,Nu);});});
+    mk("Cancel","",close);
   });
 }
 function _deedFitTwoPoint(){
@@ -8032,7 +8045,7 @@ function _deedPasteModal(prefill){
 /* — Slide & rotate mode: manipulate the deed overlay directly on the map,
      like sliding a mylar on a light table. One finger drags, two fingers
      rotate about the touch midpoint. Cyan points sync live. — */
-let _deedAdjust=false,_deedAdjSnap=null;
+let _deedAdjust=false,_deedAdjSnap=null,_deedAdjustScope=null; // null = whole record; index = one figure
 function _deedAdjustStart(){
   if(!_deedPlot)return;
   _deedAdjSnap={rot:_deedPlot.rot||0,pobs:_deedPlot.figures.map(f=>({E:f.pobE,N:f.pobN}))};
@@ -8044,14 +8057,20 @@ function _deedAdjustEnd(lock){
     _deedPlot.figures.forEach((f,i)=>{f.pobE=_deedAdjSnap.pobs[i].E;f.pobN=_deedAdjSnap.pobs[i].N;});
     _deedRecompute();
   }
-  _deedAdjust=false;_deedAdjSnap=null;
+  if(lock&&_deedAdjustScope!=null){const f=_deedPlot.figures[_deedAdjustScope];if(f)f.autoStacked=false;}
+  _deedAdjust=false;_deedAdjSnap=null;_deedAdjustScope=null;
   if(lock)saveData(); else plotPoints();
 }
 function _deedTranslate(dE,dN){
-  _deedPlot.figures.forEach(f=>{if(f.pobE!=null){f.pobE+=dE;f.pobN+=dN;}});
+  _deedPlot.figures.forEach((f,i)=>{
+    if(f.pobE==null)return;
+    if(_deedAdjustScope!=null&&i!==_deedAdjustScope)return;
+    f.pobE+=dE;f.pobN+=dN;
+  });
   _deedRecompute();plotPoints();
 }
 function _deedRotateAbout(pivotE,pivotN,dAdeg){
+  if(_deedAdjustScope!=null)return; // single-figure move is translate-only: basis of bearings is shared
   const rad=Math.PI/180,c=Math.cos(dAdeg*rad),sn=Math.sin(dAdeg*rad);
   _deedPlot.figures.forEach(f=>{
     if(f.pobE==null)return;
@@ -8090,15 +8109,34 @@ function deedPlotterMenu(){
     w.innerHTML="<div class='input-label'>Swing (±3° fine)</div>";
     const r=document.createElement("input");r.type="range";r.min=-3;r.max=3;r.step=0.005;r.value=_deedPlot.rot||0;
     r.style.width="100%";
-    r.oninput=()=>{_deedPlot.rot=parseFloat(r.value);_deedRecompute();plotPoints();};
+    r.oninput=()=>{
+      const bp=_deedPlot.figures.find(f=>f.kind==="boundary")||_deedPlot.figures[0];
+      _deedRotateAbout(bp.pobE,bp.pobN,parseFloat(r.value)-(_deedPlot.rot||0));
+    };
     r.onchange=()=>saveData();
     w.appendChild(r);modal.appendChild(w);
     mk("🖐 Slide & rotate on the imagery","ok",()=>{close();_deedAdjustStart();});
+    if(_deedPlot.figures.length>1)
+      mk("🖐 Move one figure","blue",()=>{close();
+        openModal((m2,c2)=>{
+          m2.innerHTML="<h2>Move which figure?</h2><p class='info'>Drag with one finger. Rotation stays with the record.</p>";
+          _deedPlot.figures.forEach((f,i)=>{
+            const b=document.createElement("button");b.className="btn blue";
+            b.textContent=f.name+(f.autoStacked?"  ⚠ needs placing":"");
+            b.onclick=()=>{c2();_deedAdjustScope=i;_deedAdjustStart();};
+            m2.appendChild(b);});
+          const cc=document.createElement("button");cc.className="btn";cc.textContent="Back";
+          cc.onclick=()=>{c2();deedPlotterMenu();};m2.appendChild(cc);
+        });});
     mk("⇲ Fit to 2 measured points","ok",()=>{close();_deedFitTwoPoint();});
     mk("Set exact swing angle","blue",()=>{close();
       calculatorInput("Swing (degrees, + clockwise):",String(_deedPlot.rot||0),v=>{
         if(v===null)return;const x=parseFloat(v);
-        if(!isNaN(x)){_deedPlot.rot=x;_deedRecompute();saveData();}
+        if(!isNaN(x)){
+          const bp=_deedPlot.figures.find(f=>f.kind==="boundary")||_deedPlot.figures[0];
+          _deedRotateAbout(bp.pobE,bp.pobN,x-(_deedPlot.rot||0));
+          saveData();
+        }
       });});
     mk("Move POB","blue",()=>{const calls=_deedPlot.calls;close();_deedPickPOB(calls);});
     mk("Re-edit calls","blue",()=>{close();
@@ -9590,8 +9628,10 @@ function plotPoints(extCtx,extW,extH){
   if(_deedAdjust&&!extCtx){
     ctx.save();
     ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="middle";
-    const hint=(window.matchMedia&&matchMedia("(pointer:fine)").matches)
-      ?"🖐 drag to slide · swing slider to rotate":"🖐 drag to slide · two fingers to rotate";
+    const hint=_deedAdjustScope!=null
+      ?("🖐 moving: "+((_deedPlot.figures[_deedAdjustScope]||{}).name||"figure")+" — drag to position")
+      :((window.matchMedia&&matchMedia("(pointer:fine)").matches)
+        ?"🖐 drag to slide · swing slider to rotate":"🖐 drag to slide · two fingers to rotate");
     const hw=ctx.measureText(hint).width;
     ctx.fillStyle="rgba(10,90,100,.85)";ctx.fillRect(w/2-hw/2-12,10,hw+24,24);
     ctx.fillStyle="#bff3fa";ctx.fillText(hint,w/2,22);
