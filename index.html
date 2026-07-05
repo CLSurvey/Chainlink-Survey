@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.1">
+<meta name="application-name" content="ChainLink-v4.3.4">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.1</title>
+<title>ChainLink Survey v4.3.4</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.1";
+const APP_VERSION = "4.3.4";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7635,6 +7635,20 @@ function _deedArea(g){
   });
   return Math.abs(A+ (A>0?seg:-seg));
 }
+function _deedInPoly(E,N,verts){
+  let inside=false;
+  for(let i=0,j=verts.length-2;i<verts.length-1;j=i++){
+    const xi=verts[i].E,yi=verts[i].N,xj=verts[j].E,yj=verts[j].N;
+    if(((yi>N)!==(yj>N))&&(E<(xj-xi)*(N-yi)/(yj-yi)+xi))inside=!inside;
+  }
+  return inside;
+}
+function _deedExceptOutside(f){
+  if(f.kind!=="except"||!f.computed)return false;
+  const b=_deedPlot&&_deedPlot.figures.find(x=>x.kind==="boundary");
+  if(!b||!b.computed)return false;
+  return f.computed.verts.some(v=>!_deedInPoly(v.E,v.N,b.computed.verts));
+}
 function _deedNetAcres(){
   if(!_deedPlot)return null;
   let net=0,any=false;
@@ -7855,7 +7869,7 @@ function _deedResolveFigures(figs,E,N){
   showResult("📜 Deed Plotted — "+figs.length+" figures",[
     {lbl:"Figures:",val:_deedPlot.figures.map(f=>f.name).join(", ")},
     ...(b&&b.computed?[{lbl:"Boundary closure:",val:b.computed.closeDist.toFixed(2)+" "+units+(b.computed.precision?" (1:"+b.computed.precision+")":"")}]:[]),
-    ...(net!=null?[{lbl:"Net area:",val:net.toFixed(2)+" acres (boundary − exceptions)"}]:[]),
+    ...(net!=null?[{lbl:"Net area:",val:net.toFixed(2)+" acres (boundary − exceptions)"+(_deedPlot.figures.some(_deedExceptOutside)?" — verify after placing ⚠ figures":"")}]:[]),
     ...(figs.some(f=>f.kind!=="boundary"&&f.calls.some(c=>c.tie))?[{lbl:"Auto-placed:",val:"tied figures positioned by their tie courses from the POB"}]:[]),
     ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"no tie in the deed — stacked at the POB. Use 🖐 Move one figure to drag into place."}]:[])]);
 }
@@ -8098,10 +8112,11 @@ function deedPlotterMenu(){
   const net=_deedNetAcres();
   openModal((modal,close)=>{
     modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>"+
-      (_deedPlot.figures.length>1?_deedPlot.figures.map(f=>f.name).join(" · ")+"<br>":"")+
+      (_deedPlot.figures.length>1?_deedPlot.figures.map(f=>f.name+(_deedExceptOutside(f)?" ⚠outside parent":"")).join(" · ")+"<br>":"")+
       (g?("Boundary closure: <b style='color:var(--accent)'>"+g.closeDist.toFixed(2)+" "+units+"</b>"+
       (g.precision?" (1:"+g.precision+")":"")+"<br>"):"")+
-      (net!=null?("Net area: <b style='color:var(--accent)'>"+net.toFixed(2)+" ac</b> · "):"")+
+      (net!=null?("Net area: <b style='color:var(--accent)'>"+net.toFixed(2)+" ac</b>"+
+        (_deedPlot.figures.some(_deedExceptOutside)?" <span style='color:#e07a5f'>(unreliable while ⚠ outside parent — full exception areas subtracted)</span>":"")+" · "):"")+
       "swing "+(_deedPlot.rot||0).toFixed(3)+"°</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     // swing slider — rotate record calls to fit found monuments
@@ -8122,8 +8137,23 @@ function deedPlotterMenu(){
           m2.innerHTML="<h2>Move which figure?</h2><p class='info'>Drag with one finger. Rotation stays with the record.</p>";
           _deedPlot.figures.forEach((f,i)=>{
             const b=document.createElement("button");b.className="btn blue";
-            b.textContent=f.name+(f.autoStacked?"  ⚠ needs placing":"");
-            b.onclick=()=>{c2();_deedAdjustScope=i;_deedAdjustStart();};
+            b.textContent=f.name+(f.autoStacked?"  ⚠ needs placing":(_deedExceptOutside(f)?"  ⚠ outside parent":""));
+            b.onclick=()=>{c2();
+              openModal((m3,c3)=>{
+                m3.innerHTML="<h2>"+f.name+"</h2><p class='info'>Deeds often start these at a described corner — snapping to its point number is exact.</p>";
+                const mk3=(t,cls,fn)=>{const bb=document.createElement("button");bb.className="btn "+cls;bb.textContent=t;bb.onclick=fn;m3.appendChild(bb)};
+                mk3("⌖ Snap start to point #","ok",()=>{c3();
+                  calculatorInput(f.name+" starts at point #:","",pn=>{
+                    if(pn===null||pn==="")return;
+                    const pt=points.find(p=>p.Point===parseInt(pn,10));
+                    if(!pt){alert("Point "+pn+" not found.");return;}
+                    f.pobE=pt.Easting;f.pobN=pt.Northing;f.autoStacked=false;
+                    _deedRecompute();saveData();
+                  });});
+                mk3("🖐 Drag it on the map","blue",()=>{c3();_deedAdjustScope=i;_deedAdjustStart();});
+                mk3("Back","",()=>{c3();deedPlotterMenu();});
+              });
+            };
             m2.appendChild(b);});
           const cc=document.createElement("button");cc.className="btn";cc.textContent="Back";
           cc.onclick=()=>{c2();deedPlotterMenu();};m2.appendChild(cc);
