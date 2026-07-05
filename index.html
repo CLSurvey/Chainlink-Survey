@@ -1219,6 +1219,7 @@ function loadData() {
   try { satOn=_lsGet("cl_satOn")==="true"&&!!geoAnchor; } catch(e){ satOn=false; }
   try { satOpacity=parseFloat(_lsGet("cl_satOpacity")||"0.85")||0.85; } catch(e){ satOpacity=0.85; }
   try { satRotNudge=parseFloat(_lsGet("cl_satRot")||"0")||0; } catch(e){ satRotNudge=0; }
+  try { satBasemap=_BASEMAPS[_lsGet("cl_satBase")]?_lsGet("cl_satBase"):"esri"; } catch(e){ satBasemap="esri"; }
   try { if(geoAnchor&&satOn&&_lsGet("cl_gpsLive")!=="off")startLiveGps(); else stopLiveGps(); } catch(e){}
   try { _syncSatBtn(); } catch(e){}
   updateStatus(); plotPoints(); _updateUndoBtn();
@@ -1251,6 +1252,7 @@ function saveData() {
   _lsSet("cl_satOn",      String(satOn));
   _lsSet("cl_satOpacity", String(satOpacity));
   _lsSet("cl_satRot",     String(satRotNudge));
+  _lsSet("cl_satBase",    satBasemap);
   updateStatus(); plotPoints();
   // Auto-save to file if we have a directory handle
   _autoSaveToFile();
@@ -2041,6 +2043,45 @@ function exportSVG(){
 }
 
 /* ── GEOJSON EXPORT (GIS interchange — local grid coords) ─────── */
+function exportKML(){
+  if(!requirePro("KML export")) return;
+  if(!geoAnchor){alert("KML needs a georeferenced job — anchor it first via the 🛰 menu.");return;}
+  const esc=_xmlEsc;
+  const co=(E,N)=>{const ll=_jobToLL(E,N);return ll.lon.toFixed(8)+","+ll.lat.toFixed(8)+",0";};
+  let k='<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>';
+  k+="<name>"+esc(jobName||"ChainLink Survey")+"</name>";
+  k+='<Style id="pt"><IconStyle><scale>0.7</scale></IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>';
+  k+='<Style id="ln"><LineStyle><color>ff00a5ff</color><width>2.5</width></LineStyle></Style>';
+  points.forEach(p=>{
+    k+='<Placemark><styleUrl>#pt</styleUrl><name>'+p.Point+'</name>';
+    if(p.Description)k+="<description>"+esc(p.Description)+"</description>";
+    k+="<Point><coordinates>"+co(p.Easting,p.Northing)+"</coordinates></Point></Placemark>";
+  });
+  plotConnections.forEach(c=>{
+    if(c.type==="arc")return; // arcs exported as their endpoints elsewhere
+    const a=points.find(p=>p.Point===c.from),b=points.find(p=>p.Point===c.to);
+    if(!a||!b)return;
+    k+='<Placemark><styleUrl>#ln</styleUrl><LineString><tessellate>1</tessellate><coordinates>'+
+       co(a.Easting,a.Northing)+" "+co(b.Easting,b.Northing)+"</coordinates></LineString></Placemark>";
+  });
+  (typeof _polylines!=="undefined"?_polylines:[]).forEach(pl=>{
+    const vs=(pl.verts||[]);
+    if(vs.length<2)return;
+    k+='<Placemark><styleUrl>#ln</styleUrl><LineString><tessellate>1</tessellate><coordinates>'+
+       vs.map(v=>co(v.E,v.N)).join(" ")+"</coordinates></LineString></Placemark>";
+  });
+  k+="</Document></kml>";
+  const blob=new Blob([k],{type:"application/vnd.google-earth.kml+xml"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=(jobName||"survey")+".kml";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showResult("✓ KML Exported",[
+    {lbl:"Points:",val:String(points.length)},
+    {lbl:"Datum:",val:"WGS84 via "+geoAnchor.zoneName+" anchor"},
+    {lbl:"Note:",val:"arcs export as straight chords"}]);
+}
 function exportGeoJSON(){
   if(!requirePro("GeoJSON export")) return;
   const feats=[];
@@ -4097,6 +4138,19 @@ function stakeoutMenu(){
     mk("Stake to Stored Point","ok",()=>{close();stakeStoredPoint()});
     mk("Stake to Entered Coords","blue",()=>{close();stakeEnteredCoords()});
     mk("Stake to Line","",()=>{close();stakeToLine()});
+    if(geoAnchor){
+      mk(_gpsStakeTarget?"📡 GPS Navigate: → #"+_gpsStakeTarget+" (tap to stop)":"📡 GPS Navigate to Point","accent",()=>{
+        close();
+        if(_gpsStakeTarget){_gpsStakeTarget=null;plotPoints();return;}
+        calculatorInput("Navigate to point #:","",pn=>{
+          if(pn===null||pn==="")return;
+          const pt=points.find(p=>p.Point===parseInt(pn,10));
+          if(!pt){alert("Point "+pn+" not found.");return;}
+          _gpsStakeTarget=pt.Point;
+          startLiveGps();plotPoints();
+        });
+      });
+    }
     mk("Cancel","",close);
   });
 }
@@ -5174,6 +5228,7 @@ function moreMenu(){
     mk("📒 Export Fieldbook","blue",()=>{close();exportFieldbook()});
     mk("🖼 Export SVG","blue",()=>{close();exportSVG()});
     mk("🌐 Export GeoJSON","blue",()=>{close();exportGeoJSON()});
+    if(geoAnchor)mk("🌍 Export KML (Google Earth)","blue",()=>{close();exportKML()});
     mk("📥 Load CSV from File","blue",()=>{close();loadFromFile()});
     mk("📥 Import DXF","blue",()=>{close();importDXF()});
     mk("📥 Import LandXML","blue",()=>{close();importLandXML()});
@@ -7300,7 +7355,13 @@ function _drawScaleBar(ctx,w,h,scale){
    visual context ONLY — never measure against it. */
 
 let geoAnchor=null;          // {lat,lon,E,N,mx,my,conv,zoneName,m2u}
-let satOn=false, satOpacity=0.85, satRotNudge=0;
+let satOn=false, satOpacity=0.85, satRotNudge=0, satBasemap="esri";
+const _BASEMAPS={
+  esri:{url:(z,y,x)=>"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"+z+"/"+y+"/"+x,
+        maxZ:19, attr:"Imagery: Esri, Maxar, Earthstar Geographics", label:"Aerial (Esri)"},
+  topo:{url:(z,y,x)=>"https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/"+z+"/"+y+"/"+x,
+        maxZ:16, attr:"Map: USGS The National Map", label:"USGS Topo"}
+};
 const _tileCache=new Map();  // "z/x/y" -> {img,ok,err}
 let _satRafPending=false;
 function _satRepaint(){ if(_satRafPending)return; _satRafPending=true;
@@ -7341,28 +7402,144 @@ function _projForward(lat,lon,z){return z.type==="lcc"?_lccForward(lat,lon,z):_t
    zone assignment is by county). */
 const _dm=(d,m)=>(d<0?-1:1)*(Math.abs(d)+m/60);
 const _SPC_ZONES=[
- {name:"AL East (0101)", type:"tm", lat0:_dm(30,30),lon0:-_dm(85,50),k0:0.99996,        FE:200000,FN:0,bbox:[30.5,35.1,-86.75,-84.8]},
- {name:"AL West (0102)", type:"tm", lat0:30,       lon0:-_dm(87,30),k0:1-1/15000,      FE:600000,FN:0,bbox:[30.1,35.1,-88.6,-86.75]},
- {name:"GA East (1001)", type:"tm", lat0:30,       lon0:-_dm(82,10),k0:0.9999,         FE:200000,FN:0,bbox:[30.3,35.1,-83.3,-80.7]},
- {name:"GA West (1002)", type:"tm", lat0:30,       lon0:-_dm(84,10),k0:0.9999,         FE:700000,FN:0,bbox:[30.3,35.1,-85.7,-83.3]},
- {name:"MS East (2301)", type:"tm", lat0:_dm(29,30),lon0:-_dm(88,50),k0:0.99995,       FE:300000,FN:0,bbox:[30.0,35.1,-89.7,-88.0]},
- {name:"MS West (2302)", type:"tm", lat0:_dm(29,30),lon0:-_dm(90,20),k0:0.99995,       FE:700000,FN:0,bbox:[30.0,35.1,-91.8,-89.7]},
- {name:"FL East (0901)", type:"tm", lat0:_dm(24,20),lon0:-81,        k0:1-1/17000,     FE:200000,FN:0,bbox:[24.4,30.8,-82.3,-79.9]},
- {name:"FL West (0902)", type:"tm", lat0:_dm(24,20),lon0:-82,        k0:1-1/17000,     FE:200000,FN:0,bbox:[26.3,29.6,-83.5,-81.9]},
- {name:"FL North (0903)",type:"lcc",lat1:_dm(29,35),lat2:_dm(30,45),lat0:29,lon0:-_dm(84,30),FE:600000,FN:0,bbox:[29.4,31.1,-87.7,-82.0]},
- {name:"TN (4100)",      type:"lcc",lat1:_dm(35,15),lat2:_dm(36,25),lat0:_dm(34,20),lon0:-86,FE:600000,FN:0,bbox:[34.9,36.7,-90.4,-81.6]},
+ // ── SPCS83 defining constants (NAD83/GRS80, meters) ──
+ // Source: NOAA SP NOS NGS 13 (2018), Appendix A / NOAA Manual NOS NGS 5.
+ // bbox=[latMin,latMax,lonMin,lonMax] is approximate for auto-pick only;
+ // official zone assignment is by county — verify the zone for record work.
+ // Not included: AK Zone 1 (Oblique Mercator) and Guam — UTM fallback applies.
+ // — Transverse Mercator zones —
+ {name:"AL East (0101)",type:"tm",lat0:_dm(30,30),lon0:-_dm(85,50),k0:0.99996,FE:200000,FN:0,bbox:[30.5,35.1,-86.75,-84.8]},
+ {name:"AL West (0102)",type:"tm",lat0:30,lon0:-_dm(87,30),k0:1-1/15000,FE:600000,FN:0,bbox:[30.1,35.1,-88.6,-86.75]},
+ {name:"AK 2 (5002)",type:"tm",lat0:54,lon0:-142,k0:0.9999,FE:500000,FN:0,bbox:[54,72,-144,-140]},
+ {name:"AK 3 (5003)",type:"tm",lat0:54,lon0:-146,k0:0.9999,FE:500000,FN:0,bbox:[54,72,-148,-144]},
+ {name:"AK 4 (5004)",type:"tm",lat0:54,lon0:-150,k0:0.9999,FE:500000,FN:0,bbox:[54,72,-152,-148]},
+ {name:"AK 5 (5005)",type:"tm",lat0:54,lon0:-154,k0:0.9999,FE:500000,FN:0,bbox:[54,72,-156,-152]},
+ {name:"AK 6 (5006)",type:"tm",lat0:54,lon0:-158,k0:0.9999,FE:500000,FN:0,bbox:[54,72,-160,-156]},
+ {name:"AK 7 (5007)",type:"tm",lat0:54,lon0:-162,k0:0.9999,FE:500000,FN:0,bbox:[54,72,-164,-160]},
+ {name:"AK 8 (5008)",type:"tm",lat0:54,lon0:-166,k0:0.9999,FE:500000,FN:0,bbox:[54,72,-168,-164]},
+ {name:"AK 9 (5009)",type:"tm",lat0:54,lon0:-170,k0:0.9999,FE:500000,FN:0,bbox:[54,72,-173,-168]},
+ {name:"AZ East (0201)",type:"tm",lat0:31,lon0:-_dm(110,10),k0:0.9999,FE:213360,FN:0,bbox:[31.3,37.1,-111.05,-109]},
+ {name:"AZ Central (0202)",type:"tm",lat0:31,lon0:-_dm(111,55),k0:0.9999,FE:213360,FN:0,bbox:[31.3,37.1,-113,-111.05]},
+ {name:"AZ West (0203)",type:"tm",lat0:31,lon0:-_dm(113,45),k0:1-1/15000,FE:213360,FN:0,bbox:[32,37.1,-114.9,-113]},
+ {name:"DE (0700)",type:"tm",lat0:38,lon0:-_dm(75,25),k0:0.999995,FE:200000,FN:0,bbox:[38.4,39.9,-75.8,-74.9]},
+ {name:"FL East (0901)",type:"tm",lat0:_dm(24,20),lon0:-81,k0:1-1/17000,FE:200000,FN:0,bbox:[24.4,30.8,-82.05,-79.9]},
+ {name:"FL West (0902)",type:"tm",lat0:_dm(24,20),lon0:-82,k0:1-1/17000,FE:200000,FN:0,bbox:[26.3,29.6,-83.5,-81.9]},
+ {name:"GA East (1001)",type:"tm",lat0:30,lon0:-_dm(82,10),k0:0.9999,FE:200000,FN:0,bbox:[30.3,35.1,-83.3,-80.7]},
+ {name:"GA West (1002)",type:"tm",lat0:30,lon0:-_dm(84,10),k0:0.9999,FE:700000,FN:0,bbox:[30.3,35.1,-85.7,-83.3]},
+ {name:"HI 1 (5101)",type:"tm",lat0:_dm(18,50),lon0:-_dm(155,30),k0:1-1/30000,FE:500000,FN:0,bbox:[18.8,20.3,-156.1,-154.7]},
+ {name:"HI 2 (5102)",type:"tm",lat0:_dm(20,20),lon0:-_dm(156,40),k0:1-1/30000,FE:500000,FN:0,bbox:[20.4,21.3,-157.4,-155.9]},
+ {name:"HI 3 (5103)",type:"tm",lat0:_dm(21,10),lon0:-158,k0:0.99999,FE:500000,FN:0,bbox:[21.2,21.8,-158.4,-157.6]},
+ {name:"HI 4 (5104)",type:"tm",lat0:_dm(21,50),lon0:-_dm(159,30),k0:0.99999,FE:500000,FN:0,bbox:[21.8,22.3,-159.9,-159.2]},
+ {name:"HI 5 (5105)",type:"tm",lat0:_dm(21,40),lon0:-_dm(160,10),k0:1,FE:500000,FN:0,bbox:[21.7,22.1,-160.4,-160]},
+ {name:"ID East (1101)",type:"tm",lat0:_dm(41,40),lon0:-_dm(112,10),k0:1-1/19000,FE:200000,FN:0,bbox:[41.9,44.8,-113.2,-111]},
+ {name:"ID Central (1102)",type:"tm",lat0:_dm(41,40),lon0:-114,k0:1-1/19000,FE:500000,FN:0,bbox:[41.9,45.8,-115,-113.2]},
+ {name:"ID West (1103)",type:"tm",lat0:_dm(41,40),lon0:-_dm(115,45),k0:1-1/15000,FE:800000,FN:0,bbox:[42,49.1,-117.3,-115]},
+ {name:"IL East (1201)",type:"tm",lat0:_dm(36,40),lon0:-_dm(88,20),k0:1-1/40000,FE:300000,FN:0,bbox:[37,42.6,-89.3,-87.4]},
+ {name:"IL West (1202)",type:"tm",lat0:_dm(36,40),lon0:-_dm(90,10),k0:1-1/17000,FE:700000,FN:0,bbox:[36.9,42.6,-91.6,-89.3]},
+ {name:"IN East (1301)",type:"tm",lat0:_dm(37,30),lon0:-_dm(85,40),k0:1-1/30000,FE:100000,FN:250000,bbox:[37.8,41.8,-86.35,-84.7]},
+ {name:"IN West (1302)",type:"tm",lat0:_dm(37,30),lon0:-_dm(87,5),k0:1-1/30000,FE:900000,FN:250000,bbox:[37.7,41.8,-88.15,-86.35]},
+ {name:"ME East (1801)",type:"tm",lat0:_dm(43,40),lon0:-_dm(68,30),k0:1-1/10000,FE:300000,FN:0,bbox:[43.7,47.5,-70.05,-66.8]},
+ {name:"ME West (1802)",type:"tm",lat0:_dm(42,50),lon0:-_dm(70,10),k0:1-1/30000,FE:900000,FN:0,bbox:[43,46.6,-71.2,-70.05]},
+ {name:"MS East (2301)",type:"tm",lat0:_dm(29,30),lon0:-_dm(88,50),k0:0.99995,FE:300000,FN:0,bbox:[30,35.1,-89.7,-88]},
+ {name:"MS West (2302)",type:"tm",lat0:_dm(29,30),lon0:-_dm(90,20),k0:0.99995,FE:700000,FN:0,bbox:[30,35.1,-91.8,-89.7]},
+ {name:"MO East (2401)",type:"tm",lat0:_dm(35,50),lon0:-_dm(90,30),k0:1-1/15000,FE:250000,FN:0,bbox:[35.9,40.7,-91.9,-89.1]},
+ {name:"MO Central (2402)",type:"tm",lat0:_dm(35,50),lon0:-_dm(92,30),k0:1-1/15000,FE:500000,FN:0,bbox:[36,40.7,-93.8,-91.9]},
+ {name:"MO West (2403)",type:"tm",lat0:_dm(36,10),lon0:-_dm(94,30),k0:1-1/17000,FE:850000,FN:0,bbox:[36.4,40.7,-95.9,-93.8]},
+ {name:"NV East (2701)",type:"tm",lat0:_dm(34,45),lon0:-_dm(115,35),k0:0.9999,FE:200000,FN:8000000,bbox:[34.9,42.1,-116,-114]},
+ {name:"NV Central (2702)",type:"tm",lat0:_dm(34,45),lon0:-_dm(116,40),k0:0.9999,FE:500000,FN:6000000,bbox:[36,41,-117.6,-116]},
+ {name:"NV West (2703)",type:"tm",lat0:_dm(34,45),lon0:-_dm(118,35),k0:0.9999,FE:800000,FN:4000000,bbox:[38.2,42.1,-120.1,-117.6]},
+ {name:"NH (2800)",type:"tm",lat0:_dm(42,30),lon0:-_dm(71,40),k0:1-1/30000,FE:300000,FN:0,bbox:[42.6,45.4,-72.7,-70.6]},
+ {name:"NJ (2900)",type:"tm",lat0:_dm(38,50),lon0:-_dm(74,30),k0:0.9999,FE:150000,FN:0,bbox:[38.8,41.4,-75.7,-73.8]},
+ {name:"NM East (3001)",type:"tm",lat0:31,lon0:-_dm(104,20),k0:1-1/11000,FE:165000,FN:0,bbox:[31.7,37.1,-105.3,-103]},
+ {name:"NM Central (3002)",type:"tm",lat0:31,lon0:-_dm(106,15),k0:0.9999,FE:500000,FN:0,bbox:[31.7,37.1,-107.2,-105.3]},
+ {name:"NM West (3003)",type:"tm",lat0:31,lon0:-_dm(107,50),k0:1-1/12000,FE:830000,FN:0,bbox:[31.2,37.1,-109.2,-107.2]},
+ {name:"NY East (3101)",type:"tm",lat0:_dm(38,50),lon0:-_dm(74,30),k0:0.9999,FE:150000,FN:0,bbox:[40.85,45.1,-75.5,-73.2]},
+ {name:"NY Central (3102)",type:"tm",lat0:40,lon0:-_dm(76,35),k0:1-1/16000,FE:250000,FN:0,bbox:[41.9,44.4,-77.6,-75.5]},
+ {name:"NY West (3103)",type:"tm",lat0:40,lon0:-_dm(78,35),k0:1-1/16000,FE:350000,FN:0,bbox:[41.9,43.7,-79.9,-77.6]},
+ {name:"RI (3800)",type:"tm",lat0:_dm(41,5),lon0:-_dm(71,30),k0:1-1/160000,FE:100000,FN:0,bbox:[41.1,42.05,-71.95,-71]},
+ {name:"VT (4400)",type:"tm",lat0:_dm(42,30),lon0:-_dm(72,30),k0:1-1/28000,FE:500000,FN:0,bbox:[42.6,45.1,-73.5,-71.4]},
+ {name:"WY East (4901)",type:"tm",lat0:_dm(40,30),lon0:-_dm(105,10),k0:1-1/16000,FE:200000,FN:0,bbox:[40.9,45.1,-106,-104]},
+ {name:"WY E Central (4902)",type:"tm",lat0:_dm(40,30),lon0:-_dm(107,20),k0:1-1/16000,FE:400000,FN:100000,bbox:[40.9,45.1,-108,-106]},
+ {name:"WY W Central (4903)",type:"tm",lat0:_dm(40,30),lon0:-_dm(108,45),k0:1-1/16000,FE:600000,FN:0,bbox:[40.9,45.1,-109.75,-108]},
+ {name:"WY West (4904)",type:"tm",lat0:_dm(40,30),lon0:-_dm(110,5),k0:1-1/16000,FE:800000,FN:100000,bbox:[40.9,45.1,-111.1,-109.75]},
+ // — Lambert Conformal Conic zones —
+ {name:"AK 10 (5010)",type:"lcc",lat1:_dm(51,50),lat2:_dm(53,50),lat0:51,lon0:-176,FE:1000000,FN:0,bbox:[51,55.5,-180,-158]},
+ {name:"AR North (0301)",type:"lcc",lat1:_dm(34,56),lat2:_dm(36,14),lat0:_dm(34,20),lon0:-92,FE:400000,FN:0,bbox:[34.75,36.6,-94.7,-89.6]},
+ {name:"AR South (0302)",type:"lcc",lat1:_dm(33,18),lat2:_dm(34,46),lat0:_dm(32,40),lon0:-92,FE:400000,FN:400000,bbox:[32.9,34.75,-94.5,-90.2]},
+ {name:"CA 1 (0401)",type:"lcc",lat1:40,lat2:_dm(41,40),lat0:_dm(39,20),lon0:-122,FE:2000000,FN:500000,bbox:[39.6,42.1,-124.5,-119.9]},
+ {name:"CA 2 (0402)",type:"lcc",lat1:_dm(38,20),lat2:_dm(39,50),lat0:_dm(37,40),lon0:-122,FE:2000000,FN:500000,bbox:[38,39.6,-124.1,-119.5]},
+ {name:"CA 3 (0403)",type:"lcc",lat1:_dm(37,4),lat2:_dm(38,26),lat0:_dm(36,30),lon0:-_dm(120,30),FE:2000000,FN:500000,bbox:[36.7,38.1,-123.6,-117.8]},
+ {name:"CA 4 (0404)",type:"lcc",lat1:36,lat2:_dm(37,15),lat0:_dm(35,20),lon0:-119,FE:2000000,FN:500000,bbox:[35.7,36.8,-122.2,-115.6]},
+ {name:"CA 5 (0405)",type:"lcc",lat1:_dm(34,2),lat2:_dm(35,28),lat0:_dm(33,30),lon0:-118,FE:2000000,FN:500000,bbox:[32.8,35.8,-121.5,-114.1]},
+ {name:"CA 6 (0406)",type:"lcc",lat1:_dm(32,47),lat2:_dm(33,53),lat0:_dm(32,10),lon0:-_dm(116,15),FE:2000000,FN:500000,bbox:[32.4,33.3,-118,-114.4]},
+ {name:"CO North (0501)",type:"lcc",lat1:_dm(39,43),lat2:_dm(40,47),lat0:_dm(39,20),lon0:-_dm(105,30),FE:914401.8289,FN:304800.6096,bbox:[39.9,41.05,-109.1,-102]},
+ {name:"CO Central (0502)",type:"lcc",lat1:_dm(38,27),lat2:_dm(39,45),lat0:_dm(37,50),lon0:-_dm(105,30),FE:914401.8289,FN:304800.6096,bbox:[38.45,39.95,-109.1,-102]},
+ {name:"CO South (0503)",type:"lcc",lat1:_dm(37,14),lat2:_dm(38,26),lat0:_dm(36,40),lon0:-_dm(105,30),FE:914401.8289,FN:304800.6096,bbox:[36.9,38.5,-109.1,-102]},
+ {name:"CT (0600)",type:"lcc",lat1:_dm(41,12),lat2:_dm(41,52),lat0:_dm(40,50),lon0:-_dm(72,45),FE:304800.6096,FN:152400.3048,bbox:[40.9,42.1,-73.8,-71.7]},
+ {name:"FL North (0903)",type:"lcc",lat1:_dm(29,35),lat2:_dm(30,45),lat0:29,lon0:-_dm(84,30),FE:600000,FN:0,bbox:[29.4,31.05,-87.7,-82]},
+ {name:"IA North (1401)",type:"lcc",lat1:_dm(42,4),lat2:_dm(43,16),lat0:_dm(41,30),lon0:-_dm(93,30),FE:1500000,FN:1000000,bbox:[41.85,43.6,-96.7,-90.1]},
+ {name:"IA South (1402)",type:"lcc",lat1:_dm(40,37),lat2:_dm(41,47),lat0:40,lon0:-_dm(93,30),FE:500000,FN:0,bbox:[40.3,41.85,-96.2,-90.1]},
+ {name:"KS North (1501)",type:"lcc",lat1:_dm(38,43),lat2:_dm(39,47),lat0:_dm(38,20),lon0:-98,FE:400000,FN:0,bbox:[38.55,40.1,-102.1,-94.5]},
+ {name:"KS South (1502)",type:"lcc",lat1:_dm(37,16),lat2:_dm(38,34),lat0:_dm(36,40),lon0:-_dm(98,30),FE:400000,FN:400000,bbox:[36.9,38.55,-102.1,-94.5]},
+ {name:"KY North (1601)",type:"lcc",lat1:_dm(37,58),lat2:_dm(38,58),lat0:_dm(37,30),lon0:-_dm(84,15),FE:500000,FN:0,bbox:[37.9,39.2,-85.2,-82.3]},
+ {name:"KY South (1602)",type:"lcc",lat1:_dm(36,44),lat2:_dm(37,56),lat0:_dm(36,20),lon0:-_dm(85,45),FE:500000,FN:500000,bbox:[36.4,37.9,-89.6,-81.9]},
+ {name:"KY Single (1600)",type:"lcc",lat1:_dm(37,5),lat2:_dm(38,40),lat0:_dm(36,20),lon0:-_dm(85,45),FE:1500000,FN:1000000,bbox:[36.4,39.2,-89.6,-81.9]},
+ {name:"LA North (1701)",type:"lcc",lat1:_dm(31,10),lat2:_dm(32,40),lat0:_dm(30,30),lon0:-_dm(92,30),FE:1000000,FN:0,bbox:[31,33.1,-94.1,-90.8]},
+ {name:"LA South (1702)",type:"lcc",lat1:_dm(29,18),lat2:_dm(30,42),lat0:_dm(28,30),lon0:-_dm(91,20),FE:1000000,FN:0,bbox:[28.8,31,-93.95,-88.7]},
+ {name:"MD (1900)",type:"lcc",lat1:_dm(38,18),lat2:_dm(39,27),lat0:_dm(37,40),lon0:-77,FE:400000,FN:0,bbox:[37.8,39.8,-79.6,-74.9]},
+ {name:"MA Mainland (2001)",type:"lcc",lat1:_dm(41,43),lat2:_dm(42,41),lat0:41,lon0:-_dm(71,30),FE:200000,FN:750000,bbox:[41.4,42.95,-73.6,-69.9]},
+ {name:"MA Island (2002)",type:"lcc",lat1:_dm(41,17),lat2:_dm(41,29),lat0:41,lon0:-_dm(70,30),FE:500000,FN:0,bbox:[41.2,41.5,-70.9,-69.9]},
+ {name:"MI North (2111)",type:"lcc",lat1:_dm(45,29),lat2:_dm(47,5),lat0:_dm(44,47),lon0:-87,FE:8000000,FN:0,bbox:[45,48.4,-90.5,-83.3]},
+ {name:"MI Central (2112)",type:"lcc",lat1:_dm(44,11),lat2:_dm(45,42),lat0:_dm(43,19),lon0:-_dm(84,22),FE:6000000,FN:0,bbox:[43.75,45.1,-86.6,-82.3]},
+ {name:"MI South (2113)",type:"lcc",lat1:_dm(42,6),lat2:_dm(43,40),lat0:_dm(41,30),lon0:-_dm(84,22),FE:4000000,FN:0,bbox:[41.6,43.8,-87.2,-82.1]},
+ {name:"MN North (2201)",type:"lcc",lat1:_dm(47,2),lat2:_dm(48,38),lat0:_dm(46,30),lon0:-_dm(93,6),FE:800000,FN:100000,bbox:[46.6,49.5,-97.4,-89.4]},
+ {name:"MN Central (2202)",type:"lcc",lat1:_dm(45,37),lat2:_dm(47,3),lat0:45,lon0:-_dm(94,15),FE:800000,FN:100000,bbox:[45.25,46.7,-96.9,-92.1]},
+ {name:"MN South (2203)",type:"lcc",lat1:_dm(43,47),lat2:_dm(45,13),lat0:43,lon0:-94,FE:800000,FN:100000,bbox:[43.4,45.3,-96.9,-91.2]},
+ {name:"MT (2500)",type:"lcc",lat1:45,lat2:49,lat0:_dm(44,15),lon0:-_dm(109,30),FE:600000,FN:0,bbox:[44.2,49.1,-116.2,-104]},
+ {name:"NE (2600)",type:"lcc",lat1:40,lat2:43,lat0:_dm(39,50),lon0:-100,FE:500000,FN:0,bbox:[39.9,43.1,-104.2,-95.2]},
+ {name:"NY Long Island (3104)",type:"lcc",lat1:_dm(40,40),lat2:_dm(41,2),lat0:_dm(40,10),lon0:-74,FE:300000,FN:0,bbox:[40.45,41.25,-74.1,-71.7]},
+ {name:"NC (3200)",type:"lcc",lat1:_dm(34,20),lat2:_dm(36,10),lat0:_dm(33,45),lon0:-79,FE:609601.22,FN:0,bbox:[33.7,36.7,-84.4,-75.3]},
+ {name:"ND North (3301)",type:"lcc",lat1:_dm(47,26),lat2:_dm(48,44),lat0:47,lon0:-_dm(100,30),FE:600000,FN:0,bbox:[47.55,49.1,-104.2,-96.5]},
+ {name:"ND South (3302)",type:"lcc",lat1:_dm(46,11),lat2:_dm(47,29),lat0:_dm(45,40),lon0:-_dm(100,30),FE:600000,FN:0,bbox:[45.8,47.55,-104.2,-96.4]},
+ {name:"OH North (3401)",type:"lcc",lat1:_dm(40,26),lat2:_dm(41,42),lat0:_dm(39,40),lon0:-_dm(82,30),FE:600000,FN:0,bbox:[40.1,42,-84.9,-80.4]},
+ {name:"OH South (3402)",type:"lcc",lat1:_dm(38,44),lat2:_dm(40,2),lat0:38,lon0:-_dm(82,30),FE:600000,FN:0,bbox:[38.3,40.1,-84.9,-80.6]},
+ {name:"OK North (3501)",type:"lcc",lat1:_dm(35,34),lat2:_dm(36,46),lat0:35,lon0:-98,FE:600000,FN:0,bbox:[35.4,37.1,-103.1,-94.3]},
+ {name:"OK South (3502)",type:"lcc",lat1:_dm(33,56),lat2:_dm(35,14),lat0:_dm(33,20),lon0:-98,FE:600000,FN:0,bbox:[33.5,35.4,-100.1,-94.3]},
+ {name:"OR North (3601)",type:"lcc",lat1:_dm(44,20),lat2:46,lat0:_dm(43,40),lon0:-_dm(120,30),FE:2500000,FN:0,bbox:[44.1,46.4,-124.2,-116.4]},
+ {name:"OR South (3602)",type:"lcc",lat1:_dm(42,20),lat2:44,lat0:_dm(41,40),lon0:-_dm(120,30),FE:1500000,FN:0,bbox:[41.9,44.1,-124.7,-116.9]},
+ {name:"PA North (3701)",type:"lcc",lat1:_dm(40,53),lat2:_dm(41,57),lat0:_dm(40,10),lon0:-_dm(77,45),FE:600000,FN:0,bbox:[40.55,42.3,-80.6,-74.6]},
+ {name:"PA South (3702)",type:"lcc",lat1:_dm(39,56),lat2:_dm(40,58),lat0:_dm(39,20),lon0:-_dm(77,45),FE:600000,FN:0,bbox:[39.6,40.55,-80.6,-74.6]},
+ {name:"SC (3900)",type:"lcc",lat1:_dm(32,30),lat2:_dm(34,50),lat0:_dm(31,50),lon0:-81,FE:609600,FN:0,bbox:[32,35.3,-83.4,-78.4]},
+ {name:"SD North (4001)",type:"lcc",lat1:_dm(44,25),lat2:_dm(45,41),lat0:_dm(43,50),lon0:-100,FE:600000,FN:0,bbox:[44.15,46,-104.1,-96.4]},
+ {name:"SD South (4002)",type:"lcc",lat1:_dm(42,50),lat2:_dm(44,24),lat0:_dm(42,20),lon0:-_dm(100,20),FE:600000,FN:0,bbox:[42.4,44.15,-104.1,-96.3]},
+ {name:"TN (4100)",type:"lcc",lat1:_dm(35,15),lat2:_dm(36,25),lat0:_dm(34,20),lon0:-86,FE:600000,FN:0,bbox:[34.9,36.7,-90.4,-81.6]},
  {name:"TX North (4201)",type:"lcc",lat1:_dm(34,39),lat2:_dm(36,11),lat0:34,lon0:-_dm(101,30),FE:200000,FN:1000000,bbox:[34.3,36.6,-103.1,-99.9]},
- {name:"TX N Central (4202)",type:"lcc",lat1:_dm(32,8),lat2:_dm(33,58),lat0:_dm(31,40),lon0:-_dm(98,30),FE:600000,FN:2000000,bbox:[31.7,34.6,-103.1,-94.0]},
+ {name:"TX N Central (4202)",type:"lcc",lat1:_dm(32,8),lat2:_dm(33,58),lat0:_dm(31,40),lon0:-_dm(98,30),FE:600000,FN:2000000,bbox:[31.7,34.6,-103.1,-94]},
  {name:"TX Central (4203)",type:"lcc",lat1:_dm(30,7),lat2:_dm(31,53),lat0:_dm(29,40),lon0:-_dm(100,20),FE:700000,FN:3000000,bbox:[29.7,32.3,-106.7,-93.5]},
- {name:"TX S Central (4204)",type:"lcc",lat1:_dm(28,23),lat2:_dm(30,17),lat0:_dm(27,50),lon0:-99,FE:600000,FN:4000000,bbox:[27.8,30.7,-105.0,-93.7]},
+ {name:"TX S Central (4204)",type:"lcc",lat1:_dm(28,23),lat2:_dm(30,17),lat0:_dm(27,50),lon0:-99,FE:600000,FN:4000000,bbox:[27.8,30.7,-105,-93.7]},
  {name:"TX South (4205)",type:"lcc",lat1:_dm(26,10),lat2:_dm(27,50),lat0:_dm(25,40),lon0:-_dm(98,30),FE:300000,FN:5000000,bbox:[25.8,28.2,-100.3,-96.8]},
+ {name:"UT North (4301)",type:"lcc",lat1:_dm(40,43),lat2:_dm(41,47),lat0:_dm(40,20),lon0:-_dm(111,30),FE:500000,FN:1000000,bbox:[40.55,42.1,-114.1,-109]},
+ {name:"UT Central (4302)",type:"lcc",lat1:_dm(39,1),lat2:_dm(40,39),lat0:_dm(38,20),lon0:-_dm(111,30),FE:500000,FN:2000000,bbox:[38.5,40.65,-114.1,-109]},
+ {name:"UT South (4303)",type:"lcc",lat1:_dm(37,13),lat2:_dm(38,21),lat0:_dm(36,40),lon0:-_dm(111,30),FE:500000,FN:3000000,bbox:[36.9,38.6,-114.1,-109]},
+ {name:"VA North (4501)",type:"lcc",lat1:_dm(38,2),lat2:_dm(39,12),lat0:_dm(37,40),lon0:-_dm(78,30),FE:3500000,FN:2000000,bbox:[37.75,39.5,-79.5,-76.9]},
+ {name:"VA South (4502)",type:"lcc",lat1:_dm(36,46),lat2:_dm(37,58),lat0:_dm(36,20),lon0:-_dm(78,30),FE:3500000,FN:1000000,bbox:[36.5,37.75,-83.7,-75.2]},
+ {name:"WA North (4601)",type:"lcc",lat1:_dm(47,30),lat2:_dm(48,44),lat0:47,lon0:-_dm(120,50),FE:500000,FN:0,bbox:[47.1,49.1,-124.9,-116.9]},
+ {name:"WA South (4602)",type:"lcc",lat1:_dm(45,50),lat2:_dm(47,20),lat0:_dm(45,20),lon0:-_dm(120,30),FE:500000,FN:0,bbox:[45.5,47.1,-124.4,-116.9]},
+ {name:"WV North (4701)",type:"lcc",lat1:39,lat2:_dm(40,15),lat0:_dm(38,30),lon0:-_dm(79,30),FE:600000,FN:0,bbox:[38.75,40.7,-81.8,-77.7]},
+ {name:"WV South (4702)",type:"lcc",lat1:_dm(37,29),lat2:_dm(38,53),lat0:37,lon0:-81,FE:600000,FN:0,bbox:[37.1,38.75,-82.7,-79]},
+ {name:"WI North (4801)",type:"lcc",lat1:_dm(45,34),lat2:_dm(46,46),lat0:_dm(45,10),lon0:-90,FE:600000,FN:0,bbox:[45.35,47.1,-92.9,-88]},
+ {name:"WI Central (4802)",type:"lcc",lat1:_dm(44,15),lat2:_dm(45,30),lat0:_dm(43,50),lon0:-90,FE:600000,FN:0,bbox:[44,45.5,-93,-86.8]},
+ {name:"WI South (4803)",type:"lcc",lat1:_dm(42,44),lat2:_dm(44,4),lat0:42,lon0:-90,FE:600000,FN:0,bbox:[42.4,44.15,-91.5,-86.9]},
+ {name:"PR / VI (5200)",type:"lcc",lat1:_dm(18,2),lat2:_dm(18,26),lat0:_dm(17,50),lon0:-_dm(66,26),FE:200000,FN:200000,bbox:[17.6,18.6,-67.4,-64.5]},
 ];
 function _utmZoneFor(lat,lon){
   const zn=Math.max(1,Math.min(60,Math.floor((lon+180)/6)+1));
   return{name:"UTM "+zn+(lat>=0?"N":"S"),type:"tm",lat0:0,lon0:-183+zn*6,k0:0.9996,FE:500000,FN:lat>=0?0:10000000};
 }
 function _spcCandidates(lat,lon){
-  const inBox=_SPC_ZONES.filter(z=>lat>=z.bbox[0]&&lat<=z.bbox[1]&&lon>=z.bbox[2]&&lon<=z.bbox[3]);
+  const area=z=>(z.bbox[1]-z.bbox[0])*(z.bbox[3]-z.bbox[2]);
+  const inBox=_SPC_ZONES.filter(z=>lat>=z.bbox[0]&&lat<=z.bbox[1]&&lon>=z.bbox[2]&&lon<=z.bbox[3])
+    .sort((a,b)=>area(a)-area(b)); // most specific zone first
   const near=_SPC_ZONES.filter(z=>!inBox.includes(z)&&
     lat>=z.bbox[0]-0.4&&lat<=z.bbox[1]+0.4&&lon>=z.bbox[2]-0.4&&lon<=z.bbox[3]+0.4);
   return inBox.concat(near);
@@ -7382,7 +7559,7 @@ function _setAnchor(lat,lon,zone,E,N){
 function _getTile(z,x,y){
   const n=Math.pow(2,z); x=((x%n)+n)%n;
   if(y<0||y>=n)return null;
-  const key=z+"/"+x+"/"+y;
+  const key=satBasemap+"/"+z+"/"+x+"/"+y;
   let t=_tileCache.get(key);
   if(t)return t.ok?t.img:null;
   if(_tileCache.size>350){let i=0;for(const k of _tileCache.keys()){_tileCache.delete(k);if(++i>=120)break;}}
@@ -7391,7 +7568,7 @@ function _getTile(z,x,y){
   t.img.crossOrigin="anonymous"; // keeps canvas untainted so PNG/PDF export still works
   t.img.onload=()=>{t.ok=true;_satRepaint();};
   t.img.onerror=()=>{t.err=true;t.img=null;};
-  t.img.src="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"+z+"/"+y+"/"+x;
+  t.img.src=(_BASEMAPS[satBasemap]||_BASEMAPS.esri).url(z,y,x);
   return null;
 }
 
@@ -7416,8 +7593,9 @@ function _drawSatellite(ctx,w,h,T){
   };
   // Pick a zoom level whose tile resolution ~ screen resolution
   const gmpp=1/(scale*M2U);              // ground meters per css px
+  const _bm=_BASEMAPS[satBasemap]||_BASEMAPS.esri;
   let z=Math.round(Math.log2(_MWORLD*k/(256*gmpp)));
-  z=Math.max(3,Math.min(19,z));
+  z=Math.max(3,Math.min(_bm.maxZ,z));
   // Visible mercator bounds -> tile range (shrink z if too many tiles)
   let range;
   const calcRange=()=>{
@@ -7459,15 +7637,27 @@ function _drawSatellite(ctx,w,h,T){
   // Required attribution
   ctx.save();
   ctx.font="8px 'Courier New',monospace";ctx.textAlign="right";ctx.textBaseline="bottom";
-  const at="Imagery: Esri, Maxar, Earthstar Geographics";
+  const at=_bm.attr;
   const aw=ctx.measureText(at).width;
   ctx.fillStyle="rgba(0,0,0,.55)";ctx.fillRect(w-aw-8,h-13,aw+6,11);
   ctx.fillStyle="rgba(220,228,240,.85)";ctx.fillText(at,w-5,h-4);
   ctx.restore();
 }
 
+/* — Inverse of the anchor transform: job E/N -> lat/lon — */
+function _jobToLL(E,N){
+  const A=geoAnchor; if(!A)return null;
+  const M2U=A.m2u||_m2u();
+  const g=(A.conv+(satRotNudge||0))*Math.PI/180,cg=Math.cos(g),sg=Math.sin(g);
+  const k=Math.cos(A.lat*Math.PI/180);
+  const dE=(E-A.E)/M2U, dN=(N-A.N)/M2U;
+  const dxm=dE*cg+dN*sg, dym=-dE*sg+dN*cg;
+  const mx=A.mx+dxm/k, my=A.my+dym/k;
+  return{lon:mx/_MR*180/Math.PI, lat:(2*Math.atan(Math.exp(my/_MR))-Math.PI/2)*180/Math.PI};
+}
+
 /* — Live GPS marker — */
-let _gpsWatchId=null,_liveFix=null;
+let _gpsWatchId=null,_liveFix=null,_gpsStakeTarget=null;
 function _gpsToJob(lat,lon){
   // Same anchor transform the imagery uses, so the marker sits on the
   // correct imagery pixel in both grid-coordinate and local-coordinate jobs.
@@ -7539,6 +7729,30 @@ function _drawLiveGps(ctx,w,h,T){
   // Blue dot, white ring
   ctx.fillStyle="#4285f4";ctx.strokeStyle="#ffffff";ctx.lineWidth=2.5;
   ctx.beginPath();ctx.arc(sx,sy,7,0,2*Math.PI);ctx.fill();ctx.stroke();
+  ctx.restore();
+  _drawGpsStakeHud(ctx,w,h,T,p);
+}
+function _drawGpsStakeHud(ctx,w,h,T,fixJob){
+  if(!_gpsStakeTarget)return;
+  const tgt=points.find(pt=>pt.Point===_gpsStakeTarget);
+  if(!tgt){_gpsStakeTarget=null;return;}
+  const {scale,offX,offY}=T;
+  const X=e=>e*scale+offX, Y=n=>h-(n*scale+offY);
+  const fx=X(fixJob.E), fy=Y(fixJob.N), tx=X(tgt.Easting), ty=Y(tgt.Northing);
+  ctx.save();
+  ctx.strokeStyle="#ffd166";ctx.lineWidth=2;ctx.setLineDash([8,6]);
+  ctx.beginPath();ctx.moveTo(fx,fy);ctx.lineTo(tx,ty);ctx.stroke();
+  ctx.setLineDash([]);
+  // Distance + azimuth from live fix to target
+  const me={Northing:fixJob.N,Easting:fixJob.E};
+  const hd=dist2D(me,tgt), az=((azimuth(me,tgt)%360)+360)%360;
+  const d=Math.floor(az), m=Math.floor((az-d)*60);
+  const txt="→ #"+tgt.Point+"  "+hd.toFixed(1)+" "+units+"  @ "+d+"°"+String(m).padStart(2,"0")+"'";
+  ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="top";
+  const tw=ctx.measureText(txt).width;
+  ctx.fillStyle=hd<(units==="ft"?3:1)?"rgba(30,120,50,.9)":"rgba(0,0,0,.7)";
+  ctx.fillRect(w/2-tw/2-10,8,tw+20,20);
+  ctx.fillStyle="#ffd166";ctx.fillText(txt,w/2,12);
   ctx.restore();
 }
 
@@ -7654,6 +7868,77 @@ function _satAfterFix(pt,lat,lon,acc){
   });
 }
 
+/* — Store a point where the phone is standing — */
+function storeGpsPoint(){
+  const doStore=(lat,lon,acc)=>{
+    const p=_gpsToJob(lat,lon); if(!p){alert("Anchor the job first (🛰 menu).");return;}
+    const accU=acc!=null?(acc*(geoAnchor.m2u||_m2u())):null;
+    alphaInput("Description:","",d=>{
+      const num=pointCounter;
+      _takeSnapshot("GPS Pt #"+num);
+      points.push({Point:num,Northing:p.N,Easting:p.E,
+        Elevation:(currentPoint?currentPoint.Elevation:100)||100,
+        Type:"GPS",Flag:"",ih:0,
+        Description:(d||"")+(accU!=null?" [GPS ±"+accU.toFixed(0)+units+"]":" [GPS]")});
+      pointCounter=num+1;
+      saveData();updateStatus();
+      showResult("✓ Point #"+num+" stored at GPS",[
+        {lbl:"N:",val:p.N.toFixed(3)},{lbl:"E:",val:p.E.toFixed(3)},
+        ...(accU!=null?[{lbl:"Accuracy:",val:"±"+accU.toFixed(1)+" "+units}]:[])]);
+    });
+  };
+  if(_liveFix&&Date.now()-_liveFix.ts<8000) doStore(_liveFix.lat,_liveFix.lon,_liveFix.acc);
+  else _gpsFix(pos=>{ if(pos) doStore(pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy); });
+}
+
+/* — Pre-cache the visible area's tiles for offline use — */
+function cacheAreaOffline(){
+  if(!satOn||!geoAnchor){alert("Turn imagery on first.");return;}
+  const c=document.getElementById("plotCanvas");
+  const w=c.clientWidth,h=c.clientHeight;
+  const T=_viewTransform(w,h); if(!T)return;
+  // Reuse the draw math by listing tiles for current zoom + 2 finer levels
+  const urls=[];
+  const A=geoAnchor,M2U=A.m2u||_m2u();
+  const g=(A.conv+(satRotNudge||0))*Math.PI/180,cg=Math.cos(g),sg=Math.sin(g);
+  const k=Math.cos(A.lat*Math.PI/180);
+  const {scale,offX,offY}=T;
+  const s2m=(sx,sy)=>{
+    const E=(sx-offX)/scale,N=(h-sy-offY)/scale;
+    const dE=(E-A.E)/M2U,dN=(N-A.N)/M2U;
+    return[A.mx+(dE*cg+dN*sg)/k,A.my+(-dE*sg+dN*cg)/k];
+  };
+  const bm=_BASEMAPS[satBasemap]||_BASEMAPS.esri;
+  const gmpp=1/(scale*M2U);
+  let z0=Math.round(Math.log2(_MWORLD*k/(256*gmpp)));
+  z0=Math.max(3,Math.min(bm.maxZ,z0));
+  for(let z=z0;z<=Math.min(bm.maxZ,z0+2);z++){
+    const ts=_MWORLD/Math.pow(2,z);
+    let mnx=1/0,mxx=-1/0,mny=1/0,mxy=-1/0;
+    [[0,0],[w,0],[0,h],[w,h]].forEach(([sx,sy])=>{const[mx,my]=s2m(sx,sy);
+      mnx=Math.min(mnx,mx);mxx=Math.max(mxx,mx);mny=Math.min(mny,my);mxy=Math.max(mxy,my);});
+    const tx0=Math.floor((mnx+_MWORLD/2)/ts),tx1=Math.floor((mxx+_MWORLD/2)/ts);
+    const ty0=Math.floor((_MWORLD/2-mxy)/ts),ty1=Math.floor((_MWORLD/2-mny)/ts);
+    for(let tx=tx0;tx<=tx1;tx++)for(let ty=ty0;ty<=ty1;ty++)urls.push(bm.url(z,ty,tx));
+    if(urls.length>350)break;
+  }
+  const total=Math.min(urls.length,350);
+  let done=0,fail=0;
+  const {close}=openModal((modal)=>{
+    modal.innerHTML="<h2>⬇ Caching Tiles</h2><p class='info' id='tileProg'>0 / "+total+"</p>"+
+      "<p class='info'>Tiles stay available offline once loaded. Zoom out further and repeat to cover more ground.</p>";
+    const b=document.createElement("button");b.className="btn";b.textContent="Done / Run in background";
+    b.onclick=()=>close();modal.appendChild(b);
+  });
+  urls.slice(0,total).forEach(u=>{
+    const im=new Image();im.crossOrigin="anonymous";
+    const tick=()=>{done++;const el=document.getElementById("tileProg");
+      if(el)el.textContent=done+" / "+total+(fail?" ("+fail+" failed)":"");};
+    im.onload=tick;im.onerror=()=>{fail++;tick();};
+    im.src=u;
+  });
+}
+
 /* — Combined plot-button toggle: imagery + live GPS together — */
 function _syncSatBtn(){
   const b=document.getElementById("btnSat"); if(!b)return;
@@ -7684,6 +7969,10 @@ function satelliteMenu(){
       r.onchange=()=>saveData();
       wrap.appendChild(r);modal.appendChild(wrap);
     };
+    mk("🗺 Basemap: "+((_BASEMAPS[satBasemap]||_BASEMAPS.esri).label)+" — tap to switch","blue",()=>{
+      satBasemap=satBasemap==="esri"?"topo":"esri";saveData();close();satelliteMenu();});
+    mk("📌 Store Point at GPS position","ok",()=>{close();storeGpsPoint();});
+    mk("⬇ Cache visible area for offline","blue",()=>{close();cacheAreaOffline();});
     sl("Opacity",satOpacity,0.15,1,0.05,v=>satOpacity=v);
     sl("Rotation nudge (°) — align imagery to plot",satRotNudge,-5,5,0.1,v=>satRotNudge=v);
     mk(_gpsWatchId!=null?"📍 Live GPS marker: ON — tap to stop":"📍 Live GPS marker: OFF — tap to start",
@@ -7700,6 +7989,32 @@ function satelliteMenu(){
   });
 }
 
+/* — Ground elevation at a fix: USGS 3DEP (NAVD88), else Copernicus DEM — */
+function _fetchGroundElev(lat,lon,cb){
+  const ft=units==="ft";
+  const bail=()=>cb(null,null);
+  try{
+    const c1=new AbortController(); const t1=setTimeout(()=>c1.abort(),5000);
+    fetch("https://epqs.nationalmap.gov/v1/json?x="+lon+"&y="+lat+"&units="+(ft?"Feet":"Meters")+"&wkid=4326",{signal:c1.signal})
+      .then(r=>r.json()).then(j=>{
+        clearTimeout(t1);
+        const v=parseFloat(j&&j.value);
+        if(isFinite(v)&&v>-1000&&v<30000) cb(v,"USGS 3DEP NAVD88");
+        else throw 0;
+      })
+      .catch(()=>{
+        const c2=new AbortController(); const t2=setTimeout(()=>c2.abort(),5000);
+        fetch("https://api.open-meteo.com/v1/elevation?latitude="+lat+"&longitude="+lon,{signal:c2.signal})
+          .then(r=>r.json()).then(j=>{
+            clearTimeout(t2);
+            let v=j&&j.elevation&&j.elevation[0];
+            if(typeof v==="number"){ cb(ft?v*3.280833333:v,"Copernicus DEM"); }
+            else bail();
+          }).catch(bail);
+      });
+  }catch(e){bail();}
+}
+
 /* — New-job GPS start — */
 function _gpsStartFlow(jn){
   _gpsFix(pos=>{
@@ -7709,16 +8024,20 @@ function _gpsStartFlow(jn){
     _zonePick(lat,lon,zone=>{
       if(!zone){jobNewManual(jn);return;}
       const p=_projForward(lat,lon,zone), u=_m2u();
-      calculatorInput("Start Elevation (default 100):","100",ev=>{
-        const Z=parseFloat(ev);
+      _fetchGroundElev(lat,lon,(ge,src)=>{
+        const def=ge!=null?ge.toFixed(1):"100";
+        calculatorInput("Start Elev"+(src?" ("+src+")":"")+":",def,ev=>{
+        const Z=parseFloat(ev===null||ev===""?def:ev);
         _startNewJob(jn,p.N*u,p.E*u,isNaN(Z)?100:Z);
         _setAnchor(lat,lon,zone,p.E*u,p.N*u);
         satOn=true;saveData();_syncSatBtn();
         _zoomToGround(units==="ft"?300:100);
         showResult("✓ GPS Start · "+zone.name,[
           {lbl:"Point 1:",val:"N "+(p.N*u).toFixed(2)+" E "+(p.E*u).toFixed(2)},
+          {lbl:"Elev:",val:(isNaN(Z)?100:Z).toFixed(1)+" "+units+(src?" ("+src+")":" (assumed)")},
           {lbl:"Fix:",val:lat.toFixed(6)+", "+lon.toFixed(6)+(acc!=null?" ±"+(acc*u).toFixed(0)+units:"")},
           {lbl:"Imagery:",val:"ON"}]);
+        });
       });
     });
   });
@@ -8331,6 +8650,10 @@ function zoomToOccupied(){
 
   // Long press handler — add a manual point at the tapped world location
   function _longPressAddPoint(worldE, worldN){
+    // On Android a touch long-press fires BOTH our touch timer AND a
+    // synthesized contextmenu event — debounce so only one modal opens.
+    if(Date.now()-(window._lpLast||0)<1200) return;
+    window._lpLast=Date.now();
     // Show a quick form to confirm/edit the point
     openModal((modal,close)=>{
       const ptNum = pointCounter;
@@ -9152,7 +9475,8 @@ const HELP_TOPICS = [
   { id:"start", section:"Getting Started", title:"Starting a New Job",
     preview:"Job setup, naming, and first steps",
     body:`<h3>Starting a New Job</h3>
-<p>When you open ChainLink you see the <strong>Job Manager</strong>. Tap <strong>+ Start New Job</strong>, enter a job name, and you're taken to the main canvas.</p>
+<p>When you open ChainLink you see the <strong>Job Manager</strong>. Tap <strong>+ Start New Job</strong> and enter a job name.</p>
+<p>You'll then be asked how to place your starting point: <strong>📡 GPS Start</strong> stands you at the point, reads your phone's GPS, puts the job on your state's official coordinate grid, fills in the real ground elevation, and turns on aerial imagery — all automatically. <strong>Manual / Assumed</strong> starts at simple round numbers (10000, 10000) with no location attached, which is the traditional way and fine for jobs where only relative positions matter.</p>
 <h3>Continuing a Previous Job</h3>
 <p>Tap <strong>Continue Previous Job</strong> to pick up where you left off. The card shows point count, connections, and units.</p>
 <h3>Loading from a File</h3>
@@ -9613,6 +9937,75 @@ const HELP_TOPICS = [
 <p>Fully undoable. Use when you collected data with assumed elevations and later tied into a benchmark.</p>`},
 
   // ── TOOLS ───────────────────────────────────────────────────
+  { id:"sat-setup", section:"Satellite & GPS", title:"Satellite Imagery — What It Is & Setup",
+    preview:"Put an aerial photo behind your drawing",
+    body:`<h3>What This Does</h3>
+<p>Normally your drawing floats on a blank background. The satellite feature puts a real aerial photo behind it, so your measured points and lines sit on top of the actual property — you can see the house, the driveway, the tree line, and how your work lines up with all of it.</p>
+<p>For the photo to line up, the app needs to know one thing: <strong>where on Earth one of your points actually is</strong>. That's called anchoring, and your phone's GPS does it in one tap.</p>
+<h3>Easiest Way — GPS Start</h3>
+<p>When you create a new job, choose <strong>📡 GPS Start</strong>. Stand at your starting point, let the phone get a fix, and the app does the rest: it works out where you are, picks the right coordinate grid for your state, fills in the ground elevation from government survey maps, and switches the aerial photo on.</p>
+<h3>Anchoring a Job You Already Have</h3>
+<p>Open <strong>More → 🛰 Satellite Imagery</strong>. Stand at any point you've already recorded, tap <strong>Use Phone GPS</strong>, and the app offers two choices:</p>
+<p><strong>Shift whole job to grid coords</strong> — renumbers all your coordinates onto the official state grid (recommended; nothing about the shape of your work changes, only the labels on the numbers).</p>
+<p><strong>Keep local coords</strong> — your numbers stay exactly as they are; the photo just lines up behind them.</p>
+<h3>What's a "State Plane zone"?</h3>
+<p>The US is divided into named map grids — every state has one or a few. It's how professionals state exactly where something is using plain X/Y numbers instead of latitude/longitude. The app picks your zone automatically from the GPS fix and shows nearby alternatives in case you're close to a boundary.</p>
+<h3>The 🛰 Button</h3>
+<p>The 🛰 button on the right side of the plot turns the photo (and the blue GPS dot) on and off with one tap. Bright = on, dim = off.</p>
+<h3>Aerial vs Topo</h3>
+<p>In the 🛰 menu, <strong>Basemap</strong> switches between the aerial photo and a <strong>USGS topographic map</strong> — the classic government map style with contour lines, roads, and section lines.</p>
+<div class="warn">The photo is a visual reference only. Phone GPS is accurate to roughly 10–30 ft, and aerial photos have their own small alignment errors. Never measure or set anything off the photo — your instrument measurements are the truth; the photo is just context.</div>
+<div class="tip">If the photo looks slightly rotated against your linework, the <strong>Rotation nudge</strong> slider in the 🛰 menu lets you true it up by eye.</div>`},
+
+  { id:"sat-livegps", section:"Satellite & GPS", title:"The Blue Dot — Live GPS Position",
+    preview:"See where you're standing on the plot",
+    body:`<h3>What the Blue Dot Means</h3>
+<p>Once a job is anchored, a blue dot shows where your phone is right now, updating as you walk — the same idea as the dot in any maps app, except it's on <em>your</em> survey drawing.</p>
+<p>The faint circle around it shows GPS uncertainty: the phone is somewhere inside that circle, probably near the middle. Big circle = poor signal (trees, buildings); small circle = good signal.</p>
+<h3>Reading the Signals</h3>
+<p><strong>"📍 acquiring GPS…"</strong> in the corner means the phone is still looking for satellites — normal for the first few seconds, and it can take longer indoors.</p>
+<p>A <strong>blue arrow at the screen edge</strong> means you're off-screen in that direction — pan or zoom out to find yourself.</p>
+<p>A <strong>dimmed dot</strong> means the fix is stale (no update for 15+ seconds).</p>
+<h3>Turning It Off</h3>
+<p>GPS uses battery. The 🛰 button toggles it together with the photo, or use <strong>📍 Live GPS marker</strong> in the 🛰 menu to control it separately.</p>
+<div class="tip">The dot is a "which part of the property am I in" tool, good to a couple of car-lengths — not a precise position.</div>`},
+
+  { id:"sat-navigate", section:"Satellite & GPS", title:"GPS Navigate — Walk to a Point",
+    preview:"An arrow and distance guiding you to any point",
+    body:`<h3>Walking to a Point You Can't See</h3>
+<p>Say point #12 is a corner marker somewhere in the brush. Open <strong>Stakeout → 📡 GPS Navigate to Point</strong>, enter 12, and the app draws a dashed line from the blue dot (you) to the target, with a live readout at the top:</p>
+<p><strong>→ #12&nbsp;&nbsp;143.2 ft&nbsp;&nbsp;@ 61°23'</strong></p>
+<p>That's the distance left and the compass direction (61° is roughly northeast; 0° is north, 90° east, 180° south, 270° west). Walk, watch the number fall, and the readout turns <strong>green</strong> when you're within about 3 ft.</p>
+<h3>Stopping</h3>
+<p>Open the same menu entry again to stop navigating.</p>
+<div class="tip">GPS gets you to the neighborhood of the point — the last few feet are for your eyes, a flag, or the instrument. That's still a huge time-saver in thick cover.</div>`},
+
+  { id:"sat-gpspoint", section:"Satellite & GPS", title:"Store a Point Where You Stand",
+    preview:"Drop a pin at your GPS position",
+    body:`<h3>Marking Things As You Walk</h3>
+<p>Found an iron pin, a gate, a culvert, or anything worth remembering? <strong>🛰 menu → 📌 Store Point at GPS position</strong> drops a numbered point right where you're standing and asks for a description.</p>
+<h3>How It's Labeled</h3>
+<p>The point gets tagged like <strong>[GPS ±15ft]</strong> so that later — in the point list or an export — nobody mistakes a rough walked-to position for a precise instrument measurement. They're different animals, and the tag keeps them honest.</p>
+<div class="tip">Perfect for scouting a property before the real work: walk it once, pin everything you find, then decide where to set up.</div>`},
+
+  { id:"sat-offline", section:"Satellite & GPS", title:"Using Imagery With No Cell Signal",
+    preview:"Save the aerial photo before you leave WiFi",
+    body:`<h3>The Problem</h3>
+<p>The aerial photo streams from the internet, and job sites often have no signal. The fix: load the photo <em>before</em> you go.</p>
+<h3>How</h3>
+<p>While you're on WiFi, open the job, position the view over the property, and tap <strong>🛰 menu → ⬇ Cache visible area for offline</strong>. The app downloads and saves the photo tiles for that view at several zoom levels. Zoom out and repeat to cover a wider area.</p>
+<h3>Also Automatic</h3>
+<p>Any part of the photo you've simply <em>looked at</em> gets saved too. The deliberate button just makes sure the whole site is covered instead of only where you happened to scroll.</p>
+<div class="tip">Everything else in ChainLink already works offline — measurements, calculations, saving. Only fresh photo areas and the elevation lookup need a connection.</div>`},
+
+  { id:"keyboard", section:"Tools", title:"Using a Keyboard (Desktop/Laptop)",
+    preview:"Type instead of tapping when on a PC",
+    body:`<h3>Typing Into the Keypads</h3>
+<p>On a computer, every on-screen keypad also accepts your physical keyboard: <strong>digits and letters</strong> type directly, <strong>Enter</strong> confirms or stores the shot, <strong>Backspace</strong> deletes, <strong>Tab</strong> jumps between fields in the shot form, and <strong>Esc</strong> cancels (in the shot form, Esc asks twice so you can't throw away a half-entered shot by accident).</p>
+<h3>Moving Around the Plot</h3>
+<p><strong>Arrow keys</strong> pan (hold Shift for bigger steps), <strong>+ / −</strong> zoom, <strong>Home</strong> resets the view, and <strong>Ctrl+Z / Ctrl+Y</strong> undo and redo.</p>
+<div class="tip">Nothing changes on a phone or tablet — the touch keypads work exactly as before.</div>`},
+
   { id:"undo", section:"Tools", title:"Undo & Redo",
     preview:"Reverse or replay the last actions",
     body:`<h3>Undo</h3>
@@ -9623,7 +10016,7 @@ const HELP_TOPICS = [
 <p>Every shot, COGO point, manual point, arc, connection, delete, edit, flag, rotate, translate, scale, Bowditch, orientation change, HI change, line reverse, and elevation shift.</p>
 <div class="warn">Loading a job from file and clearing all data reset the undo history.</div>`},
 
-  { id:"export", section:"Tools", title:"Export: DXF, LandXML, PDF, SVG, GeoJSON",
+  { id:"export", section:"Tools", title:"Export: DXF, LandXML, PDF, SVG, GeoJSON, KML",
     preview:"Export for CAD, GIS, and survey office software",
     body:`<h3>DXF Export</h3>
 <p>Points on POINTS layer, labels on LABELS, solid lines on LINES, dashed on DASHED. Arcs export as true ARC entities. Readable by AutoCAD, Civil 3D, and most CAD software.</p>
@@ -9635,6 +10028,8 @@ const HELP_TOPICS = [
 <p>Vector linework and labels in true world units (one SVG unit = one foot or metre). Opens in Illustrator, Inkscape, and most CAD packages.</p>
 <h3>GeoJSON Export</h3>
 <p>Points and linework as GeoJSON features in local grid coordinates (E, N) — note these are not lon/lat.</p>
+<h3>KML Export (Google Earth)</h3>
+<p>Available once a job is anchored with GPS (see Satellite & GPS help). Exports your points and lines as a .kml file that opens directly in Google Earth — the easiest "here's what I measured" file to hand to a client or landowner, because they can spin the globe and see the work on real imagery with no special software. Curves are exported as straight lines between their endpoints.</p>
 <div class="tip">CSV is your primary backup format. The others are for sharing with office software.</div>`},
 
   { id:"data-mgmt", section:"Tools", title:"Data Management Utilities",
