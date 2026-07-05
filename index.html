@@ -1176,7 +1176,7 @@ function _startNewJob(jn,N,E,Z){
            Type:"Setup",Description:"Start",Flag:"",ih:0}];
   undoStack=[];_snapshots=[];_redoStack=[];pointCounter=2;plotConnections=[];currentPoint=points[0];
   _polylines=[];
-  recentShots=[];tempGeom=[];tempIntersections=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();
+  recentShots=[];tempGeom=[];tempIntersections=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();_deedPlot=null;
   jobName=jn;
   saveData();
   updateStatus();plotPoints();
@@ -1221,6 +1221,7 @@ function loadData() {
   try { satOpacity=parseFloat(_lsGet("cl_satOpacity")||"0.85")||0.85; } catch(e){ satOpacity=0.85; }
   try { satRotNudge=parseFloat(_lsGet("cl_satRot")||"0")||0; } catch(e){ satRotNudge=0; }
   try { satBasemap=_BASEMAPS[_lsGet("cl_satBase")]?_lsGet("cl_satBase"):"esri"; } catch(e){ satBasemap="esri"; }
+  try { const dp=_lsGet("cl_deedPlot"); _deedPlot=dp?JSON.parse(dp):null; if(_deedPlot)_deedRecompute(); } catch(e){ _deedPlot=null; }
   try { if(geoAnchor&&satOn&&_lsGet("cl_gpsLive")!=="off")startLiveGps(); else stopLiveGps(); } catch(e){}
   try { _syncSatBtn(); } catch(e){}
   updateStatus(); plotPoints(); _updateUndoBtn();
@@ -1254,6 +1255,7 @@ function saveData() {
   _lsSet("cl_satOpacity", String(satOpacity));
   _lsSet("cl_satRot",     String(satRotNudge));
   _lsSet("cl_satBase",    satBasemap);
+  _lsSet("cl_deedPlot",   _deedPlot?JSON.stringify({calls:_deedPlot.calls,pobE:_deedPlot.pobE,pobN:_deedPlot.pobN,rot:_deedPlot.rot||0}):"");
   updateStatus(); plotPoints();
   // Auto-save to file if we have a directory handle
   _autoSaveToFile();
@@ -1550,6 +1552,7 @@ function _ptExists(num){ return points.some(p=>p.Point===num); }
 let _modalStack=[];
 function openModal(buildFn, opts){
   if(typeof _relocateTarget!=="undefined"&&_relocateTarget!=null){_relocateTarget=null;setTimeout(plotPoints,0);}
+  if(window._deedPobCalls){window._deedPobCalls=null;setTimeout(plotPoints,0);}
   const ov=document.createElement("div"); ov.className="modal-overlay";
   const m=document.createElement("div"); m.className="modal";
   ov.appendChild(m); document.body.appendChild(ov); _modalStack.push(ov);
@@ -5258,6 +5261,7 @@ function cogoMenu(){
     modal.innerHTML="<h2>📐 COGO</h2>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className=`btn ${cls}`;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     mk("Inverse (Dist & Bearing)","ok",   ()=>{close();cogoInverse()});
+    mk("📜 Deed Plotter","accent",          ()=>{close();deedPlotterMenu()});
     mk("Intersection Tools","blue",         ()=>{close();cogoIntersection()});
     mk("Bearing & Distance","",             ()=>{close();cogoRadiation()});
     mk("Offset to Line","",                 ()=>{close();cogoOffsetPoint()});
@@ -7282,11 +7286,11 @@ function deleteConnection(){
 function clearAllData(){
   confirmDialog("Clear ALL points, connections, and cache?",yes=>{
     if(!yes)return;
-    ["cl_points","cl_connections","cl_polylines","cl_orientOffset","cl_surveyMode","cl_jobName","cl_units","cl_showLabels","cl_areaLabels","cl_geoAnchor","cl_satOn","cl_satRot"]
+    ["cl_points","cl_connections","cl_polylines","cl_orientOffset","cl_surveyMode","cl_jobName","cl_units","cl_showLabels","cl_areaLabels","cl_geoAnchor","cl_satOn","cl_satRot","cl_deedPlot"]
       .forEach(k=>_lsRemove(k));
     _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
     surveyMode="2D";jobName="survey";_dirHandle=null;
-    plotConnections=[];_polylines=[];tempIntersections=[];tempGeom=[];undoStack=[];recentShots=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();
+    plotConnections=[];_polylines=[];tempIntersections=[];tempGeom=[];undoStack=[];recentShots=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();_deedPlot=null;
     _defaultState();saveData();
     showResult("Cleared",[{lbl:"Status:",val:"Ready for new job"}]);
   });
@@ -7348,6 +7352,395 @@ function _drawScaleBar(ctx,w,h,scale){
   ctx.textAlign="left";ctx.textBaseline="bottom";
   ctx.fillText(`${nice.toFixed(0)} ${units}`,x,y-7);
   ctx.restore();
+}
+
+/* ── DEED PARSER ────────────────────────────────────────────────
+   Best-effort parser for metes-and-bounds legal descriptions.
+   Produces a list of calls for human review — never trusted blind.
+   Handles: quadrant bearings in symbol/word/dash formats, fractional
+   degrees, due-cardinal calls, distances in feet/chains/rods/poles/
+   perches/links/varas/meters, and curves by chord or radius+arc. */
+
+const _DEED_UNIT_FT={
+  FT:1, FOOT:1, FEET:1, "'":1,
+  CH:66, CHAIN:66, CHAINS:66,
+  ROD:16.5, RODS:16.5, POLE:16.5, POLES:16.5, PERCH:16.5, PERCHES:16.5,
+  LINK:0.66, LINKS:0.66, LK:0.66, LKS:0.66,
+  VARA:2.7777778, VARAS:2.7777778,   // Texas vara, 33⅓ in
+  M:3.280833333, METER:3.280833333, METERS:3.280833333, METRE:3.280833333, METRES:3.280833333
+};
+
+function _deedNormalize(t){
+  return (t||"")
+    .replace(/[\u2018\u2019\u2032\u02B9]/g,"'")
+    .replace(/[\u201C\u201D\u2033\u02BA]/g,'"')
+    .replace(/[\u00BA\u00B0\u02DA\u309C]/g,"°")
+    .replace(/\u00BD/g," 1/2").replace(/\u00BC/g," 1/4").replace(/\u00BE/g," 3/4")
+    .replace(/\s+/g," ")
+    .toUpperCase();
+}
+
+/* Bearing: returns {q1:'N'|'S', deg, min, sec, q2:'E'|'W'} or cardinal {card:'N'} */
+function _deedParseBearing(seg){
+  // DUE NORTH / NORTH etc. as a whole call direction
+  const due=seg.match(/\bDUE\s+(NORTH|SOUTH|EAST|WEST)\b/) ||
+            seg.match(/\b(NORTH|SOUTH|EAST|WEST)\b(?!\s*\d)(?![A-Z])(?!.*\b(?:DEG|°)\b)/);
+  const m=seg.match(
+    /\b(N|S|NORTH|SOUTH)\s*\.?\s*(\d{1,2})\s*(?:°|DEGREES?|DEG\.?|D\b|-|\s)\s*(?:(\d{1,2}(?:\.\d+)?)\s*(?:'|′|MINUTES?|MIN\.?|M\b|-|\s))?\s*(?:(\d{1,2}(?:\.\d+)?)\s*(?:"|″|SECONDS?|SEC\.?|S\b)?)?\s*(?:(1\/2|1\/4|3\/4)\s*(?:°|DEGREES?)?\s*)?(E|W|EAST|WEST)\b/
+  );
+  if(m){
+    let deg=parseFloat(m[2]), min=m[3]!=null?parseFloat(m[3]):0, sec=m[4]!=null?parseFloat(m[4]):0;
+    // fractional degrees: "S 12 1/2 W" — fraction lands in group 5, or min slot when written "12 1/2°"
+    if(m[5]){ const fr={"1/2":30,"1/4":15,"3/4":45}[m[5]]; if(min===0)min=fr; else sec=fr*0+sec; }
+    // guard: "12 1/2" often parses as deg=12 min=1 sec=2 — detect trailing "1/2" pattern
+    const frac=seg.match(/\b(\d{1,2})\s+(1\/2|1\/4|3\/4)\s*(?:°|DEGREES?)?\s*(E|W|EAST|WEST)\b/);
+    if(frac && parseFloat(frac[1])===deg){ min={"1/2":30,"1/4":15,"3/4":45}[frac[2]]; sec=0; }
+    if(deg>90||min>=60||sec>=60) return null;
+    return{q1:m[1][0], deg, min, sec, q2:m[6][0]};
+  }
+  if(due) return {card:due[1][0]};
+  return null;
+}
+
+function _deedBearingToAz(b){
+  if(b.card) return {N:0,E:90,S:180,W:270}[b.card];
+  const a=b.deg+b.min/60+b.sec/3600;
+  if(b.q1==="N"&&b.q2==="E")return a;
+  if(b.q1==="S"&&b.q2==="E")return 180-a;
+  if(b.q1==="S"&&b.q2==="W")return 180+a;
+  return 360-a;
+}
+function _deedAzToBearingStr(az){
+  az=((az%360)+360)%360;
+  let q1,q2,a;
+  if(az<=90){q1="N";q2="E";a=az;}
+  else if(az<=180){q1="S";q2="E";a=180-az;}
+  else if(az<=270){q1="S";q2="W";a=az-180;}
+  else{q1="N";q2="W";a=360-az;}
+  const d=Math.floor(a), m=Math.floor((a-d)*60), sc=Math.round(((a-d)*60-m)*60);
+  return q1+" "+d+"°"+String(m).padStart(2,"0")+"'"+String(sc).padStart(2,"0")+"\" "+q2;
+}
+
+/* Distance: first "number unit" in segment (skipping numbers that belong to bearings/radius) */
+function _deedParseDistance(seg){
+  const scrub=seg.replace(/\b(RADIUS|DELTA|CENTRAL ANGLE|ARC)\s*(?:OF|LENGTH|=|:)?\s*[\d.]+\s*(?:FEET|FT|')?/g," ");
+  const re=/(\d{1,6}(?:\.\d+)?)\s*(FEET|FOOT|FT\.?|CHAINS?|CH\.?|RODS?|POLES?|PERCHES?|LINKS?|LKS?\.?|VARAS?|METERS?|METRES?|M\b)/g;
+  let m;
+  while((m=re.exec(scrub))){
+    const u=m[2].replace(/\./g,"").replace(/S$/,"")==="FT"?"FT":m[2].replace(/\./g,"");
+    let key=u.replace(/S$/,""); if(key==="FEE"||u==="FEET")key="FEET";
+    const perFt=_DEED_UNIT_FT[u]||_DEED_UNIT_FT[key]||_DEED_UNIT_FT[u.replace(/S$/,"")];
+    if(perFt) return {val:parseFloat(m[1]), unit:u, ft:parseFloat(m[1])*perFt};
+  }
+  return null;
+}
+function _deedParseAngle(seg,label){
+  const re=new RegExp(label+"\\s*(?:ANGLE)?\\s*(?:OF|=|:)?\\s*(\\d{1,3})\\s*(?:°|DEGREES?|DEG\\.?|-|\\s)\\s*(?:(\\d{1,2})\\s*(?:'|MINUTES?|MIN\\.?|-|\\s))?\\s*(?:(\\d{1,2}(?:\\.\\d+)?)\\s*(?:\"|SECONDS?|SEC\\.?)?)?");
+  const m=seg.match(re);
+  if(!m)return null;
+  return parseFloat(m[1])+(m[2]?parseFloat(m[2])/60:0)+(m[3]?parseFloat(m[3])/3600:0);
+}
+
+/* Split description into course segments and classify each */
+function parseDeedText(txt){
+  const t=_deedNormalize(txt);
+  // segment on THENCE / RUNNING THENCE / numbered courses / semicolons
+  const segs=t.split(/\bTHENCE\b|;|\bRUNNING\b|(?:\b\d{1,2}\s*[.)]\s+(?=[NSDC]))/).map(x=>x.trim()).filter(x=>x.length>3);
+  const calls=[];
+  segs.forEach(seg=>{
+    const isCurve=/\bCURVE\b|\bCURVING\b|\bALONG THE ARC\b/.test(seg);
+    if(isCurve){
+      const dir=/\bLEFT\b/.test(seg)?"L":(/\bRIGHT\b/.test(seg)?"R":null);
+      const rm=seg.match(/RADIUS\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
+      const am=seg.match(/ARC\s*(?:LENGTH|DISTANCE)?\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
+      const delta=_deedParseAngle(seg,"(?:DELTA|CENTRAL)");
+      // chord: bearing+dist appearing after CHORD
+      let chB=null,chD=null;
+      const ci=seg.indexOf("CHORD");
+      if(ci>=0){
+        const rest=seg.slice(ci);
+        chB=_deedParseBearing(rest);
+        chD=_deedParseDistance(rest);
+      }
+      if(dir&&(rm||chD)){
+        calls.push({type:"curve",dir:dir,
+          radius:rm?parseFloat(rm[1]):null,
+          arc:am?parseFloat(am[1]):null,
+          delta:delta,
+          chordB:chB, chordD:chD?chD.ft:null,
+          raw:seg.slice(0,140)});
+        return;
+      }
+    }
+    const b=_deedParseBearing(seg);
+    // remove bearing text so its digits can't be mistaken for a distance
+    let segForDist=seg;
+    if(b&&!b.card){
+      segForDist=seg.replace(/\b(N|S|NORTH|SOUTH)\s*\.?\s*\d{1,2}[^EW]{0,24}?(E|W|EAST|WEST)\b/," ");
+    }
+    const d=_deedParseDistance(segForDist);
+    if(b&&d){
+      calls.push({type:"line",bearing:b,dist:d.ft,unit:d.unit,rawVal:d.val,raw:seg.slice(0,140)});
+    }else if(b||d){
+      calls.push({type:"partial",bearing:b,dist:d?d.ft:null,unit:d?d.unit:null,raw:seg.slice(0,140)});
+    }
+  });
+  return calls;
+}
+
+/* Geometry: run calls from a POB with rotation; returns vertices + arcs + closure */
+function computeDeed(calls,pobE,pobN,rotDeg){
+  const rad=Math.PI/180;
+  let E=pobE,N=pobN,tangent=null;
+  const verts=[{E,N}], arcs=[];
+  const usable=calls.filter(c=>c.type==="line"||c.type==="curve");
+  usable.forEach(c=>{
+    if(c.type==="line"){
+      const az=_deedBearingToAz(c.bearing)+rotDeg;
+      E+=c.dist*Math.sin(az*rad); N+=c.dist*Math.cos(az*rad);
+      verts.push({E,N}); tangent=az;
+      return;
+    }
+    // curve
+    let chAz=null,chLen=null,delta=c.delta;
+    if(delta==null&&c.radius&&c.arc) delta=(c.arc/c.radius)/rad;
+    if(c.chordB){ chAz=_deedBearingToAz(c.chordB)+rotDeg; }
+    if(c.chordD){ chLen=c.chordD; }
+    if(chLen==null&&c.radius&&delta!=null) chLen=2*c.radius*Math.sin(delta*rad/2);
+    if(chAz==null&&tangent!=null&&delta!=null)
+      chAz=tangent+(c.dir==="L"?-delta/2:delta/2);
+    if(chAz==null||chLen==null){ verts.push({E,N,skip:true}); return; }
+    const sE=E,sN=N;
+    E+=chLen*Math.sin(chAz*rad); N+=chLen*Math.cos(chAz*rad);
+    verts.push({E,N});
+    if(c.radius&&c.radius>=chLen/2){
+      const h=Math.sqrt(Math.max(0,c.radius*c.radius-chLen*chLen/4));
+      const mE=(sE+E)/2,mN=(sN+N)/2;
+      const perp=chAz+(c.dir==="L"?-90:90); // center side
+      const cE=mE+h*Math.sin(perp*rad), cN=mN+h*Math.cos(perp*rad);
+      arcs.push({cE,cN,r:c.radius,
+        a1:Math.atan2(sN-cN,sE-cE), a2:Math.atan2(N-cN,E-cE),
+        ccw:c.dir==="L", sE,sN,eE:E,eN:N});
+    }
+    if(delta!=null) tangent=chAz+(c.dir==="L"?-delta/2:delta/2);
+    else tangent=chAz;
+  });
+  const closeE=verts[0].E-E, closeN=verts[0].N-N;
+  const closeDist=Math.hypot(closeE,closeN);
+  let perim=0;
+  usable.forEach(c=>{perim+=c.type==="line"?c.dist:(c.arc||c.chordD||0);});
+  return {verts,arcs,closeDist,perim,
+    precision:closeDist>0.001?Math.round(perim/closeDist):null,
+    closeAz:closeDist>0.001?((Math.atan2(closeE,closeN)/rad)%360+360)%360:0,
+    skipped:calls.length-usable.length};
+}
+
+
+
+/* — Deed plotter state & flows — */
+let _deedPlot=null; // {calls,pobE,pobN,rot,computed}
+function _deedRecompute(){
+  if(!_deedPlot)return;
+  _deedPlot.computed=computeDeed(_deedPlot.calls,_deedPlot.pobE,_deedPlot.pobN,_deedPlot.rot||0);
+}
+function _deedCallLabel(c,i){
+  if(c.type==="line")return (i+1)+". "+_deedAzToBearingStr(_deedBearingToAz(c.bearing))+" — "+c.dist.toFixed(2)+" "+(units==="ft"?"ft":"m eq")+(c.unit&&!/FEET|FT|FOOT/.test(c.unit)?" ("+c.rawVal+" "+c.unit.toLowerCase()+")":"");
+  if(c.type==="curve")return (i+1)+". Curve "+(c.dir==="L"?"LEFT":"RIGHT")+(c.radius?" R="+c.radius.toFixed(2):"")+(c.arc?" arc="+c.arc.toFixed(2):"")+(c.chordD?" ch="+c.chordD.toFixed(2):"");
+  return (i+1)+". ⚠ incomplete — tap to fix";
+}
+function _deedReview(calls){
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>📜 Review Calls</h2><p class='info'>Parsed "+calls.length+" call"+(calls.length===1?"":"s")+". Check each against the deed — tap any to edit.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b);return b;};
+    calls.forEach((c,i)=>{
+      const b=mk(_deedCallLabel(c,i),c.type==="partial"?"danger":"blue",()=>{close();_deedEditCall(calls,i);});
+      b.style.cssText+="font-size:.72em;text-align:left";
+    });
+    mk("＋ Add a call","",()=>{close();calls.push({type:"partial",raw:""});_deedEditCall(calls,calls.length-1);});
+    if(calls.some(c=>c.type!=="partial"))
+      mk("Plot Deed →","ok",()=>{close();_deedPickPOB(calls);});
+    mk("Cancel","",close);
+  });
+}
+function _deedEditCall(calls,i){
+  const c=calls[i];
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Call "+(i+1)+"</h2>"+(c.raw?"<p class='info' style='font-size:.75em'>from deed: “"+c.raw.slice(0,110)+"”</p>":"");
+    const fld=(label,val)=>{
+      const w=document.createElement("div");
+      w.innerHTML="<div class='input-label'>"+label+"</div>";
+      const inp=document.createElement("input");
+      inp.type="text";inp.value=val||"";
+      inp.style.cssText="width:100%;background:#111;color:var(--accent,#d9a13c);border:1px solid #444;border-radius:6px;padding:10px;font-family:'Courier New',monospace;font-size:1em";
+      w.appendChild(inp);modal.appendChild(w);return inp;
+    };
+    const bIn=fld("Bearing (e.g. N 47°23'10\" E — or CURVE L/R R=250 ARC=130.9)",
+      c.type==="line"?_deedAzToBearingStr(_deedBearingToAz(c.bearing)):
+      c.type==="curve"?("CURVE "+c.dir+(c.radius?" R="+c.radius:"")+(c.arc?" ARC="+c.arc:"")+(c.chordD?" CH="+c.chordD:"")):"");
+    const dIn=fld("Distance ("+units+", or e.g. '12 chains')",
+      c.type==="line"?(c.rawVal!=null?c.rawVal+" "+(c.unit||""):c.dist):"");
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    mk("Save call","ok",()=>{
+      const bt=_deedNormalize(bIn.value), dt=_deedNormalize(dIn.value);
+      if(/^CURVE/.test(bt)){
+        const dir=/\bL\b|LEFT/.test(bt)?"L":"R";
+        const r=bt.match(/R\s*=?\s*([\d.]+)/),a=bt.match(/ARC\s*=?\s*([\d.]+)/),ch=bt.match(/CH(?:ORD)?\s*=?\s*([\d.]+)/);
+        calls[i]={type:"curve",dir,radius:r?parseFloat(r[1]):null,arc:a?parseFloat(a[1]):null,
+                  chordD:ch?parseFloat(ch[1]):null,chordB:null,delta:null,raw:c.raw||""};
+      }else{
+        const b=_deedParseBearing(bt);
+        let d=_deedParseDistance(dt);
+        if(!d&&parseFloat(dt))d={val:parseFloat(dt),unit:units.toUpperCase(),ft:parseFloat(dt)*(units==="ft"?1:3.280833333)};
+        if(!b||!d){alert("Couldn't read that — bearing like N 47°23'10\" E, distance like 156.48 or 12 chains.");return;}
+        calls[i]={type:"line",bearing:b,dist:d.ft*(units==="ft"?1:1/3.280833333)*(units==="ft"?1:1),unit:d.unit,rawVal:d.val,raw:c.raw||""};
+        if(units==="m")calls[i].dist=d.ft/3.280833333;
+      }
+      close();_deedReview(calls);
+    });
+    mk("Delete call","danger",()=>{calls.splice(i,1);close();_deedReview(calls);});
+    mk("Back","",()=>{close();_deedReview(calls);});
+  });
+}
+function _deedPickPOB(calls){
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Point of Beginning</h2><p class='info'>Where does the first call start?</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    mk("At an existing point #","ok",()=>{close();
+      calculatorInput("POB at point #:","",pn=>{
+        if(pn===null||pn==="")return;
+        const pt=points.find(p=>p.Point===parseInt(pn,10));
+        if(!pt){alert("Point "+pn+" not found.");return;}
+        _deedSet(calls,pt.Easting,pt.Northing);
+      });});
+    mk("✛ Long-press the POB on the map","blue",()=>{close();
+      window._deedPobCalls=calls;plotPoints();});
+    if(geoAnchor)mk("🎯 Grid coordinate (SPC/UTM)","blue",()=>{close();
+      _gridCoordEntry((lat,lon,zone,Nu,Eu)=>{_deedSet(calls,Eu,Nu);});});
+    mk("Cancel","",close);
+  });
+}
+function _deedSet(calls,E,N){
+  _deedPlot={calls,pobE:E,pobN:N,rot:0};
+  _deedRecompute();saveData();
+  const g=_deedPlot.computed;
+  showResult("📜 Deed Plotted",[
+    {lbl:"Courses:",val:String(g.verts.length-1)+(g.skipped?" ("+g.skipped+" skipped)":"")},
+    {lbl:"Perimeter:",val:g.perim.toFixed(1)+" "+units},
+    {lbl:"Closure:",val:g.closeDist.toFixed(2)+" "+units+(g.precision?"  (1:"+g.precision+")":"")},
+    {lbl:"Next:",val:"COGO → Deed Plotter to swing / adjust"}]);
+}
+function _deedFitTwoPoint(){
+  const g=_deedPlot.computed, nC=g.verts.length;
+  calculatorInput("Deed corner # to HOLD (0=POB … "+(nC-1)+"):","0",ci=>{
+    if(ci===null)return;
+    const i=parseInt(ci,10);
+    if(!(i>=0&&i<nC)){alert("Corner must be 0–"+(nC-1)+".");return;}
+    calculatorInput("Hold it ON measured point #:","",pa=>{
+      if(pa===null||pa==="")return;
+      const A=points.find(p=>p.Point===parseInt(pa,10));
+      if(!A){alert("Point "+pa+" not found.");return;}
+      calculatorInput("Second deed corner # (rotate toward):","",cj=>{
+        if(cj===null)return;
+        const j=parseInt(cj,10);
+        if(!(j>=0&&j<nC)||j===i){alert("Pick a different corner 0–"+(nC-1)+".");return;}
+        calculatorInput("…onto measured point #:","",pb=>{
+          if(pb===null||pb==="")return;
+          const B=points.find(p=>p.Point===parseInt(pb,10));
+          if(!B){alert("Point "+pb+" not found.");return;}
+          const vi=g.verts[i], vj=g.verts[j];
+          const azRec=Math.atan2(vj.E-vi.E,vj.N-vi.N)*180/Math.PI;
+          const azMeas=Math.atan2(B.Easting-A.Easting,B.Northing-A.Northing)*180/Math.PI;
+          const dTheta=azMeas-azRec;
+          // rotate the whole figure about corner i by dTheta, then drop corner i on A.
+          // pob moves with the figure:
+          const rad=Math.PI/180, c=Math.cos(dTheta*rad), sn=Math.sin(dTheta*rad);
+          const rE=_deedPlot.pobE-vi.E, rN=_deedPlot.pobN-vi.N;
+          // rotate offset vector (E,N) clockwise by dTheta in azimuth terms:
+          const pE=vi.E+(rE*c+rN*sn), pN=vi.N+(-rE*sn+rN*c);
+          _deedPlot.rot=(_deedPlot.rot||0)+dTheta;
+          _deedPlot.pobE=pE+(A.Easting-vi.E);
+          _deedPlot.pobN=pN+(A.Northing-vi.N);
+          _deedRecompute();
+          const g2=_deedPlot.computed;
+          const resid=Math.hypot(g2.verts[j].E-B.Easting,g2.verts[j].N-B.Northing);
+          const dRec=Math.hypot(vj.E-vi.E,vj.N-vi.N);
+          const dMeas=Math.hypot(B.Easting-A.Easting,B.Northing-A.Northing);
+          saveData();
+          showResult("📜 Deed fit to found points",[
+            {lbl:"Held:",val:"corner "+i+" ON pt #"+A.Point},
+            {lbl:"Rotated:",val:dTheta.toFixed(4)+"° (total swing "+_deedPlot.rot.toFixed(4)+"°)"},
+            {lbl:"Record "+i+"→"+j+":",val:dRec.toFixed(2)+" "+units},
+            {lbl:"Measured:",val:dMeas.toFixed(2)+" "+units+"  (Δ "+(dMeas-dRec>=0?"+":"")+(dMeas-dRec).toFixed(2)+")"},
+            {lbl:"Residual at "+j+":",val:resid.toFixed(2)+" "+units+" — record distance HELD, not scaled"},
+            ...((A.Type==="GPS"||B.Type==="GPS")?[{lbl:"⚠ Note:",val:"a control point is GPS-grade (±10-30 "+units+") — fit is for recon; residual is not meaningful for judging the deed"}]:[])]);
+        });
+      });
+    });
+  });
+}
+function deedPlotterMenu(){
+  if(!_deedPlot){
+    openModal((modal,close)=>{
+      modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>Paste a metes-and-bounds description — from a PDF, or photographed with Google Lens / Live Text and copied. The app reads the calls; you review them; it plots on the map.</p>";
+      const ta=document.createElement("textarea");
+      ta.placeholder="…thence N 47°23'10\" E a distance of 156.48 feet; thence along a curve to the right…";
+      ta.style.cssText="width:100%;min-height:130px;background:#111;color:#ddd;border:1px solid #444;border-radius:6px;padding:10px;font-size:.85em";
+      modal.appendChild(ta);
+      const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+      mk("Read the calls →","ok",()=>{
+        const calls=parseDeedText(ta.value);
+        if(!calls.length){alert("No survey calls found — is the description text in the box?");return;}
+        close();_deedReview(calls);
+      });
+      mk("Cancel","",close);
+    });
+    return;
+  }
+  _deedRecompute();
+  const g=_deedPlot.computed;
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>Closure: <b style='color:var(--accent)'>"+g.closeDist.toFixed(2)+" "+units+"</b>"+
+      (g.precision?" — precision 1:"+g.precision:"")+"<br>Perimeter "+g.perim.toFixed(1)+" "+units+
+      " · swing "+(_deedPlot.rot||0).toFixed(3)+"°</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    // swing slider — rotate record calls to fit found monuments
+    const w=document.createElement("div");
+    w.innerHTML="<div class='input-label'>Swing (±3° fine)</div>";
+    const r=document.createElement("input");r.type="range";r.min=-3;r.max=3;r.step=0.005;r.value=_deedPlot.rot||0;
+    r.style.width="100%";
+    r.oninput=()=>{_deedPlot.rot=parseFloat(r.value);_deedRecompute();plotPoints();};
+    r.onchange=()=>saveData();
+    w.appendChild(r);modal.appendChild(w);
+    mk("⇲ Fit to 2 measured points","ok",()=>{close();_deedFitTwoPoint();});
+    mk("Set exact swing angle","blue",()=>{close();
+      calculatorInput("Swing (degrees, + clockwise):",String(_deedPlot.rot||0),v=>{
+        if(v===null)return;const x=parseFloat(v);
+        if(!isNaN(x)){_deedPlot.rot=x;_deedRecompute();saveData();}
+      });});
+    mk("Move POB","blue",()=>{const calls=_deedPlot.calls;close();_deedPickPOB(calls);});
+    mk("Re-edit calls","blue",()=>{const calls=_deedPlot.calls;close();_deedReview(calls);});
+    mk("Convert to points & lines","ok",()=>{close();
+      confirmDialog("Create "+( _deedPlot.computed.verts.length)+" points and connect them? (Curves come in as straight chords.)",yes=>{
+        if(!yes)return;
+        _takeSnapshot("Deed → points");
+        let prev=null;
+        _deedPlot.computed.verts.forEach((v,i)=>{
+          const num=pointCounter++;
+          points.push({Point:num,Northing:v.N,Easting:v.E,
+            Elevation:(currentPoint?currentPoint.Elevation:100)||100,
+            Type:"Deed",Flag:"",ih:0,Description:i===0?"POB (deed)":"Deed crn "+i});
+          if(prev!=null)plotConnections.push({type:"line",from:prev,to:num,style:"dashed"});
+          prev=num;
+        });
+        saveData();updateStatus();
+        showResult("✓ Deed converted",[{lbl:"Points:",val:String(_deedPlot.computed.verts.length)}]);
+      });});
+    mk("Clear deed overlay","danger",()=>{
+      confirmDialog("Remove the deed overlay? (Converted points stay.)",yes=>{
+        if(!yes)return;_deedPlot=null;saveData();});
+      close();});
+    mk("Done","",close);
+  });
 }
 
 /* ── SATELLITE IMAGERY (Esri World Imagery) ─────────────────────
@@ -7714,8 +8107,19 @@ function startLiveGps(){
   if(_gpsWatchId!=null)return;
   if(!navigator.geolocation){alert("Geolocation isn't available on this device/browser.");return;}
   _gpsWatchId=navigator.geolocation.watchPosition(
-    pos=>{_liveFix={lat:pos.coords.latitude,lon:pos.coords.longitude,
-                    acc:pos.coords.accuracy,ts:Date.now()};_satRepaint();},
+    pos=>{
+      const nf={lat:pos.coords.latitude,lon:pos.coords.longitude,
+                acc:pos.coords.accuracy,ts:Date.now()};
+      // derive heading from movement (needs ~2 m of travel to be meaningful)
+      if(_liveFix&&geoAnchor){
+        const a=_gpsToJob(_liveFix.lat,_liveFix.lon), b=_gpsToJob(nf.lat,nf.lon);
+        if(a&&b){
+          const du=Math.hypot(b.E-a.E,b.N-a.N)/(geoAnchor.m2u||1);
+          if(du>2) window._gpsHeading=((Math.atan2(b.E-a.E,b.N-a.N)*180/Math.PI)%360+360)%360;
+          else if(Date.now()-(_liveFix.ts||0)>6000) window._gpsHeading=null; // standing still — heading stale
+        }
+      }
+      _liveFix=nf;_satRepaint();},
     err=>{
       // Timeouts / temporary unavailability are normal (indoors, canopy) —
       // keep the watch alive. Only a permission denial is fatal.
@@ -7742,6 +8146,7 @@ function _drawLiveGps(ctx,w,h,T){
   const p=_gpsToJob(_liveFix.lat,_liveFix.lon); if(!p)return;
   const {scale,offX,offY}=T;
   const sx=p.E*scale+offX, sy=h-(p.N*scale+offY);
+  _drawGpsStakeHud(ctx,w,h,T,p);
   if(sx<-20||sx>w+20||sy<-20||sy>h+20){
     // Fix is off-screen — draw an edge arrow pointing toward it
     const cx=w/2, cy=h/2, ang=Math.atan2(sy-cy,sx-cx);
@@ -7771,7 +8176,6 @@ function _drawLiveGps(ctx,w,h,T){
   ctx.fillStyle="#4285f4";ctx.strokeStyle="#ffffff";ctx.lineWidth=2.5;
   ctx.beginPath();ctx.arc(sx,sy,7,0,2*Math.PI);ctx.fill();ctx.stroke();
   ctx.restore();
-  _drawGpsStakeHud(ctx,w,h,T,p);
 }
 function _drawGpsStakeHud(ctx,w,h,T,fixJob){
   if(!_gpsStakeTarget)return;
@@ -7781,19 +8185,58 @@ function _drawGpsStakeHud(ctx,w,h,T,fixJob){
   const X=e=>e*scale+offX, Y=n=>h-(n*scale+offY);
   const fx=X(fixJob.E), fy=Y(fixJob.N), tx=X(tgt.Easting), ty=Y(tgt.Northing);
   ctx.save();
-  ctx.strokeStyle="#ffd166";ctx.lineWidth=2;ctx.setLineDash([8,6]);
+  ctx.strokeStyle="#ffd166";ctx.lineWidth=2.5;ctx.setLineDash([8,6]);
   ctx.beginPath();ctx.moveTo(fx,fy);ctx.lineTo(tx,ty);ctx.stroke();
   ctx.setLineDash([]);
-  // Distance + azimuth from live fix to target
+
   const me={Northing:fixJob.N,Easting:fixJob.E};
   const hd=dist2D(me,tgt), az=((azimuth(me,tgt)%360)+360)%360;
-  const d=Math.floor(az), m=Math.floor((az-d)*60);
-  const txt="→ #"+tgt.Point+"  "+hd.toFixed(1)+" "+units+"  @ "+d+"°"+String(m).padStart(2,"0")+"'";
-  ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="top";
-  const tw=ctx.measureText(txt).width;
-  ctx.fillStyle=hd<(units==="ft"?3:1)?"rgba(30,120,50,.9)":"rgba(0,0,0,.7)";
-  ctx.fillRect(w/2-tw/2-10,8,tw+20,20);
-  ctx.fillStyle="#ffd166";ctx.fillText(txt,w/2,12);
+  const onPoint=hd<(units==="ft"?3:1);
+
+  // ── Navigation panel — bottom center, big and glanceable ──
+  const pw=Math.min(w-20,360), ph=92;
+  const px=(w-pw)/2, py=h-ph-14;
+  ctx.globalAlpha=0.92;
+  ctx.fillStyle=onPoint?"rgba(18,80,34,.95)":"rgba(12,12,10,.9)";
+  ctx.strokeStyle=onPoint?"#59d97c":"#ffd166";ctx.lineWidth=1.5;
+  const rr=(x,y,ww,hh,r)=>{ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+ww,y,x+ww,y+hh,r);ctx.arcTo(x+ww,y+hh,x,y+hh,r);ctx.arcTo(x,y+hh,x,y,r);ctx.arcTo(x,y,x+ww,y,r);ctx.closePath();};
+  rr(px,py,pw,ph,12);ctx.fill();ctx.stroke();
+  ctx.globalAlpha=1;
+
+  // Arrow: relative to direction of travel when we have a heading, else map-north-up
+  const cx=px+50, cy=py+ph/2;
+  let arrowAng, mode;
+  if(window._gpsHeading!=null){
+    arrowAng=az-window._gpsHeading; mode="travel";
+  }else{
+    arrowAng=az; mode="map";
+  }
+  ctx.save();
+  ctx.translate(cx,cy);ctx.rotate(arrowAng*Math.PI/180);
+  ctx.fillStyle=onPoint?"#7ff0a0":"#ffd166";
+  ctx.beginPath();
+  ctx.moveTo(0,-26);ctx.lineTo(15,14);ctx.lineTo(0,6);ctx.lineTo(-15,14);ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  ctx.font="9px 'Courier New',monospace";ctx.textAlign="center";ctx.fillStyle="rgba(255,255,255,.45)";
+  ctx.fillText(mode==="travel"?"vs travel":"map dir",cx,py+ph-8);
+
+  // Big distance + guidance
+  ctx.textAlign="left";ctx.textBaseline="alphabetic";
+  ctx.fillStyle=onPoint?"#c6ffd8":"#ffffff";
+  ctx.font="bold 30px 'Courier New',monospace";
+  ctx.fillText(onPoint?"ON POINT":hd.toFixed(hd<100?1:0)+" "+units,px+96,py+38);
+  ctx.font="12px 'Courier New',monospace";
+  ctx.fillStyle=onPoint?"#9fe8b5":"#c9c2a8";
+  let guide="";
+  if(!onPoint&&mode==="travel"){
+    const rel=((arrowAng%360)+360)%360;
+    guide=rel<20||rel>340?"straight ahead":
+          rel<160?"veer right":
+          rel<200?"behind you":"veer left";
+  }
+  ctx.fillText("→ #"+tgt.Point+(tgt.Description?" "+tgt.Description.slice(0,14):""),px+96,py+58);
+  ctx.fillText(guide||_deedAzToBearingStr(az),px+96,py+76);
   ctx.restore();
 }
 
@@ -8644,6 +9087,39 @@ function plotPoints(extCtx,extW,extH){
       ctx.shadowBlur=0;
     }
   }
+  try{
+    if(_deedPlot&&_deedPlot.computed){
+      const g=_deedPlot.computed;
+      ctx.save();
+      ctx.strokeStyle="#25c8d8";ctx.lineWidth=2;ctx.setLineDash([10,6]);
+      ctx.beginPath();
+      g.verts.forEach((v,i)=>{ const sx=X(v.E),sy=Y(v.N); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy); });
+      ctx.stroke();
+      g.arcs.forEach(a=>{
+        ctx.beginPath();
+        ctx.arc(X(a.cE),Y(a.cN),a.r*scale,-a.a1,-a.a2,!a.ccw);
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
+      ctx.font="bold 10px 'Courier New',monospace";ctx.textAlign="left";
+      ctx.fillStyle="#25c8d8";
+      g.verts.forEach((v,i)=>{
+        const vx=X(v.E),vy=Y(v.N);
+        if(i===0){ctx.fillRect(vx-5,vy-5,10,10);ctx.fillText("POB·0",vx+8,vy-8);}
+        else{ctx.beginPath();ctx.arc(vx,vy,3,0,2*Math.PI);ctx.fill();ctx.fillText(String(i),vx+7,vy-6);}
+      });
+      ctx.restore();
+    }
+  }catch(e){}
+  if(window._deedPobCalls&&!extCtx){
+    ctx.save();
+    ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="top";
+    const txt="✛ long-press the Point of Beginning";
+    const tw=ctx.measureText(txt).width;
+    ctx.fillStyle="rgba(10,90,100,.85)";ctx.fillRect(w/2-tw/2-12,34,tw+24,22);
+    ctx.fillStyle="#bff3fa";ctx.fillText(txt,w/2,39);
+    ctx.restore();
+  }
   try{ _drawLiveGps(ctx,w,h,T); }catch(e){}
   if(_relocateTarget!=null&&!extCtx){
     ctx.save();
@@ -8788,6 +9264,13 @@ function zoomToOccupied(){
     // synthesized contextmenu event — debounce so only one modal opens.
     if(Date.now()-(window._lpLast||0)<1200) return;
     window._lpLast=Date.now();
+    // Deed POB pick mode
+    if(window._deedPobCalls){
+      const calls=window._deedPobCalls; window._deedPobCalls=null;
+      if(navigator.vibrate)navigator.vibrate(40);
+      _deedSet(calls,worldE,worldN);
+      return;
+    }
     // Relocate mode: move the target point here instead of adding one
     if(_relocateTarget!=null){
       const pt=points.find(p=>p.Point===_relocateTarget);
@@ -8882,7 +9365,7 @@ function zoomToOccupied(){
     const X=ep=>ep*T.scale+T.offX;
     const Y=n=>h-(n*T.scale+T.offY);
     const hitPt=points.find(p=>Math.hypot(X(p.Easting)-mx,Y(p.Northing)-my)<PT_THRESH);
-    if((!hitPt||_relocateTarget!=null) && !_areaMode && !window._connClickActive){
+    if((!hitPt||_relocateTarget!=null||window._deedPobCalls) && !_areaMode && !window._connClickActive){
       _longPressAddPoint(worldE, worldN);
     }
   });
@@ -8920,7 +9403,7 @@ function zoomToOccupied(){
         const X=ep=>ep*T.scale+T.offX;
         const Y=n=>h-(n*T.scale+T.offY);
         const hitPt=points.find(p=>Math.hypot(X(p.Easting)-mx,Y(p.Northing)-my)<PT_THRESH);
-        if((!hitPt||_relocateTarget!=null) && !_areaMode && !window._connClickActive){
+        if((!hitPt||_relocateTarget!=null||window._deedPobCalls) && !_areaMode && !window._connClickActive){
           if(navigator.vibrate) navigator.vibrate(40);
           _longPressAddPoint(worldE, worldN);
         }
