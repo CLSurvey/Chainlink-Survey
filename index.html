@@ -8601,6 +8601,23 @@ function _gpsStartFlow(jn,fineTune){
     if(!pos){jobNewManual(jn);return;}
     const lat=pos.coords.latitude, lon=pos.coords.longitude, acc=pos.coords.accuracy;
     startLiveGps();
+    if(fineTune){
+      // Pick-first path: zero dialogs between here and the map.
+      // Zone auto-selected (change later via 🛰 menu → Re-anchor);
+      // elevation auto-filled from USGS (edit later if needed).
+      const zone=_spcCandidates(lat,lon)[0]||_utmZoneFor(lat,lon);
+      const p=_projForward(lat,lon,zone), u=_m2u();
+      _fetchGroundElev(lat,lon,(ge)=>{
+        _startNewJob(jn,p.N*u,p.E*u,ge!=null?parseFloat(ge.toFixed(1)):100,true);
+        _setAnchor(lat,lon,zone,p.E*u,p.N*u);
+        satOn=true;saveData();_syncSatBtn();
+        _zoomToGround(units==="ft"?300:100);
+        closeAllModals();
+        _relocateTarget=1;
+        plotPoints();
+      });
+      return;
+    }
     _zonePick(lat,lon,zone=>{
       if(!zone){jobNewManual(jn);return;}
       const p=_projForward(lat,lon,zone), u=_m2u();
@@ -8612,17 +8629,10 @@ function _gpsStartFlow(jn,fineTune){
         _setAnchor(lat,lon,zone,p.E*u,p.N*u);
         satOn=true;saveData();_syncSatBtn();
         _zoomToGround(units==="ft"?300:100);
-        if(fineTune){
-          // Free map: no modals — pan/zoom the imagery, then long-press the spot.
-          closeAllModals();
-          _relocateTarget=1;
-          plotPoints();
-        }else{
-          showResult("✓ GPS Start · "+zone.name,[
-            {lbl:"Point 1:",val:"N "+(p.N*u).toFixed(2)+" E "+(p.E*u).toFixed(2)},
-            {lbl:"Elev:",val:(isNaN(Z)?100:Z).toFixed(1)+" "+units+(src?" ("+src+")":"")},
-            {lbl:"Fix:",val:lat.toFixed(6)+", "+lon.toFixed(6)+(acc!=null?" ±"+(acc*u).toFixed(0)+" "+units:"")}]);
-        }
+        showResult("✓ GPS Start · "+zone.name,[
+          {lbl:"Point 1:",val:"N "+(p.N*u).toFixed(2)+" E "+(p.E*u).toFixed(2)},
+          {lbl:"Elev:",val:(isNaN(Z)?100:Z).toFixed(1)+" "+units+(src?" ("+src+")":"")},
+          {lbl:"Fix:",val:lat.toFixed(6)+", "+lon.toFixed(6)+(acc!=null?" ±"+(acc*u).toFixed(0)+" "+units:"")}]);
         });
       });
     });
