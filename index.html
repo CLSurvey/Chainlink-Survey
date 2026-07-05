@@ -7519,6 +7519,14 @@ function parseDeedText(txt){
       calls.push({type:"partial",bearing:b,dist:d?d.ft:null,unit:d?d.unit:null,raw:seg.slice(0,140)});
     }
   });
+  // Tie-course detection: if a call's own text reaches the (TRUE) POINT OF
+  // BEGINNING and it is NOT the last call, then it and everything before it
+  // are commencement ties, not boundary. Flagged and excluded by default;
+  // tap a tie row in review to include it if the parser guessed wrong.
+  const pobIdx=calls.findIndex(c=>/POINT OF BEGINNING/.test(c.raw||""));
+  if(pobIdx>=0&&pobIdx<calls.length-1){
+    for(let i=0;i<=pobIdx;i++)if(calls[i].type!=="partial")calls[i].tie=true;
+  }
   return calls;
 }
 
@@ -7527,7 +7535,7 @@ function computeDeed(calls,pobE,pobN,rotDeg){
   const rad=Math.PI/180;
   let E=pobE,N=pobN,tangent=null;
   const verts=[{E,N}], arcs=[];
-  const usable=calls.filter(c=>c.type==="line"||c.type==="curve");
+  const usable=calls.filter(c=>(c.type==="line"||c.type==="curve")&&!c.tie);
   usable.forEach(c=>{
     if(c.type==="line"){
       const az=_deedBearingToAz(c.bearing)+rotDeg;
@@ -7620,7 +7628,8 @@ function _deedRemovePoints(){
   }
 }
 function _deedCallLabel(c,i){
-  if(c.type==="line")return (i+1)+". "+_deedAzToBearingStr(_deedBearingToAz(c.bearing))+" — "+c.dist.toFixed(2)+" "+(units==="ft"?"ft":"m eq")+(c.unit&&!/FEET|FT|FOOT/.test(c.unit)?" ("+c.rawVal+" "+c.unit.toLowerCase()+")":"");
+  const tie=c.tie?"TIE→POB (excluded): ":"";
+  if(c.type==="line")return (i+1)+". "+tie+_deedAzToBearingStr(_deedBearingToAz(c.bearing))+" — "+c.dist.toFixed(2)+" "+(units==="ft"?"ft":"m eq")+(c.unit&&!/FEET|FT|FOOT/.test(c.unit)?" ("+c.rawVal+" "+c.unit.toLowerCase()+")":"");
   if(c.type==="curve")return (i+1)+". Curve "+(c.dir==="L"?"LEFT":"RIGHT")+(c.radius?" R="+c.radius.toFixed(2):"")+(c.arc?" arc="+c.arc.toFixed(2):"")+(c.chordD?" ch="+c.chordD.toFixed(2):"");
   return (i+1)+". ⚠ incomplete — tap to fix";
 }
@@ -7629,8 +7638,17 @@ function _deedReview(calls){
     modal.innerHTML="<h2>📜 Review Calls</h2><p class='info'>Parsed "+calls.length+" call"+(calls.length===1?"":"s")+". Check each against the deed — tap any to edit.</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b);return b;};
     calls.forEach((c,i)=>{
-      const b=mk(_deedCallLabel(c,i),c.type==="partial"?"danger":"blue",()=>{close();_deedEditCall(calls,i);});
-      b.style.cssText+="font-size:.72em;text-align:left";
+      const b=mk(_deedCallLabel(c,i),c.type==="partial"?"danger":(c.tie?"":"blue"),()=>{
+        if(c.tie){
+          confirmDialog("This looks like a commencement tie to the POINT OF BEGINNING and is excluded from the boundary. Include it as a boundary course instead?",yes=>{
+            if(yes){c.tie=false;}
+            close();_deedReview(calls);
+          });
+          return;
+        }
+        close();_deedEditCall(calls,i);
+      });
+      b.style.cssText+="font-size:.72em;text-align:left"+(c.tie?";opacity:.6":"");
     });
     mk("＋ Add a call","",()=>{close();calls.push({type:"partial",raw:""});_deedEditCall(calls,calls.length-1);});
     if(calls.some(c=>c.type!=="partial"))
