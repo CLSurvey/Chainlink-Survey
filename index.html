@@ -885,6 +885,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
     <button title="Pan S"      onclick="panBy(0,-60)">▼</button>
     <button title="Pan W"      onclick="panBy(-60,0)">◀</button>
     <button title="Pan E"      onclick="panBy(60,0)">▶</button>
+    <button title="Satellite + GPS"   onclick="toggleSatAndGps()" id="btnSat" style="font-size:.8em;letter-spacing:0">🛰</button>
     <button title="Toggle labels"     onclick="toggleLabels()"   id="btnLabels" style="font-size:.7em;letter-spacing:0">LBL</button>
     <button title="Toggle elevations" onclick="toggleElevations()" id="btnElev"   style="font-size:.7em;letter-spacing:0">ELV</button>
   </div>
@@ -1218,7 +1219,8 @@ function loadData() {
   try { satOn=_lsGet("cl_satOn")==="true"&&!!geoAnchor; } catch(e){ satOn=false; }
   try { satOpacity=parseFloat(_lsGet("cl_satOpacity")||"0.85")||0.85; } catch(e){ satOpacity=0.85; }
   try { satRotNudge=parseFloat(_lsGet("cl_satRot")||"0")||0; } catch(e){ satRotNudge=0; }
-  try { if(geoAnchor&&_lsGet("cl_gpsLive")!=="false")startLiveGps(); } catch(e){}
+  try { if(geoAnchor&&satOn&&_lsGet("cl_gpsLive")!=="off")startLiveGps(); else stopLiveGps(); } catch(e){}
+  try { _syncSatBtn(); } catch(e){}
   updateStatus(); plotPoints(); _updateUndoBtn();
 }
 
@@ -1249,7 +1251,6 @@ function saveData() {
   _lsSet("cl_satOn",      String(satOn));
   _lsSet("cl_satOpacity", String(satOpacity));
   _lsSet("cl_satRot",     String(satRotNudge));
-  _lsSet("cl_gpsLive",    String(_gpsWatchId!=null));
   updateStatus(); plotPoints();
   // Auto-save to file if we have a directory handle
   _autoSaveToFile();
@@ -7633,7 +7634,7 @@ function _satAfterFix(pt,lat,lon,acc){
         close();_takeSnapshot("Shift to grid");
         _shiftAllCoords(gE-pt.Easting,gN-pt.Northing);
         _setAnchor(lat,lon,zone,gE,gN);
-        satOn=true;saveData();
+        satOn=true;saveData();_syncSatBtn();
         if(points.length<3)_zoomToGround(units==="ft"?300:100);
         showResult("✓ Anchored on "+zone.name,[
           {lbl:"Point "+pt.Point+":",val:"N "+gN.toFixed(2)+" E "+gE.toFixed(2)},
@@ -7642,7 +7643,7 @@ function _satAfterFix(pt,lat,lon,acc){
       mk("Keep local coords (imagery only)","blue",()=>{
         close();
         _setAnchor(lat,lon,zone,pt.Easting,pt.Northing);
-        satOn=true;saveData();
+        satOn=true;saveData();_syncSatBtn();
         if(points.length<3)_zoomToGround(units==="ft"?300:100);
         showResult("✓ Imagery anchored",[
           {lbl:"Point "+pt.Point+":",val:"stays N "+pt.Northing.toFixed(2)+" E "+pt.Easting.toFixed(2)},
@@ -7653,6 +7654,19 @@ function _satAfterFix(pt,lat,lon,acc){
   });
 }
 
+/* — Combined plot-button toggle: imagery + live GPS together — */
+function _syncSatBtn(){
+  const b=document.getElementById("btnSat"); if(!b)return;
+  b.style.opacity=(geoAnchor&&satOn)?"1":"0.45";
+}
+function toggleSatAndGps(){
+  if(!geoAnchor){_satSetupFlow();return;} // not anchored yet — run setup
+  satOn=!satOn;
+  if(satOn){ if(_lsGet("cl_gpsLive")!=="off")startLiveGps(); }
+  else stopLiveGps();
+  saveData();_syncSatBtn();
+}
+
 /* — Satellite menu (from More) — */
 function satelliteMenu(){
   if(!geoAnchor){_satSetupFlow();return;}
@@ -7660,7 +7674,7 @@ function satelliteMenu(){
     modal.innerHTML="<h2>🛰 Satellite Imagery</h2><p class='info'>"+geoAnchor.zoneName+
       " · anchor "+geoAnchor.lat.toFixed(5)+", "+geoAnchor.lon.toFixed(5)+"</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk(satOn?"Hide imagery":"Show imagery",satOn?"":"ok",()=>{satOn=!satOn;saveData();close();});
+    mk(satOn?"Hide imagery":"Show imagery",satOn?"":"ok",()=>{satOn=!satOn;saveData();_syncSatBtn();close();});
     const sl=(label,val,min,max,step,set)=>{
       const wrap=document.createElement("div");
       wrap.innerHTML="<div class='input-label'>"+label+"</div>";
@@ -7674,7 +7688,9 @@ function satelliteMenu(){
     sl("Rotation nudge (°) — align imagery to plot",satRotNudge,-5,5,0.1,v=>satRotNudge=v);
     mk(_gpsWatchId!=null?"📍 Live GPS marker: ON — tap to stop":"📍 Live GPS marker: OFF — tap to start",
        _gpsWatchId!=null?"ok":"blue",
-       ()=>{if(_gpsWatchId!=null){stopLiveGps();}else{startLiveGps();}saveData();close();plotPoints();});
+       ()=>{if(_gpsWatchId!=null){stopLiveGps();_lsSet("cl_gpsLive","off");}
+            else{startLiveGps();_lsSet("cl_gpsLive","on");}
+            close();plotPoints();});
     mk("📡 Re-anchor / GPS again","blue",()=>{close();_satSetupFlow();});
     mk("Remove anchor & imagery","danger",()=>{
       confirmDialog("Remove the imagery anchor? (Coordinates are not changed.)",yes=>{
@@ -7697,7 +7713,7 @@ function _gpsStartFlow(jn){
         const Z=parseFloat(ev);
         _startNewJob(jn,p.N*u,p.E*u,isNaN(Z)?100:Z);
         _setAnchor(lat,lon,zone,p.E*u,p.N*u);
-        satOn=true;saveData();
+        satOn=true;saveData();_syncSatBtn();
         _zoomToGround(units==="ft"?300:100);
         showResult("✓ GPS Start · "+zone.name,[
           {lbl:"Point 1:",val:"N "+(p.N*u).toFixed(2)+" E "+(p.E*u).toFixed(2)},
