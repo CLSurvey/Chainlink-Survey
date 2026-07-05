@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.4">
+<meta name="application-name" content="ChainLink-v4.3.5">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.4</title>
+<title>ChainLink Survey v4.3.5</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.4";
+const APP_VERSION = "4.3.5";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7871,7 +7871,8 @@ function _deedResolveFigures(figs,E,N){
     ...(b&&b.computed?[{lbl:"Boundary closure:",val:b.computed.closeDist.toFixed(2)+" "+units+(b.computed.precision?" (1:"+b.computed.precision+")":"")}]:[]),
     ...(net!=null?[{lbl:"Net area:",val:net.toFixed(2)+" acres (boundary − exceptions)"+(_deedPlot.figures.some(_deedExceptOutside)?" — verify after placing ⚠ figures":"")}]:[]),
     ...(figs.some(f=>f.kind!=="boundary"&&f.calls.some(c=>c.tie))?[{lbl:"Auto-placed:",val:"tied figures positioned by their tie courses from the POB"}]:[]),
-    ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"no tie in the deed — stacked at the POB. Use 🖐 Move one figure to drag into place."}]:[])]);
+    ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"no tie in the deed — stacked at the POB. Use 🖐 Move one figure to drag into place."}]:[]),
+    ..._deedPlot.figures.filter(f=>!f.autoStacked&&_deedExceptOutside(f)).map(f=>({lbl:"⚠ "+f.name+":",val:"extends OUTSIDE the boundary as placed by its own ties — possible defect in the record"}))]);
 }
 function _deedPlaceFigures(figs){
   openModal((modal,close)=>{
@@ -9652,6 +9653,15 @@ function plotPoints(extCtx,extW,extH){
       ctx.fillStyle=st.col;
       const p0x=X(g.verts[0].E),p0y=Y(g.verts[0].N);
       if(fig.kind!=="easement"){ctx.fillRect(p0x-5,p0y-5,10,10);ctx.fillText(fig.kind==="boundary"?"POB":"EX",p0x+8,p0y-8);}
+      if(fig.kind==="except"&&_deedExceptOutside(fig)){
+        const wx=(X(g.verts[0].E)+X(g.verts[Math.floor((g.verts.length-1)/2)].E))/2;
+        const wy=(Y(g.verts[0].N)+Y(g.verts[Math.floor((g.verts.length-1)/2)].N))/2;
+        ctx.font="bold 11px 'Courier New',monospace";ctx.textAlign="center";
+        const wt="⚠ outside parent";
+        const ww=ctx.measureText(wt).width;
+        ctx.fillStyle="rgba(90,25,25,.85)";ctx.fillRect(wx-ww/2-6,wy-9,ww+12,18);
+        ctx.fillStyle="#ffb4a0";ctx.fillText(wt,wx,wy+4);
+      }
       ctx.restore();
     });
   }catch(e){}
