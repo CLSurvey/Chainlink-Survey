@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.17">
+<meta name="application-name" content="ChainLink-v4.3.19">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.17</title>
+<title>ChainLink Survey v4.3.19</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.17";
+const APP_VERSION = "4.3.19";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7474,6 +7474,7 @@ function _deedParseBearing(seg){
   // DUE NORTH / NORTH etc. as a whole call direction
   const due=seg.match(/\bDUE\s+(NORTH|SOUTH|EAST|WEST)\b/) ||
             seg.match(/\b(NORTH|SOUTH|EAST|WEST)\b(?!\s*\d)(?![A-Z])(?!.*\b(?:DEG|°)\b)/);
+  if(due)due._idx=due.index;
   const m=seg.match(
     /\b(N|S|NORTH|SOUTH)\s*\.?\s*(\d{1,2})\s*(?:°|DEGREES?|DEG\.?|D\b|-|\s)\s*(?:(\d{1,2}(?:\.\d+)?)\s*(?:'|′|MINUTES?|MIN\.?|M\b|-|\s))?\s*(?:(\d{1,2}(?:\.\d+)?)\s*(?:"|″|SECONDS?|SEC\.?|S\b)?)?\s*(?:(1\/2|1\/4|3\/4)\s*(?:°|DEGREES?)?\s*)?(E|W|EAST|WEST)\b/
   );
@@ -7487,7 +7488,7 @@ function _deedParseBearing(seg){
     if(deg>90||min>=60||sec>=60) return null;
     return{q1:m[1][0], deg, min, sec, q2:m[6][0]};
   }
-  if(due) return {card:due[1][0]};
+  if(due) return {card:due[1][0], idx:due._idx, due:/^DUE\s/.test(due[0])};
   return null;
 }
 
@@ -7586,7 +7587,15 @@ function parseDeedText(txt){
         return;
       }
     }
-    const b=_deedParseBearing(seg);
+    let b=_deedParseBearing(seg);
+    // A word-cardinal is only a course direction if it comes BEFORE the
+    // distance ("due West 410.00 feet"). Direction after the number is
+    // locator prose ("131.50 feet northerly along East Avenue"), not a call.
+    if(b&&b.card&&typeof b.idx==="number"){
+      const di=seg.search(/\d/);
+      if(di>=0&&b.idx>di)b=null;                    // direction after the number = prose
+      else if(b&&!b.due&&b.idx>6)b=null;            // bare cardinal mid-sentence = a street name, not a course
+    }
     // remove bearing text so its digits can't be mistaken for a distance
     let segForDist=seg;
     if(b&&!b.card){
@@ -7699,6 +7708,9 @@ function _deedArea(g){
   if(!g||g.verts.length<3)return 0;
   const v=g.verts;let A=0;
   for(let i=0;i<v.length-1;i++)A+=(v[i].E*v[i+1].N-v[i+1].E*v[i].N);
+  // close the polygon virtually across any misclosure (origin-independent)
+  const f=v[0], l=v[v.length-1];
+  if(Math.abs(l.E-f.E)>1e-9||Math.abs(l.N-f.N)>1e-9)A+=(l.E*f.N-f.E*l.N);
   A/=2;
   let seg=0;
   (g.arcs||[]).forEach(a=>{
@@ -8211,6 +8223,7 @@ function _deedFromPdf(file,prevText){
 function _deedPasteModal(prefill){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>Photograph the deed page by page — overlapping shots are stitched automatically — or paste the text. The app reads the calls; you review them; it plots on the map.</p>"+
+      "<p class='info' style='font-size:.78em;opacity:.85'>💡 Best results: copy the text with <b>Google Lens</b> (or scan to PDF with Adobe/Microsoft Lens and use 📄) and paste it here. The built-in 📷 works offline but reads less accurately.</p>"+
       (window._deedMergeNote?"<p class='info' style='color:#7cc26b'>✂ "+window._deedMergeNote+"</p>":"");
     window._deedMergeNote=null;
     const ta=document.createElement("textarea");
