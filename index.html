@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.19">
+<meta name="application-name" content="ChainLink-v4.3.20">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.19</title>
+<title>ChainLink Survey v4.3.20</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.19";
+const APP_VERSION = "4.3.20";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -10288,8 +10288,14 @@ function zoomToOccupied(){
           const angN=Math.atan2(now[1].y-now[0].y,now[1].x-now[0].x);
           let dA=(angN-angP)*180/Math.PI;
           if(dA>180)dA-=360; if(dA<-180)dA+=360;
-          const mPx=(prev[0].x+prev[1].x)/2-rect.left, mPy=(prev[0].y+prev[1].y)/2-rect.top;
+          // pinch zoom: scale the MAP about the touch midpoint — the deed is
+          // world-anchored, so it stays under the fingers while the imagery
+          // scales for corner-fit checking
+          const dP=Math.hypot(prev[1].x-prev[0].x,prev[1].y-prev[0].y);
+          const dN=Math.hypot(now[1].x-now[0].x,now[1].y-now[0].y);
           const mNx=(now[0].x+now[1].x)/2-rect.left,  mNy=(now[0].y+now[1].y)/2-rect.top;
+          if(dP>0&&Math.abs(dN/dP-1)>0.002)zoomAround(dN/dP,mNx,mNy);
+          const mPx=(prev[0].x+prev[1].x)/2-rect.left, mPy=(prev[0].y+prev[1].y)/2-rect.top;
           const mP=_screenToWorld(mPx,mPy), mN=_screenToWorld(mNx,mNy);
           if(mP)_deedRotateAbout(mP.E,mP.N,dA);
           if(mP&&mN)_deedTranslate(mN.E-mP.E,mN.N-mP.N);
