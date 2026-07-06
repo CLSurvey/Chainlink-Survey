@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.12">
+<meta name="application-name" content="ChainLink-v4.3.13">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.12</title>
+<title>ChainLink Survey v4.3.13</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.12";
+const APP_VERSION = "4.3.13";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7459,6 +7459,8 @@ function _deedNormalize(t){
     // — OCR dialect repairs (each learned from a real misread) —
     // doubled quadrant letters: "WW"/"EE"/"NN"/"SS" -> single
     .replace(/\b([NSEW])\1\b/g,"$1")
+    // minute mark read as a double-quote: °DD"DD -> °DD'DD
+    .replace(/°\s*(\d{1,2})\s*"\s*(\d{1,2})/g,"°$1'$2")
     // minute/second marks misread as degree combos: °' -> ', °" -> ", °° -> °
     .replace(/°\s*'/g,"'")
     .replace(/°\s*"/g,'"')
@@ -7790,7 +7792,10 @@ function parseDeedFigures(txt){
 function _deedCallLabel(c,i){
   const tie=c.tie?"TIE→POB (excluded): ":"";
   if(c.type==="line")return (i+1)+". "+tie+_deedAzToBearingStr(_deedBearingToAz(c.bearing))+" — "+c.dist.toFixed(2)+" "+(units==="ft"?"ft":"m eq")+(c.unit&&!/FEET|FT|FOOT/.test(c.unit)?" ("+c.rawVal+" "+String(c.unit).toLowerCase()+")":"");
-  if(c.type==="curve")return (i+1)+". Curve "+(c.dir==="L"?"LEFT":"RIGHT")+(c.radius?" R="+c.radius.toFixed(2):"")+(c.arc?" arc="+c.arc.toFixed(2):"")+(c.chordD?" ch="+c.chordD.toFixed(2):"");
+  if(c.type==="curve"){
+    const usable=(c.arc!=null)||(c.delta!=null)||(c.chordD!=null);
+    return (i+1)+". Curve "+(c.dir==="L"?"LEFT":"RIGHT")+(c.radius?" R="+c.radius.toFixed(2):"")+(c.arc?" arc="+c.arc.toFixed(2):"")+(c.chordD?" ch="+c.chordD.toFixed(2):"")+(usable?"":"  ⚠ needs arc/chord/delta — tap");
+  }
   return (i+1)+". ⚠ incomplete — tap to fix";
 }
 function _deedReview(calls,opts){
@@ -7814,6 +7819,8 @@ function _deedReview(calls,opts){
     mk("＋ Add a call","",()=>{close();calls.push({type:"partial",raw:""});_deedEditCall(calls,calls.length-1);});
     if(opts.onDone)
       mk(opts.doneLabel||"✓ Done","ok",()=>{close();opts.onDone();});
+    if(opts.removeFn)
+      mk("🗑 Remove this whole figure","danger",()=>{close();opts.removeFn();});
     else if(calls.some(c=>c.type!=="partial"))
       mk("Plot Deed →","ok",()=>{close();_deedPickPOB(calls);});
     mk(opts.onDone?"Back to figures":"Cancel","",()=>{close();if(opts.onDone)opts.onDone();});
@@ -7904,7 +7911,13 @@ function _deedReviewFigures(figs){
       mk((f.kind==="boundary"?"🟦 ":f.kind==="except"?"🟧 ":"🟪 ")+f.name+" — "+good+" call"+(good===1?"":"s"),
         "blue",()=>{close();
           _deedReview(f.calls,{title:f.name,doneLabel:"✓ Done — back to figures",
-            onDone:()=>_deedReviewFigures(figs)});});
+            onDone:()=>_deedReviewFigures(figs),
+            removeFn:()=>{
+              confirmDialog("Remove "+f.name+" entirely? (Use this for duplicates from overlapping photos.)",yes=>{
+                if(yes)figs.splice(figs.indexOf(f),1);
+                _deedReviewFigures(figs);
+              });
+            }});});
     });
     mk("Plot the record →","ok",()=>{close();_deedPlaceFigures(figs);});
     mk("Cancel","",()=>{close();
