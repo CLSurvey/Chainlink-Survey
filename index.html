@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.15">
+<meta name="application-name" content="ChainLink-v4.3.17">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.15</title>
+<title>ChainLink Survey v4.3.17</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.15";
+const APP_VERSION = "4.3.17";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -8089,6 +8089,48 @@ function _deedPrepImage(file){
     img.src=URL.createObjectURL(file);
   });
 }
+/* Stitch two OCR captures: if the new page's start overlaps the buffer's
+   tail (overlapping photos), find the seam and splice — anchored on a shared
+   4-word run, verified by continued alignment so repeated deed phrases
+   ("…POINT OF BEGINNING…") can't fake a seam. */
+function _deedMergeOcr(prev,next){
+  if(!prev||!next)return (prev||"")+(prev&&next?"\n":"")+(next||"");
+  const tok=t=>{
+    const out=[];const re=/\S+/g;let m;
+    while((m=re.exec(t))){
+      const w=m[0].toUpperCase().replace(/[^A-Z0-9°'".]/g,"");
+      if(w)out.push({w,i:m.index});
+    }
+    return out;
+  };
+  const A=tok(prev), B=tok(next);
+  if(A.length<8||B.length<8)return prev+"\n"+next;
+  const tail=A.slice(-160);
+  const key=(arr,i)=>arr[i].w+"|"+arr[i+1].w+"|"+arr[i+2].w+"|"+arr[i+3].w;
+  const map={};
+  for(let i=0;i+3<tail.length;i++)map[key(tail,i)]=i;
+  const verify=(ti,bj)=>{
+    let m=0,n=0;
+    for(let k=0;k<14;k++){
+      const a=tail[ti+k], b=B[bj+k];
+      if(!a||!b)break;
+      n++; if(a.w===b.w)m++;
+    }
+    return n>=6&&m/n>=0.6;
+  };
+  let best=null;
+  const scanN=Math.min(B.length-4,120);
+  for(let j=0;j+3<scanN;j++){
+    const hit=map[key(B,j)];
+    if(hit!=null&&verify(hit,j))best={ti:hit,bj:j};
+  }
+  if(!best)return prev+"\n"+next;
+  const remain=tail.length-best.ti;      // overlap tokens still ahead in the buffer
+  const cutTok=best.bj+remain;           // first genuinely-new token in B
+  if(cutTok>=B.length){window._deedMergeNote="page fully overlapped the previous shot — nothing new added";return prev;}
+  window._deedMergeNote="stitched at the overlap — "+cutTok+" duplicated words removed";
+  return prev+"\n"+next.slice(B[cutTok].i);
+}
 function _deedOcr(file,prevText){
   let prog=null;
   const {close}=openModal((modal)=>{
@@ -8111,7 +8153,7 @@ function _deedOcr(file,prevText){
     }}))
     .then(r=>{close();
       const pageText=(r.data.text||"").trim();
-      _deedPasteModal(((prevText?prevText+"\n":"")+pageText).trim());
+      _deedPasteModal(_deedMergeOcr(prevText,pageText).trim());
     })
     .catch(()=>{close();
       alert("Couldn't read the photo. First-time setup needs a connection; and clean, well-lit, straight-on shots read best. Google Lens → copy → paste also works.");
@@ -8142,7 +8184,7 @@ function _deedFromPdf(file,prevText){
         const tc=await pg.getTextContent();
         text+=tc.items.map(it=>it.str).join(" ")+"\n";
       }
-      if(text.replace(/\s+/g,"").length>60){close();_deedPasteModal(((prevText?prevText+"\n":"")+text).trim());return;}
+      if(text.replace(/\s+/g,"").length>60){close();_deedPasteModal(_deedMergeOcr(prevText,text).trim());return;}
       // Stage 2: scanned PDF — render pages, OCR them
       setP("Scanned PDF — loading text recognition…");
       await new Promise((res,rej)=>{
@@ -8160,7 +8202,7 @@ function _deedFromPdf(file,prevText){
           if(m.status==="recognizing text")setP("OCR page "+i+" / "+nP+" — "+Math.round((m.progress||0)*100)+"%");}});
         out+=(r.data.text||"")+"\n";
       }
-      close();_deedPasteModal(((prevText?prevText+"\n":"")+out).trim());
+      close();_deedPasteModal(_deedMergeOcr(prevText,out).trim());
     })
     .catch(()=>{close();
       alert("Couldn't read that PDF. The 📷 photo route or copy-paste also works.");
@@ -8168,7 +8210,9 @@ function _deedFromPdf(file,prevText){
 }
 function _deedPasteModal(prefill){
   openModal((modal,close)=>{
-    modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>Photograph the deed page by page — each shot appends — or paste the text. The app reads the calls; you review them; it plots on the map.</p>";
+    modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>Photograph the deed page by page — overlapping shots are stitched automatically — or paste the text. The app reads the calls; you review them; it plots on the map.</p>"+
+      (window._deedMergeNote?"<p class='info' style='color:#7cc26b'>✂ "+window._deedMergeNote+"</p>":"");
+    window._deedMergeNote=null;
     const ta=document.createElement("textarea");
     ta.placeholder="…thence N 47°23'10\" E a distance of 156.48 feet; thence along a curve to the right…";
     ta.value=prefill||"";
@@ -8332,7 +8376,21 @@ function deedPlotterMenu(){
           m2.innerHTML="<h2>Edit which figure?</h2>";
           _deedPlot.figures.forEach(f=>{
             const b=document.createElement("button");b.className="btn blue";b.textContent=f.name;
-            b.onclick=()=>{c2();_deedReview(f.calls,{title:f.name,doneLabel:"✓ Done",onDone:done.onDone});};
+            b.onclick=()=>{c2();_deedReview(f.calls,{title:f.name,doneLabel:"✓ Done",onDone:done.onDone,
+              removeFn:()=>{
+                confirmDialog("Remove "+f.name+" and its points entirely? (Use this for duplicate figures from overlapping photos.)",yes=>{
+                  if(yes){
+                    _takeSnapshot("Remove "+f.name);
+                    const nums=f.ptNums||[];
+                    points=points.filter(p=>!(p.Type==="Deed"&&nums.includes(p.Point)));
+                    _deedPlot.figures.splice(_deedPlot.figures.indexOf(f),1);
+                    if(!_deedPlot.figures.length)_deedPlot=null;
+                    else _deedRecompute();
+                    saveData();updateStatus();
+                  }
+                  deedPlotterMenu();
+                });
+              }});};
             m2.appendChild(b);});
           const cc=document.createElement("button");cc.className="btn";cc.textContent="Back";
           cc.onclick=()=>{c2();deedPlotterMenu();};m2.appendChild(cc);
