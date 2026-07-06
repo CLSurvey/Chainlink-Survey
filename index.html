@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.10">
+<meta name="application-name" content="ChainLink-v4.3.11">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.10</title>
+<title>ChainLink Survey v4.3.11</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.10";
+const APP_VERSION = "4.3.11";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7581,8 +7581,12 @@ function parseDeedText(txt){
   // BEGINNING and it is NOT the last call, then it and everything before it
   // are commencement ties, not boundary. Flagged and excluded by default;
   // tap a tie row in review to include it if the parser guessed wrong.
-  const pobIdx=calls.findIndex(c=>/POINT OF BEGINNING/.test(c.raw||""));
-  if(pobIdx>=0&&pobIdx<calls.length-1){
+  // ties end at the LAST interior mention of the POB (preamble junk rows can
+  // also contain the phrase — e.g. "…on each side of a centerline described
+  // as: Commence at the POINT OF BEGINNING…")
+  let pobIdx=-1;
+  calls.forEach((c,i)=>{if(i<calls.length-1&&/POINT OF BEGINNING/.test(c.raw||""))pobIdx=i;});
+  if(pobIdx>=0){
     for(let i=0;i<=pobIdx;i++)if(calls[i].type!=="partial")calls[i].tie=true;
   }
   return calls;
