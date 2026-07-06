@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.13">
+<meta name="application-name" content="ChainLink-v4.3.15">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.13</title>
+<title>ChainLink Survey v4.3.15</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.13";
+const APP_VERSION = "4.3.15";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7461,6 +7461,8 @@ function _deedNormalize(t){
     .replace(/\b([NSEW])\1\b/g,"$1")
     // minute mark read as a double-quote: °DD"DD -> °DD'DD
     .replace(/°\s*(\d{1,2})\s*"\s*(\d{1,2})/g,"°$1'$2")
+    // minute mark read as a second degree sign: °DD°DD -> °DD'DD
+    .replace(/°\s*(\d{1,2})\s*°\s*(\d{1,2})/g,"°$1'$2")
     // minute/second marks misread as degree combos: °' -> ', °" -> ", °° -> °
     .replace(/°\s*'/g,"'")
     .replace(/°\s*"/g,'"')
@@ -7542,6 +7544,24 @@ function parseDeedText(txt){
   const segs=t.split(/\bTHENCE\b|;|\bRUNNING\b|(?:\b\d{1,2}\s*[.)]\s+(?=[NSDC]))/).map(x=>x.trim()).filter(x=>x.length>3);
   const calls=[];
   segs.forEach(seg=>{
+    // OCR sometimes splits one curve across segments ("…radius of 260.00
+    // feet ; and a central angle of 35°00'00"…"). If this segment is curve
+    // data with no CURVE keyword and the previous call is a curve missing
+    // that datum, backfill it instead of discarding.
+    if(!/\bCURVE\b|\bCURVING\b/.test(seg)&&calls.length&&calls[calls.length-1].type==="curve"){
+      const lc=calls[calls.length-1];
+      const d2=_deedParseAngle(seg,"(?:DELTA|CENTRAL)");
+      const am2=seg.match(/ARC\s*(?:LENGTH|DISTANCE)?\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
+      let chB2=null,chD2=null;
+      const ci2=seg.indexOf("CHORD");
+      if(ci2>=0){chB2=_deedParseBearing(seg.slice(ci2));chD2=_deedParseDistance(seg.slice(ci2));}
+      let used=false;
+      if(d2!=null&&lc.delta==null){lc.delta=d2;used=true;}
+      if(am2&&lc.arc==null){lc.arc=parseFloat(am2[1]);used=true;}
+      if(chB2&&!lc.chordB){lc.chordB=chB2;used=true;}
+      if(chD2&&lc.chordD==null){lc.chordD=chD2.ft;used=true;}
+      if(used)return;
+    }
     const isCurve=/\bCURVE\b|\bCURVING\b|\bALONG THE ARC\b/.test(seg);
     if(isCurve){
       const dir=/\bLEFT\b/.test(seg)?"L":(/\bRIGHT\b/.test(seg)?"R":null);
@@ -7587,7 +7607,7 @@ function parseDeedText(txt){
   // also contain the phrase — e.g. "…on each side of a centerline described
   // as: Commence at the POINT OF BEGINNING…")
   let pobIdx=-1;
-  calls.forEach((c,i)=>{if(i<calls.length-1&&/POINT OF BEGINNING/.test(c.raw||""))pobIdx=i;});
+  calls.forEach((c,i)=>{if(i<calls.length-1&&i<=3&&/POINT OF BEGINNING/.test(c.raw||""))pobIdx=i;});
   if(pobIdx>=0){
     for(let i=0;i<=pobIdx;i++)if(calls[i].type!=="partial")calls[i].tie=true;
   }
@@ -7753,7 +7773,9 @@ function _deedRemovePoints(){
 /* split raw deed text into figures by exception/easement keywords */
 function parseDeedFigures(txt){
   const t=_deedNormalize(txt);
-  const KEY=/(LESS AND EXCEPT|EXCEPTING THEREFROM|SAVE AND EXCEPT|EXCEPT THE FOLLOWING|RESERVING UNTO|RESERVING TO|TOGETHER WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,20}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,20}EASEMENT)/g;
+  // OCR mangles keywords ("1ESS AND EXCEPT", "BER EXCEPT", dropped
+  // "TOGETHER") — so the detector is deliberately fuzzy:
+  const KEY=/((?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
   const parts=[];let last=0,m,firstKind="boundary",kw="";
   while((m=KEY.exec(t))){
     parts.push({kind:firstKind,text:t.slice(last,m.index),kw:kw});
@@ -8031,6 +8053,42 @@ function _deedFitTwoPoint(){
     });
   });
 }
+/* Pre-process a photo for OCR: upscale small shots, grayscale, and
+   stretch contrast — dramatically improves screen photos and dim light. */
+function _deedPrepImage(file){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const maxSide=Math.max(img.width,img.height);
+        const scale=Math.min(2.5,Math.max(1,2200/maxSide));
+        const cv=document.createElement("canvas");
+        cv.width=Math.round(img.width*scale);cv.height=Math.round(img.height*scale);
+        const cx=cv.getContext("2d");
+        cx.imageSmoothingEnabled=true;cx.imageSmoothingQuality="high";
+        cx.drawImage(img,0,0,cv.width,cv.height);
+        const id=cx.getImageData(0,0,cv.width,cv.height);
+        const d=id.data;
+        let min=255,max=0;
+        for(let i=0;i<d.length;i+=4){
+          const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+          d[i]=g;
+          if(g<min)min=g; if(g>max)max=g;
+        }
+        const rng=Math.max(1,max-min);
+        for(let i=0;i<d.length;i+=4){
+          const g=(d[i]-min)*255/rng;
+          d[i]=d[i+1]=d[i+2]=g;
+        }
+        cx.putImageData(id,0,0);
+        URL.revokeObjectURL(img.src);
+        res(cv);
+      }catch(e){rej(e);}
+    };
+    img.onerror=rej;
+    img.src=URL.createObjectURL(file);
+  });
+}
 function _deedOcr(file,prevText){
   let prog=null;
   const {close}=openModal((modal)=>{
@@ -8046,7 +8104,8 @@ function _deedOcr(file,prevText){
     document.head.appendChild(sc);
   });
   load()
-    .then(()=>Tesseract.recognize(file,"eng",{logger:m=>{
+    .then(()=>_deedPrepImage(file).catch(()=>file))
+    .then(src=>Tesseract.recognize(src,"eng",{logger:m=>{
       if(m.status==="recognizing text")setP("Reading… "+Math.round((m.progress||0)*100)+"%");
       else if(m.status)setP(m.status+"…");
     }}))
