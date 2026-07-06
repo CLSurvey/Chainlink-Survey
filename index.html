@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.11">
+<meta name="application-name" content="ChainLink-v4.3.12">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.11</title>
+<title>ChainLink Survey v4.3.12</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.11";
+const APP_VERSION = "4.3.12";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -8018,10 +8018,10 @@ function _deedFitTwoPoint(){
     });
   });
 }
-function _deedOcr(file){
+function _deedOcr(file,prevText){
   let prog=null;
   const {close}=openModal((modal)=>{
-    modal.innerHTML="<h2>📷 Reading the Deed</h2><p class='info' id='ocrProg'>Loading text recognition… (first use needs a connection; cached after that)</p>";
+    modal.innerHTML="<h2>📷 Reading the Deed"+(prevText?" — next page":"")+"</h2><p class='info' id='ocrProg'>Loading text recognition… (first use needs a connection; cached after that)</p>";
     prog=modal.querySelector("#ocrProg");
   });
   const setP=t=>{const el=document.getElementById("ocrProg");if(el)el.textContent=t;};
@@ -8037,12 +8037,15 @@ function _deedOcr(file){
       if(m.status==="recognizing text")setP("Reading… "+Math.round((m.progress||0)*100)+"%");
       else if(m.status)setP(m.status+"…");
     }}))
-    .then(r=>{close();_deedPasteModal((r.data.text||"").trim());})
+    .then(r=>{close();
+      const pageText=(r.data.text||"").trim();
+      _deedPasteModal(((prevText?prevText+"\n":"")+pageText).trim());
+    })
     .catch(()=>{close();
       alert("Couldn't read the photo. First-time setup needs a connection; and clean, well-lit, straight-on shots read best. Google Lens → copy → paste also works.");
-      _deedPasteModal("");});
+      _deedPasteModal(prevText||"");});
 }
-function _deedFromPdf(file){
+function _deedFromPdf(file,prevText){
   const {close}=openModal(modal=>{
     modal.innerHTML="<h2>📄 Reading PDF</h2><p class='info' id='ocrProg'>Opening… (first use needs a connection; cached after that)</p>";});
   const setP=t=>{const el=document.getElementById("ocrProg");if(el)el.textContent=t;};
@@ -8067,7 +8070,7 @@ function _deedFromPdf(file){
         const tc=await pg.getTextContent();
         text+=tc.items.map(it=>it.str).join(" ")+"\n";
       }
-      if(text.replace(/\s+/g,"").length>60){close();_deedPasteModal(text.trim());return;}
+      if(text.replace(/\s+/g,"").length>60){close();_deedPasteModal(((prevText?prevText+"\n":"")+text).trim());return;}
       // Stage 2: scanned PDF — render pages, OCR them
       setP("Scanned PDF — loading text recognition…");
       await new Promise((res,rej)=>{
@@ -8085,32 +8088,34 @@ function _deedFromPdf(file){
           if(m.status==="recognizing text")setP("OCR page "+i+" / "+nP+" — "+Math.round((m.progress||0)*100)+"%");}});
         out+=(r.data.text||"")+"\n";
       }
-      close();_deedPasteModal(out.trim());
+      close();_deedPasteModal(((prevText?prevText+"\n":"")+out).trim());
     })
     .catch(()=>{close();
       alert("Couldn't read that PDF. The 📷 photo route or copy-paste also works.");
-      _deedPasteModal("");});
+      _deedPasteModal(prevText||"");});
 }
 function _deedPasteModal(prefill){
   openModal((modal,close)=>{
-    modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>Photograph the deed page, or paste the description text. The app reads the calls; you review them; it plots on the map.</p>";
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk("📷 Photograph the deed","blue",()=>{
-      const inp=document.createElement("input");
-      inp.type="file";inp.accept="image/*";inp.capture="environment";
-      inp.onchange=()=>{ if(inp.files&&inp.files[0]){close();_deedOcr(inp.files[0]);} };
-      inp.click();
-    });
-    mk("📄 Open a PDF of the deed","blue",()=>{
-      const inp=document.createElement("input");
-      inp.type="file";inp.accept="application/pdf,.pdf";
-      inp.onchange=()=>{ if(inp.files&&inp.files[0]){close();_deedFromPdf(inp.files[0]);} };
-      inp.click();
-    });
+    modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>Photograph the deed page by page — each shot appends — or paste the text. The app reads the calls; you review them; it plots on the map.</p>";
     const ta=document.createElement("textarea");
     ta.placeholder="…thence N 47°23'10\" E a distance of 156.48 feet; thence along a curve to the right…";
     ta.value=prefill||"";
     ta.style.cssText="width:100%;min-height:130px;background:#111;color:#ddd;border:1px solid #444;border-radius:6px;padding:10px;font-size:.85em";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    mk(prefill?"📷 Photograph the NEXT page (appends)":"📷 Photograph the deed","blue",()=>{
+      const prev=ta.value.trim();
+      const inp=document.createElement("input");
+      inp.type="file";inp.accept="image/*";inp.capture="environment";
+      inp.onchange=()=>{ if(inp.files&&inp.files[0]){close();_deedOcr(inp.files[0],prev);} };
+      inp.click();
+    });
+    mk("📄 Open a PDF of the deed","blue",()=>{
+      const prev=ta.value.trim();
+      const inp=document.createElement("input");
+      inp.type="file";inp.accept="application/pdf,.pdf";
+      inp.onchange=()=>{ if(inp.files&&inp.files[0]){close();_deedFromPdf(inp.files[0],prev);} };
+      inp.click();
+    });
     modal.appendChild(ta);
     mk("Read the calls →","ok",()=>{
       const figs=parseDeedFigures(ta.value);
