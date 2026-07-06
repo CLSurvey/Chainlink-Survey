@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.9">
+<meta name="application-name" content="ChainLink-v4.3.10">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.9</title>
+<title>ChainLink Survey v4.3.10</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.9";
+const APP_VERSION = "4.3.10";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1271,7 +1271,7 @@ function saveData() {
   _lsSet("cl_satRot",     String(satRotNudge));
   _lsSet("cl_satBase",    satBasemap);
   _lsSet("cl_deedPlot",   _deedPlot?JSON.stringify({v:2,rot:_deedPlot.rot||0,
-    figures:_deedPlot.figures.map(f=>({kind:f.kind,name:f.name,calls:f.calls,pobE:f.pobE,pobN:f.pobN,ptNums:f.ptNums||[]}))}):"");
+    figures:_deedPlot.figures.map(f=>({kind:f.kind,name:f.name,calls:f.calls,pobE:f.pobE,pobN:f.pobN,ptNums:f.ptNums||[],width:f.width||null}))}):"");
   updateStatus(); plotPoints();
   // Auto-save to file if we have a directory handle
   _autoSaveToFile();
@@ -5947,6 +5947,29 @@ function _computePolyArea(poly,explicitArcs){
 // for arcs in explicitArcs — the user must have tapped the arc itself,
 // otherwise an edge between an arc's two endpoints is just a chord.
 // Returns {conn,tA,tB,dt,full} or null.
+/* Offset a polyline by a signed perpendicular distance (mitered joins) —
+   used to draw easement right-of-way edges from a centerline. */
+function _offsetPath(verts,off){
+  if(!verts||verts.length<2)return [];
+  const segs=[];
+  for(let i=0;i<verts.length-1;i++){
+    const dx=verts[i+1].E-verts[i].E, dy=verts[i+1].N-verts[i].N;
+    const L=Math.hypot(dx,dy)||1e-9;
+    const ox=-dy/L*off, oy=dx/L*off;
+    segs.push({aE:verts[i].E+ox,aN:verts[i].N+oy,bE:verts[i+1].E+ox,bN:verts[i+1].N+oy});
+  }
+  const out=[{E:segs[0].aE,N:segs[0].aN}];
+  for(let i=0;i<segs.length-1;i++){
+    const s1=segs[i],s2=segs[i+1];
+    const d1E=s1.bE-s1.aE,d1N=s1.bN-s1.aN,d2E=s2.bE-s2.aE,d2N=s2.bN-s2.aN;
+    const den=d1E*d2N-d1N*d2E;
+    if(Math.abs(den)<1e-9){out.push({E:s1.bE,N:s1.bN});continue;}
+    const t=((s2.aE-s1.aE)*d2N-(s2.aN-s1.aN)*d2E)/den;
+    out.push({E:s1.aE+t*d1E,N:s1.aN+t*d1N});
+  }
+  out.push({E:segs[segs.length-1].bE,N:segs[segs.length-1].bN});
+  return out;
+}
 /* Deed curves, offered to the area tool in connection-arc form.
    They count as "explicit" — the deed itself declares the curve intent. */
 function _deedAreaArcs(){
@@ -7725,18 +7748,31 @@ function _deedRemovePoints(){
 function parseDeedFigures(txt){
   const t=_deedNormalize(txt);
   const KEY=/(LESS AND EXCEPT|EXCEPTING THEREFROM|SAVE AND EXCEPT|EXCEPT THE FOLLOWING|RESERVING UNTO|RESERVING TO|TOGETHER WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,20}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,20}EASEMENT)/g;
-  const parts=[];let last=0,m,firstKind="boundary";
+  const parts=[];let last=0,m,firstKind="boundary",kw="";
   while((m=KEY.exec(t))){
-    parts.push({kind:firstKind,text:t.slice(last,m.index)});
+    parts.push({kind:firstKind,text:t.slice(last,m.index),kw:kw});
     firstKind=/EXCEPT/.test(m[1])&&!/EASEMENT/.test(m[1])?"except":"easement";
+    kw=m[1];
     last=m.index+m[1].length;
   }
-  parts.push({kind:firstKind,text:t.slice(last)});
+  parts.push({kind:firstKind,text:t.slice(last),kw:kw});
   const figs=[];
   parts.forEach(p=>{
     const calls=parseDeedText(p.text);
-    if(calls.length)figs.push({kind:p.kind,calls,pobE:null,pobN:null,ptNums:[],
-      name:p.kind==="boundary"?"Boundary":(p.kind==="except"?"Except parcel":"Easement")});
+    if(!calls.length)return;
+    const fig={kind:p.kind,calls,pobE:null,pobN:null,ptNums:[],
+      name:p.kind==="boundary"?"Boundary":(p.kind==="except"?"Except parcel":"Easement")};
+    if(p.kind==="easement"){
+      // width from the keyword ("a 30 foot utility easement") or the body
+      // ("lying 15 feet on each side")
+      const scan=(p.kw||"")+" "+p.text.slice(0,160);
+      const wFull=scan.match(/(\d+(?:\.\d+)?)\s*(?:FOOT|FEET|FT)\s+(?:WIDE\s+)?[A-Z\- ]{0,26}?EASEMENT/);
+      const wHalf=scan.match(/(\d+(?:\.\d+)?)\s*(?:FOOT|FEET|FT)\s+ON\s+EACH\s+SIDE/);
+      if(wHalf)fig.width=parseFloat(wHalf[1])*2;
+      else if(wFull)fig.width=parseFloat(wFull[1]);
+      if(fig.width&&units==="m")fig.width/=3.280833333;
+    }
+    figs.push(fig);
   });
   // number duplicates
   let ex=0,es=0;
@@ -8182,6 +8218,14 @@ function deedPlotterMenu(){
                     _deedRecompute();saveData();
                   });});
                 mk3("🖐 Drag it on the map","blue",()=>{c3();_deedAdjustScope=i;_deedAdjustStart();});
+                if(f.kind==="easement")
+                  mk3("↔ Right-of-way width"+(f.width?" ("+f.width.toFixed(1)+" "+units+")":" (not set)"),"blue",()=>{c3();
+                    calculatorInput("Full easement width ("+units+"):",f.width?String(f.width):"",wv=>{
+                      if(wv===null)return;
+                      const w=parseFloat(wv);
+                      f.width=(!isNaN(w)&&w>0)?w:null;
+                      saveData();plotPoints();
+                    });});
                 mk3("Back","",()=>{c3();deedPlotterMenu();});
               });
             };
@@ -9679,6 +9723,16 @@ function plotPoints(extCtx,extW,extH){
         ctx.arc(X(a.cE),Y(a.cN),a.r*scale,-a.a1,-a.a2,a.ccw);
         ctx.stroke();
       });
+      if(fig.kind==="easement"&&fig.width>0&&g.verts.length>1){
+        ctx.globalAlpha=0.75;ctx.lineWidth=1.25;ctx.setLineDash([9,7]);
+        [fig.width/2,-fig.width/2].forEach(off=>{
+          const edge=_offsetPath(g.verts,off);
+          ctx.beginPath();
+          edge.forEach((v,i)=>{const sx=X(v.E),sy=Y(v.N);i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);});
+          ctx.stroke();
+        });
+        ctx.globalAlpha=1;
+      }
       ctx.setLineDash([]);
       ctx.font="bold 10px 'Courier New',monospace";ctx.textAlign="left";
       ctx.fillStyle=st.col;
