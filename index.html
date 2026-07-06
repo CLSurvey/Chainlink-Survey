@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.21">
+<meta name="application-name" content="ChainLink-v4.3.22">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.21</title>
+<title>ChainLink Survey v4.3.22</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.21";
+const APP_VERSION = "4.3.22";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -11534,6 +11534,59 @@ const HELP_TOPICS = [
 <h3>Also Automatic</h3>
 <p>Any part of the photo you've simply <em>looked at</em> gets saved too. The deliberate button just makes sure the whole site is covered instead of only where you happened to scroll.</p>
 <div class="tip">Everything else in ChainLink already works offline — measurements, calculations, saving. Only fresh photo areas and the elevation lookup need a connection.</div>`},
+
+  // ── DEED PLOTTER ─────────────────────────────────────────────
+  { id:"deed-read", section:"Deed Plotter", title:"Reading a Deed In",
+    preview:"Paste, photograph, or open a PDF — and how to get clean text",
+    body:`<h3>Three Ways In</h3>
+<p>Open <strong>COGO → 📜 Deed Plotter</strong>. You can <strong>paste</strong> the legal description text, <strong>📷 photograph</strong> the page, or <strong>📄 open a PDF</strong> of the deed. Recorded PDFs with real text read perfectly — the app takes the text straight from the file.</p>
+<h3>Getting Clean Text From Paper</h3>
+<p>The built-in 📷 camera works with no signal, but its text reading is rough. <strong>Google Lens reads deeds far better</strong>: snap the page with Lens, Select all → Copy, and paste it into the box. A scanner app that makes searchable PDFs (Adobe Scan, Microsoft Lens) is even better for multi-page deeds — then use 📄.</p>
+<h3>Multi-Page Deeds</h3>
+<p>Shoot page by page, <em>in order</em> — each photo or PDF <strong>appends</strong> to the text box. Overlap between shots is fine: the app finds the seam and stitches it, and tells you when it did ("✂ stitched at the overlap"). If you're photographing, a little deliberate overlap between shots actually helps.</p>
+<h3>The Review List Is the Job</h3>
+<p>After reading, every call appears as a row: check each one against the paper. Junk from headers and margins shows as <strong>⚠ rows — just delete them</strong>. A misread bearing or distance: tap the row and retype it. The app repairs dozens of common scanning errors automatically (mangled degree signs, "I" read as "1", old typewriter habits), but the review list is your safety net, and thirty seconds there beats a bad boundary.</p>
+<div class="tip">Old units read automatically: chains, links, rods, poles, perches, varas, and meters all convert. "4 chains and 50 links" comes in as 297.00 ft.</div>`},
+
+  { id:"deed-figures", section:"Deed Plotter", title:"Figures: Boundary, Carve-Outs & Easements",
+    preview:"One deed, several shapes — ties, placement, and the ⚠ warnings",
+    body:`<h3>A Deed Is More Than One Shape</h3>
+<p>Most deeds describe a <strong>boundary</strong> (drawn cyan), and many also carve pieces out — "LESS AND EXCEPT…" parcels (orange, marked <strong>EX</strong>) — or grant <strong>easements</strong> (magenta dashed). The app splits these into separate <em>figures</em>, each with its own list of calls, and shows them on a figures screen before plotting.</p>
+<h3>One Placement Does It All</h3>
+<p>Tap <strong>Plot the record →</strong> and place the boundary's Point of Beginning once. Figures whose deed includes <strong>tie courses</strong> ("Commence at the TRUE POINT OF BEGINNING; thence N 88° E 100.00 feet to the POINT OF BEGINNING of this exception…") position <em>themselves</em> — the app runs the tie from the boundary POB and puts the figure where the deed says.</p>
+<h3>⚠ needs placing</h3>
+<p>A figure with no tie — "Beginning at a cedar post" — has a position the deed states only in prose. It stacks at the POB and waits for you: <strong>🖐 Move one figure</strong> → drag it where it belongs, or <strong>⌖ Snap start to point #</strong> if the deed names a corner the plot already has.</p>
+<h3>⚠ outside parent</h3>
+<p>A carve-out can't take land its parent doesn't contain — so when an exception pokes outside the boundary, the app flags it on the plot. Either the figure isn't placed yet, or — if its own ties put it there — <strong>you may have found a defect in the record</strong>: a scrivener's error, a tie run from the wrong corner, or an exception copied from an incompatible survey. That flag never takes anything from a neighbor; it tells you the paperwork doesn't agree with itself.</p>
+<div class="tip">While any ⚠ shows, the net acreage carries a caveat — the arithmetic subtracts full exception areas, which isn't reliable until every carve-out sits inside the parent.</div>`},
+
+  { id:"deed-fit", section:"Deed Plotter", title:"Fitting the Record to the Ground",
+    preview:"Swing, slide & rotate, and the two-point fit",
+    body:`<h3>The Record Is Rigid</h3>
+<p>All figures move together — one basis of bearings belongs to the whole document. Swing rotates everything about the boundary POB; slide moves everything; ties between figures never distort. (Moving <em>one</em> figure is translate-only, for the untied ones.)</p>
+<h3>🖐 Slide & Rotate on the Imagery</h3>
+<p>Drag with one finger to slide the record. Two fingers: <strong>twist to rotate, pinch to zoom the imagery, drag to move</strong> — all in one gesture, so you can work corner to corner checking the fit against fence lines and roads. <strong>✓ LOCK IN</strong> keeps it; <strong>✕ Cancel</strong> puts everything back exactly where it was.</p>
+<h3>⇲ Fit to 2 Measured Points</h3>
+<p>Once you've located two deed corners on the ground (found monuments, or shots), the fit does it properly: hold one deed point on its measured position, rotate the whole record toward the second, and report the <strong>residual</strong> — how far the record's second corner misses the measured one. It never stretches the record: deed distances are held, and the residual tells you honestly how well paper and ground agree.</p>
+<div class="tip">The fit accepts any cyan deed point from any figure. If a control point came from GPS rather than the instrument, the result says so — recon-grade in, recon-grade out.</div>`},
+
+  { id:"deed-areas", section:"Deed Plotter", title:"Which Numbers Include the Curves",
+    preview:"Arc-true areas vs. straight-line chords — and how to tell",
+    body:`<h3>Two Kinds of Area</h3>
+<p>A curved boundary encloses more (or less) land than its straight chord. A quarter-acre lot with one curved side can differ by thousands of square feet depending on which way it's figured — so ChainLink tells you which it used, every time.</p>
+<h3>Deed Plotter Numbers: Arc-True</h3>
+<p>Per-figure areas in the Deed Plotter menu and the <strong>net acreage</strong> (boundary minus exceptions) compute curves as true circular segments. Figures with curves are tagged <em>arc-true</em> in the menu.</p>
+<h3>The Area &amp; Perimeter Tool</h3>
+<p>When you pick points, the tool follows a deed curve automatically wherever two consecutive picked points are that curve's endpoints — you'll see the boundary <em>bend</em> in the live preview instead of cutting straight across. The result always includes a <strong>Curves:</strong> row: "1 curved edge followed ✓" or "none — straight lines between all points." If that row says none and the deed has an arc there, you're looking at a chord figure.</p>
+<div class="tip">Deed misclosure never corrupts the area — the figure is closed virtually across the gap, so an old deed that closes 1 ft out still reports a sane acreage.</div>`},
+
+  { id:"deed-row", section:"Deed Plotter", title:"Easement Right-of-Way Strips",
+    preview:"Where the width comes from and how the strip is drawn",
+    body:`<h3>Width From the Deed's Own Words</h3>
+<p>"A <strong>30 foot</strong> utility easement…" or "lying <strong>12.5 feet on each side</strong> of a centerline…" — the app reads either phrasing and draws the easement as a strip: the dashed centerline plus two lighter edges at half the width each side, corners mitered so the corridor holds its width through bends.</p>
+<h3>Setting It Yourself</h3>
+<p>If the deed states the width somewhere the reader missed — or you want to clear it — <strong>🖐 Move one figure → the easement → ↔ Right-of-way width</strong>. Blank or zero removes the strip.</p>
+<div class="tip">Strip edges follow straight centerline courses. A curved centerline gets chord-offset edges rather than true concentric arcs — rare in deeds, but worth knowing.</div>`},
 
   { id:"keyboard", section:"Tools", title:"Using a Keyboard (Desktop/Laptop)",
     preview:"Type instead of tapping when on a PC",
