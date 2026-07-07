@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.32">
+<meta name="application-name" content="ChainLink-v4.3.34">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.32</title>
+<title>ChainLink Survey v4.3.34</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.32";
+const APP_VERSION = "4.3.34";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7477,6 +7477,12 @@ function _deedNormalize(t){
     .replace(/(\d)\s*\?\s*(\d)/g,"$1°$2")
     // leading 1 read as capital I: "I 23.77 feet" -> "123.77 feet"
     .replace(/\bI\s?(?=\d)/g,"1")
+    // thousands separators inside numbers: 5,903.00 -> 5903.00
+    .replace(/(\d),(?=\d{3}\b)/g,"$1")
+    // degree sign read as an apostrophe: 89' 56'29" -> 89°56'29"
+    .replace(/(\d{1,3})\s*'\s*(\d{1,2})\s*'\s*(\d{1,2})\s*"/g,"$1°$2'$3\"")
+    // mangled POINT OF BEGINNING ("P O W OF BEGINNING", "PO1NT OF BEGINNING")
+    .replace(/\bP\s*[O0]\s*(?:I\s*N\s*T|1\s*N\s*T|W|N\s*T)\s+OF\s+BEGINNING/g,"POINT OF BEGINNING")
     // degree sign read as a double-quote before minutes: 00"03'02" -> 00°03'02"
     .replace(/(\d{1,3})\s*"\s*(\d{1,2})\s*'/g,"$1°$2'")
     // minute mark read as a double-quote: °DD"DD -> °DD'DD
@@ -7580,7 +7586,8 @@ function parseDeedText(txt){
     // feet ; and a central angle of 35°00'00"…"). If this segment is curve
     // data with no CURVE keyword and the previous call is a curve missing
     // that datum, backfill it instead of discarding.
-    if(!/\bCURVE\b|\bCURVING\b/.test(seg)&&calls.length&&calls[calls.length-1].type==="curve"){
+    const _contArc=/\bCURVE\b/.test(seg)&&!/RADIUS|FOOT\s+RADIUS/.test(seg)&&/CENTRAL|ARC/.test(seg);
+    if((!/\bCURVE\b|\bCURVING\b/.test(seg)||_contArc)&&calls.length&&calls[calls.length-1].type==="curve"){
       const lc=calls[calls.length-1];
       const d2=_deedParseAngle(seg,"(?:DELTA|CENTRAL)");
       const am2=seg.match(/ARC\s*(?:LENGTH|DISTANCE)?\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
@@ -7590,13 +7597,62 @@ function parseDeedText(txt){
       let used=false;
       if(d2!=null&&lc.delta==null){lc.delta=d2;used=true;}
       if(am2&&lc.arc==null){lc.arc=parseFloat(am2[1]);used=true;}
+      if(!am2&&lc.arc==null&&(d2!=null||lc.delta!=null||lc.chordD!=null)){
+        const dm2=seg.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
+        if(dm2){lc.arc=parseFloat(dm2[1]);used=true;}
+      }
       if(chB2&&!lc.chordB){lc.chordB=chB2;used=true;}
       if(chD2&&lc.chordD==null){lc.chordD=chD2.ft;used=true;}
-      if(used)return;
+      if(used){
+        // continuation may also announce the NEXT (reverse/compound)
+        // curve: park its chord bearing / concavity for the arc segment
+        const rv=seg.search(/REVERSE CURV|COMPOUND CURV/);
+        if(rv>=0){
+          const tail=seg.slice(rv);
+          const ci2=tail.indexOf("CHORD");
+          let chB3=null;
+          if(ci2>=0)chB3=_deedParseBearing(tail.slice(ci2).split(/\bARC\b/)[0]);
+          const cv2=tail.match(/CONCAVE\s+(?:TO\s+THE\s+)?(NORTH|SOUTH)?\s*(EAST|WEST)?(?:ERLY)?/);
+          let ccv2=null;
+          if(cv2&&(cv2[1]||cv2[2])){
+            ccv2={NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[(cv2[1]||"")+(cv2[2]||"")];
+            if(ccv2===undefined)ccv2=null;
+          }
+          if(chB3||ccv2!=null)window.__pendCurve={radius:null,chordB:chB3,chordD:null,concaveAz:ccv2,radialAz:null,delta:null,arc:null};
+        }
+        return;
+      }
     }
     const isCurve=/\bCURVE\b|\bCURVING\b|\bALONG THE ARC\b/.test(seg);
     if(isCurve){
       const dir=/\bLEFT\b/.test(seg)?"L":(/\bRIGHT\b/.test(seg)?"R":null);
+      // A continuation segment can complete the pending curve AND announce
+      // the next (reverse/compound) one: head completes, tail parks.
+      if(window.__pendCurve&&/REVERSE CURV|COMPOUND CURV/.test(seg)){
+        const pcx=window.__pendCurve;
+        const rv2=seg.search(/REVERSE CURV|COMPOUND CURV/);
+        const head=seg.slice(0,rv2), tail2=seg.slice(rv2);
+        const dH=_deedParseAngle(head,"(?:DELTA|CENTRAL)");
+        let aH=null;
+        const amH=head.match(/ARC\s*(?:LENGTH|DISTANCE)?\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
+        if(amH)aH=parseFloat(amH[1]);
+        if(aH==null){const dmH=head.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);if(dmH)aH=parseFloat(dmH[1]);}
+        calls.push({type:"curve",_si,_pob:_POBARR.test(seg),_pt:/POINT OF TANGENCY/.test(head),_pcPrev:_pcPrev,
+          dir:null,radius:pcx.radius,arc:aH,delta:dH!=null?dH:pcx.delta,
+          chordB:pcx.chordB,chordD:pcx.chordD,concaveAz:pcx.concaveAz,radialAz:pcx.radialAz,
+          raw:seg.slice(0,140)});
+        const ci3=tail2.indexOf("CHORD");
+        let chB4=null;
+        if(ci3>=0)chB4=_deedParseBearing(tail2.slice(ci3).split(/\bARC\b/)[0]);
+        const cv3=tail2.match(/CONCAVE\s+(?:TO\s+THE\s+)?(NORTH|SOUTH)?\s*(EAST|WEST)?(?:ERLY)?/);
+        let ccv3=null;
+        if(cv3&&(cv3[1]||cv3[2])){
+          ccv3={NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[(cv3[1]||"")+(cv3[2]||"")];
+          if(ccv3===undefined)ccv3=null;
+        }
+        window.__pendCurve=(chB4||ccv3!=null)?{radius:null,chordB:chB4,chordD:null,concaveAz:ccv3,radialAz:null,delta:null,arc:null}:null;
+        return;
+      }
       const rm=seg.match(/RADIUS\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/)||
                seg.match(/(\d{1,6}(?:\.\d+)?)\s*FOOT\s+RADIUS/);
       const ccv=seg.match(/CONCAVE\s+(?:TO\s+THE\s+)?(NORTH|SOUTH)?\s*(EAST|WEST)?(?:ERLY)?/);
@@ -7607,7 +7663,7 @@ function parseDeedText(txt){
         if(ccvAz===undefined)ccvAz=null;
       }
       let radAz=null;
-      const rb=seg.match(/RADIUS(?:\s+POINT)?\s+BEARS\s+/);
+      const rb=seg.match(/(?:RADIUS(?:\s+POINT)?|CENTER\s+OF\s+WHICH)\s+BEARS\s+/);
       if(rb){const rbB=_deedParseBearing(seg.slice(rb.index+rb[0].length,rb.index+rb[0].length+70));
         if(rbB&&!rbB.card)radAz=_deedBearingToAz(rbB);}
       const am=seg.match(/ARC\s*(?:LENGTH|DISTANCE)?\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
@@ -7616,11 +7672,15 @@ function parseDeedText(txt){
       let chB=null,chD=null;
       const ci=seg.indexOf("CHORD");
       if(ci>=0){
-        const rest=seg.slice(ci);
+        const rest=seg.slice(ci).split(/\bARC\b/)[0];
         chB=_deedParseBearing(rest);
         chD=_deedParseDistance(rest);
       }
-      const begIdx=seg.search(/BEGINNING OF A|BEGINNING OF SAID/);
+      let begIdx=seg.search(/BEGINNING OF A|BEGINNING OF SAID/);
+      if(begIdx<0){
+        const cvi=seg.search(/\bCURVE\b|\bCURVING\b/);
+        if(cvi>40&&!_contArc)begIdx=cvi;
+      }
       if(begIdx>0){
         const prefix=seg.slice(0,begIdx);
         const pb=_deedParseBearing(prefix);
@@ -7638,7 +7698,7 @@ function parseDeedText(txt){
         }
       }
       const pc=window.__pendCurve||{};
-      if((dir||ccvAz!=null||radAz!=null||window.__pendRadial!=null||pc.chordB||pc.chordD!=null||pc.radius!=null)&&(rm||chD||pc.radius!=null||pc.chordD!=null)){
+      if((dir||ccvAz!=null||radAz!=null||window.__pendRadial!=null||pc.chordB||pc.chordD!=null||pc.radius!=null)&&(rm||chD||pc.radius!=null||pc.chordD!=null||pc.chordB)){
         let arcV=am?parseFloat(am[1]):null;
         if(arcV==null&&(pc.chordB||pc.chordD!=null)){
           const dm=seg.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
@@ -7661,7 +7721,7 @@ function parseDeedText(txt){
     // "…to a point on a curve from which the radius bears S 39°E 614.58
     // feet" arrives in the LINE segment before the curve — park the radial
     if(!/\bCURVE\b[\s\S]*RADIUS\s*(?:OF|=|:)/.test(seg)){
-      const rb0=seg.match(/RADIUS(?:\s+POINT)?\s+BEARS\s+/);
+      const rb0=seg.match(/(?:RADIUS(?:\s+POINT)?|CENTER\s+OF\s+WHICH)\s+BEARS\s+/);
       if(rb0){const rbB0=_deedParseBearing(seg.slice(rb0.index+rb0[0].length,rb0.index+rb0[0].length+70));
         if(rbB0&&!rbB0.card)window.__pendRadial=_deedBearingToAz(rbB0);}
     }
@@ -7759,7 +7819,9 @@ function computeDeed(calls,pobE,pobN,rotDeg){
     }
     if(c.chordB){ chAz=_deedBearingToAz(c.chordB)+rotDeg; }
     if(c.chordD){ chLen=c.chordD; }
-    if(chLen==null&&c.radius&&delta!=null) chLen=2*c.radius*Math.sin(delta*rad/2);
+    let R=c.radius;
+    if(R==null&&c.arc&&delta!=null&&delta>0.0001) R=c.arc/(delta*rad);
+    if(chLen==null&&R&&delta!=null) chLen=2*R*Math.sin(delta*rad/2);
     // "…POINT OF INTERSECTION…; thence along a curve … TO A POINT OF
     // TANGENCY" — the curve is tangent to the NEXT course, not the previous
     // one. Solve the chord backward from the exit tangent.
@@ -7781,12 +7843,12 @@ function computeDeed(calls,pobE,pobN,rotDeg){
     const sE=E,sN=N;
     E+=chLen*Math.sin(chAz*rad); N+=chLen*Math.cos(chAz*rad);
     verts.push({E,N});
-    if(c.radius&&c.radius>=chLen/2){
-      const h=Math.sqrt(Math.max(0,c.radius*c.radius-chLen*chLen/4));
+    if(R&&R>=chLen/2){
+      const h=Math.sqrt(Math.max(0,R*R-chLen*chLen/4));
       const mE=(sE+E)/2,mN=(sN+N)/2;
       const perp=chAz+(dir==="L"?-90:90); // center side
       const cE=mE+h*Math.sin(perp*rad), cN=mN+h*Math.cos(perp*rad);
-      arcs.push({cE,cN,r:c.radius,
+      arcs.push({cE,cN,r:R,
         a1:Math.atan2(sN-cN,sE-cE), a2:Math.atan2(N-cN,E-cE),
         ccw:dir==="L", sE,sN,eE:E,eN:N});
     }
