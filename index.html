@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.29">
+<meta name="application-name" content="ChainLink-v4.3.30">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.29</title>
+<title>ChainLink Survey v4.3.30</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.29";
+const APP_VERSION = "4.3.30";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7567,8 +7567,11 @@ function parseDeedText(txt){
   const calls=[];
   const pobSegs=[];
   let _si=-1;
+  let _lastPC=false;
   segs.forEach(seg=>{
     _si++;
+    const _pcPrev=_lastPC;
+    _lastPC=/POINT OF CURVATURE/.test(seg);
     if(/POINT OF BEGINNING/.test(seg))pobSegs.push(_si);
     // OCR sometimes splits one curve across segments ("…radius of 260.00
     // feet ; and a central angle of 35°00'00"…"). If this segment is curve
@@ -7614,7 +7617,8 @@ function parseDeedText(txt){
         chD=_deedParseDistance(rest);
       }
       if((dir||ccvAz!=null||radAz!=null||window.__pendRadial!=null)&&(rm||chD)){
-        calls.push({type:"curve",_si,_pob:/POINT OF BEGINNING/.test(seg),dir:dir||null,
+        calls.push({type:"curve",_si,_pob:/POINT OF BEGINNING/.test(seg),
+          _pt:/POINT OF TANGENCY/.test(seg),_pcPrev:_pcPrev,dir:dir||null,
           radius:rm?parseFloat(rm[1]):null,
           arc:am?parseFloat(am[1]):null,
           delta:delta,
@@ -7728,6 +7732,21 @@ function computeDeed(calls,pobE,pobN,rotDeg){
     if(c.chordB){ chAz=_deedBearingToAz(c.chordB)+rotDeg; }
     if(c.chordD){ chLen=c.chordD; }
     if(chLen==null&&c.radius&&delta!=null) chLen=2*c.radius*Math.sin(delta*rad/2);
+    // "…POINT OF INTERSECTION…; thence along a curve … TO A POINT OF
+    // TANGENCY" — the curve is tangent to the NEXT course, not the previous
+    // one. Solve the chord backward from the exit tangent.
+    if(chAz==null&&delta!=null&&c._pt&&!c._pcPrev){
+      const me=usable.indexOf(c);
+      const nx=usable[me+1];
+      if(nx&&nx.type==="line"){
+        const exitAz=_deedBearingToAz(nx.bearing)+rotDeg;
+        if(!dir&&c.concaveAz!=null){
+          const rel=Math.sin((c.concaveAz+rotDeg-exitAz)*rad);
+          dir=rel>=0?"R":"L";
+        }
+        if(dir)chAz=exitAz+(dir==="L"?delta/2:-delta/2);
+      }
+    }
     if(chAz==null&&tangent!=null&&delta!=null&&dir)
       chAz=tangent+(dir==="L"?-delta/2:delta/2);
     if(chAz==null||chLen==null){ verts.push({E,N,skip:true}); return; }
