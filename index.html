@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.26">
+<meta name="application-name" content="ChainLink-v4.3.28">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.26</title>
+<title>ChainLink Survey v4.3.28</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.26";
+const APP_VERSION = "4.3.28";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7877,6 +7877,10 @@ function parseDeedFigures(txt){
     if(!calls.length)return;
     const fig={kind:p.kind,calls,pobE:null,pobN:null,ptNums:[],
       name:p.kind==="boundary"?"Boundary":(p.kind==="except"?"Except parcel":"Easement")};
+    // "BEGINNING AT THE NORTHWEST CORNER OF SAID SECTION 17" — a PLSS
+    // corner reference lets later parcels place themselves off the first
+    const cr=p.text.slice(0,400).match(/\b(NORTHWEST|NORTHEAST|SOUTHWEST|SOUTHEAST)\s+CORNER OF (?:SAID )?SECTION (\d{1,2})\b/);
+    if(cr)fig.cornerRef={c:cr[1],sec:parseInt(cr[2],10)};
     if(p.kind==="easement"){
       // width from the keyword ("a 30 foot utility easement") or the body
       // ("lying 15 feet on each side")
@@ -8036,14 +8040,52 @@ function _deedReviewFigures(figs){
     });
   });
 }
+/* Standard township: 36 sections, boustrophedon numbering from the NE.
+   Returns the corner's node (miles E of the township's west line, miles S
+   of its north line) — so two verbal corner names can be compared as one
+   physical monument. */
+function _deedCornerNode(ref){
+  if(!ref||ref.sec<1||ref.sec>36)return null;
+  const r=Math.floor((ref.sec-1)/6);
+  const k=(ref.sec-1)%6;
+  const x=(r%2===0)?(5-k):k;      // even rows number E→W, odd rows W→E
+  const y=r;
+  const dx=/EAST/.test(ref.c)?1:0, dy=/SOUTH/.test(ref.c)?1:0;
+  return {x:x+dx,y:y+dy};
+}
+function _deedTieVec(f){
+  const ties=f.calls.filter(c=>c.tie).map(c=>Object.assign({},c,{tie:false}));
+  if(!ties.length)return {E:0,N:0};
+  const t=computeDeed(ties,0,0,0);
+  const l=t.verts[t.verts.length-1];
+  return {E:l.E,N:l.N};
+}
 function _deedResolveFigures(figs,E,N){
   // The record is rigid: boundary POB is given; every secondary figure with
   // tie courses is positioned by RUNNING ITS TIES from the parent POB.
   // Figures with no ties (position given only in prose) stack at the parent
   // POB, flagged for the per-figure Move tool.
-  let stacked=0;
+  let stacked=0, firstB=null;
   figs.forEach(f=>{
-    if(f.kind==="boundary"){f.pobE=E;f.pobN=N;return;}
+    if(f.kind==="boundary"){
+      if(!firstB){
+        f.pobE=E;f.pobN=N;firstB=f;
+        return;
+      }
+      // Later parcel: if its commencement names the SAME physical section
+      // corner as parcel 1's (PLSS grid equality), the record places it —
+      // corner = parcel 1's TPOB minus its tie; this parcel's TPOB = corner
+      // plus its own tie.
+      const n1=_deedCornerNode(firstB.cornerRef), n2=_deedCornerNode(f.cornerRef);
+      if(n1&&n2&&n1.x===n2.x&&n1.y===n2.y){
+        const t1=_deedTieVec(firstB), t2=_deedTieVec(f);
+        f.pobE=E-t1.E+t2.E; f.pobN=N-t1.N+t2.N;
+        f.autoStacked=false;
+      }else{
+        f.pobE=E;f.pobN=N;f.autoStacked=true;stacked++;
+      }
+      return;
+    }
     const ties=f.calls.filter(c=>c.tie).map(c=>Object.assign({},c,{tie:false}));
     if(ties.length){
       const t=computeDeed(ties,E,N,0);
