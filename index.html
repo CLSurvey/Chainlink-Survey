@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.35">
+<meta name="application-name" content="ChainLink-v4.3.36">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.35</title>
+<title>ChainLink Survey v4.3.36</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.35";
+const APP_VERSION = "4.3.36";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7477,6 +7477,11 @@ function _deedNormalize(t){
     .replace(/(\d)\s*\?\s*(\d)/g,"$1°$2")
     // leading 1 read as capital I: "I 23.77 feet" -> "123.77 feet"
     .replace(/\bI\s?(?=\d)/g,"1")
+    // UTF-8 read as Latin-1 (clipboard mojibake): Â° -> °, curly quotes
+    .replace(/\u00c2(?=[\u00b0\u00b4\u00a8])/g,"")
+    .replace(/\u00c3\u00a2\u00e2[\s\S]?/g,"")
+    .replace(/[\u2018\u2019\u00b4\u2032]/g,"'")
+    .replace(/[\u201c\u201d\u2033]/g,'"')
     // thousands separators inside numbers: 5,903.00 -> 5903.00
     .replace(/(\d),(?=\d{3}\b)/g,"$1")
     // degree sign read as an apostrophe: 89' 56'29" -> 89°56'29"
