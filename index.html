@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.34">
+<meta name="application-name" content="ChainLink-v4.3.35">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.34</title>
+<title>ChainLink Survey v4.3.35</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.34";
+const APP_VERSION = "4.3.35";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7573,6 +7573,9 @@ function parseDeedText(txt){
   // "4 chains and 20 links" intact.
   const segs=t.split(/\bTHENCE\b|;|\bRUNNING\b|,\s*AND\s+(?=(?:NORTH|SOUTH|N\s|S\s|DUE\b))|(?:\b\d{1,2}\s*[.)]\s+(?=[NSDC]))/).map(x=>x.trim()).filter(x=>x.length>3);
   const calls=[];
+  // pending-curve state must never survive from a previous read — a stale
+  // parked curve contaminates the next deed's first curve
+  window.__pendRadial=null; window.__pendCurve=null;
   const pobSegs=[];
   let _si=-1;
   let _lastPC=false;
@@ -7699,6 +7702,22 @@ function parseDeedText(txt){
       }
       const pc=window.__pendCurve||{};
       if((dir||ccvAz!=null||radAz!=null||window.__pendRadial!=null||pc.chordB||pc.chordD!=null||pc.radius!=null)&&(rm||chD||pc.radius!=null||pc.chordD!=null||pc.chordB)){
+        // Last-resort recovery: a leading "bearing … distance … to the
+        // beginning of" line course in THIS segment is emitted before the
+        // curve, no matter which upstream path was taken.
+        {
+          const cvi9=seg.search(/\bCURVE\b|\bCURVING\b/);
+          if(cvi9>40&&!_contArc){
+            const pre9=seg.slice(0,cvi9);
+            const pb9=_deedParseBearing(pre9);
+            if(pb9){
+              let px9=pre9;
+              if(!pb9.card)px9=pre9.replace(/\b(N|S|NORTH|SOUTH)\s*\.?\s*\d{1,2}[^EW]{0,24}?(E|W|EAST|WEST)\b/," ");
+              const pd9=_deedParseDistance(px9);
+              if(pd9)calls.push({type:"line",_si,_pob:false,bearing:pb9,dist:pd9.ft,unit:pd9.unit,rawVal:pd9.val,raw:pre9.slice(0,140)});
+            }
+          }
+        }
         let arcV=am?parseFloat(am[1]):null;
         if(arcV==null&&(pc.chordB||pc.chordD!=null)){
           const dm=seg.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
