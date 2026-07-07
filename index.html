@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.30">
+<meta name="application-name" content="ChainLink-v4.3.31">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.30</title>
+<title>ChainLink Survey v4.3.31</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.30";
+const APP_VERSION = "4.3.31";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7861,7 +7861,11 @@ function _deedSyncPoints(){
     const vsAll=f.computed.verts;
     const vs=(f.kind==="easement")?vsAll:vsAll.slice(0,Math.max(1,vsAll.length-1));
     if(!f.ptNums)f.ptNums=[];
-    const tag=f.kind==="boundary"?"Deed":(f.kind==="except"?"Except":"Esmt");
+    // multiple parcels / carve-outs: points carry their figure's name so
+    // "POB" and "crn 1" are never ambiguous in exports or on screen
+    const multiB=_deedPlot.figures.filter(x=>x.kind==="boundary").length>1;
+    const tag=f.kind==="boundary"?(multiB?f.name:"Deed")
+             :(f.kind==="except"?f.name.replace("Except parcel","Except"):f.name.replace("Easement","Esmt"));
     vs.forEach((vv,i)=>{
       let num=f.ptNums[i];
       let pt=num!=null?points.find(p=>p.Point===num):null;
