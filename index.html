@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.24">
+<meta name="application-name" content="ChainLink-v4.3.26">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.24</title>
+<title>ChainLink Survey v4.3.26</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.24";
+const APP_VERSION = "4.3.26";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7465,6 +7465,12 @@ function _deedNormalize(t){
     // — OCR dialect repairs (each learned from a real misread) —
     // doubled quadrant letters: "WW"/"EE"/"NN"/"SS" -> single
     .replace(/\b([NSEW])\1\b/g,"$1")
+    // "(SOUTH 89°31'09" EAST, RECORDED)" — record values are reference
+    // only; the measured bearing outside the parentheses governs
+    .replace(/\([^)]{0,90}?RECORD(?:ED)?[^)]{0,20}?\)/g," ")
+    // "49 MINUTES 56 MINUTES" — a second MINUTES after minutes can only
+    // mean SECONDS (scrivener slip seen in recorded deeds)
+    .replace(/(\d{1,2}\s*MINUTES?\s+\d{1,2})\s*MINUTES\b/g,"$1 SECONDS")
     // spelled-out "43 degrees AND 15 minutes" -> "43 degrees 15 minutes"
     .replace(/\b(DEGREES?|DEG|MINUTES?|MIN)\s+AND\s+(?=\d)/g,"$1 ")
     // degree sign read as a question mark: 08?51'34" -> 08°51'34"
@@ -7582,6 +7588,17 @@ function parseDeedText(txt){
     if(isCurve){
       const dir=/\bLEFT\b/.test(seg)?"L":(/\bRIGHT\b/.test(seg)?"R":null);
       const rm=seg.match(/RADIUS\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
+      const ccv=seg.match(/CONCAVE\s+(?:TO\s+THE\s+)?(NORTH|SOUTH)?\s*(EAST|WEST)?(?:ERLY)?/);
+      let ccvAz=null;
+      if(ccv&&(ccv[1]||ccv[2])){
+        const key=(ccv[1]||"")+(ccv[2]||"");
+        ccvAz={NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[key];
+        if(ccvAz===undefined)ccvAz=null;
+      }
+      let radAz=null;
+      const rb=seg.match(/RADIUS(?:\s+POINT)?\s+BEARS\s+/);
+      if(rb){const rbB=_deedParseBearing(seg.slice(rb.index+rb[0].length,rb.index+rb[0].length+70));
+        if(rbB&&!rbB.card)radAz=_deedBearingToAz(rbB);}
       const am=seg.match(/ARC\s*(?:LENGTH|DISTANCE)?\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
       const delta=_deedParseAngle(seg,"(?:DELTA|CENTRAL)");
       // chord: bearing+dist appearing after CHORD
@@ -7592,15 +7609,25 @@ function parseDeedText(txt){
         chB=_deedParseBearing(rest);
         chD=_deedParseDistance(rest);
       }
-      if(dir&&(rm||chD)){
-        calls.push({type:"curve",dir:dir,
+      if((dir||ccvAz!=null||radAz!=null||window.__pendRadial!=null)&&(rm||chD)){
+        calls.push({type:"curve",dir:dir||null,
           radius:rm?parseFloat(rm[1]):null,
           arc:am?parseFloat(am[1]):null,
           delta:delta,
           chordB:chB, chordD:chD?chD.ft:null,
+          concaveAz:ccvAz,
+          radialAz:(radAz!=null?radAz:(window.__pendRadial!=null?window.__pendRadial:null)),
           raw:seg.slice(0,140)});
+        window.__pendRadial=null;
         return;
       }
+    }
+    // "…to a point on a curve from which the radius bears S 39°E 614.58
+    // feet" arrives in the LINE segment before the curve — park the radial
+    if(!/\bCURVE\b[\s\S]*RADIUS\s*(?:OF|=|:)/.test(seg)){
+      const rb0=seg.match(/RADIUS(?:\s+POINT)?\s+BEARS\s+/);
+      if(rb0){const rbB0=_deedParseBearing(seg.slice(rb0.index+rb0[0].length,rb0.index+rb0[0].length+70));
+        if(rbB0&&!rbB0.card)window.__pendRadial=_deedBearingToAz(rbB0);}
     }
     let b=_deedParseBearing(seg);
     // A word-cardinal is only a course direction if it comes BEFORE the
@@ -7652,13 +7679,46 @@ function computeDeed(calls,pobE,pobN,rotDeg){
       return;
     }
     // curve
-    let chAz=null,chLen=null,delta=c.delta;
+    let chAz=null,chLen=null,delta=c.delta,dir=c.dir;
     if(delta==null&&c.radius&&c.arc) delta=(c.arc/c.radius)/rad;
+    // "CONCAVE TO THE <compass>": the center lies toward that compass
+    // direction — which side of travel that is decides LEFT/RIGHT
+    if(!dir&&c.concaveAz!=null&&tangent!=null){
+      const rel=Math.sin((c.concaveAz+rotDeg-tangent)*rad);
+      dir=rel>=0?"R":"L";
+    }
+    // Non-tangent entry by radial bearing: the center is known exactly —
+    // place the endpoint by rotating the start about it by ±delta, taking
+    // the branch that continues the direction of travel
+    if(c.radialAz!=null&&c.radius&&delta!=null){
+      const ra=(c.radialAz+rotDeg)*rad;
+      const cE=E+c.radius*Math.sin(ra), cN=N+c.radius*Math.cos(ra);
+      const a1=Math.atan2(N-cN,E-cE);
+      const cand=[+1,-1].map(sg=>{
+        const a2=a1+sg*delta*rad;
+        return {sg,E:cE+c.radius*Math.cos(a2),N:cN+c.radius*Math.sin(a2),a2};
+      });
+      let pick=cand[0];
+      if(tangent!=null){
+        const fx=Math.sin(tangent*rad), fy=Math.cos(tangent*rad);
+        const s0=(cand[0].E-E)*fx+(cand[0].N-N)*fy;
+        const s1=(cand[1].E-E)*fx+(cand[1].N-N)*fy;
+        pick=s1>s0?cand[1]:cand[0];
+      }else if(dir){ pick=(dir==="L")===(true)?cand[0]:cand[1]; }
+      const sE0=E,sN0=N;
+      E=pick.E; N=pick.N;
+      verts.push({E,N});
+      arcs.push({cE,cN,r:c.radius,a1,a2:pick.a2,ccw:pick.sg>0,sE:sE0,sN:sN0,eE:E,eN:N});
+      // exit tangent = chord azimuth + half-delta toward the turn side
+      const chA=Math.atan2(E-sE0,N-sN0)/rad;
+      tangent=chA+(pick.sg>0?-delta/2:delta/2);
+      return;
+    }
     if(c.chordB){ chAz=_deedBearingToAz(c.chordB)+rotDeg; }
     if(c.chordD){ chLen=c.chordD; }
     if(chLen==null&&c.radius&&delta!=null) chLen=2*c.radius*Math.sin(delta*rad/2);
-    if(chAz==null&&tangent!=null&&delta!=null)
-      chAz=tangent+(c.dir==="L"?-delta/2:delta/2);
+    if(chAz==null&&tangent!=null&&delta!=null&&dir)
+      chAz=tangent+(dir==="L"?-delta/2:delta/2);
     if(chAz==null||chLen==null){ verts.push({E,N,skip:true}); return; }
     const sE=E,sN=N;
     E+=chLen*Math.sin(chAz*rad); N+=chLen*Math.cos(chAz*rad);
@@ -7666,13 +7726,13 @@ function computeDeed(calls,pobE,pobN,rotDeg){
     if(c.radius&&c.radius>=chLen/2){
       const h=Math.sqrt(Math.max(0,c.radius*c.radius-chLen*chLen/4));
       const mE=(sE+E)/2,mN=(sN+N)/2;
-      const perp=chAz+(c.dir==="L"?-90:90); // center side
+      const perp=chAz+(dir==="L"?-90:90); // center side
       const cE=mE+h*Math.sin(perp*rad), cN=mN+h*Math.cos(perp*rad);
       arcs.push({cE,cN,r:c.radius,
         a1:Math.atan2(sN-cN,sE-cE), a2:Math.atan2(N-cN,E-cE),
-        ccw:c.dir==="L", sE,sN,eE:E,eN:N});
+        ccw:dir==="L", sE,sN,eE:E,eN:N});
     }
-    if(delta!=null) tangent=chAz+(c.dir==="L"?-delta/2:delta/2);
+    if(delta!=null) tangent=chAz+(dir==="L"?-delta/2:delta/2);
     else tangent=chAz;
   });
   const closeE=verts[0].E-E, closeN=verts[0].N-N;
@@ -7802,11 +7862,11 @@ function parseDeedFigures(txt){
   const t=_deedNormalize(txt);
   // OCR mangles keywords ("1ESS AND EXCEPT", "BER EXCEPT", dropped
   // "TOGETHER") — so the detector is deliberately fuzzy:
-  const KEY=/((?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
+  const KEY=/(PARCEL NO\.?\s*\d+|(?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
   const parts=[];let last=0,m,firstKind="boundary",kw="";
   while((m=KEY.exec(t))){
     parts.push({kind:firstKind,text:t.slice(last,m.index),kw:kw});
-    firstKind=/EXCEPT/.test(m[1])&&!/EASEMENT/.test(m[1])?"except":"easement";
+    firstKind=/^PARCEL/.test(m[1])?"boundary":(/EXCEPT/.test(m[1])&&!/EASEMENT/.test(m[1])?"except":"easement");
     kw=m[1];
     last=m.index+m[1].length;
   }
@@ -7830,6 +7890,8 @@ function parseDeedFigures(txt){
     figs.push(fig);
   });
   // number duplicates
+  let bd=0;figs.forEach(f=>{if(f.kind==="boundary")bd++;});
+  if(bd>1){let n=0;figs.forEach(f=>{if(f.kind==="boundary")f.name="Parcel "+(++n);});}
   let ex=0,es=0;
   figs.forEach(f=>{if(f.kind==="except")f.name="Except parcel "+(++ex);
                    if(f.kind==="easement")f.name="Easement "+(++es);});
@@ -7842,7 +7904,7 @@ function _deedCallLabel(c,i){
   const tie=c.tie?"TIE→POB (excluded): ":"";
   if(c.type==="line")return (i+1)+". "+tie+_deedAzToBearingStr(_deedBearingToAz(c.bearing))+" — "+c.dist.toFixed(2)+" "+(units==="ft"?"ft":"m eq")+(c.unit&&!/FEET|FT|FOOT/.test(c.unit)?" ("+c.rawVal+" "+String(c.unit).toLowerCase()+")":"");
   if(c.type==="curve"){
-    const usable=(c.arc!=null)||(c.delta!=null)||(c.chordD!=null);
+    const usable=((c.arc!=null)||(c.delta!=null)||(c.chordD!=null))&&(c.dir||c.concaveAz!=null||c.radialAz!=null||c.chordB);
     return (i+1)+". Curve "+(c.dir==="L"?"LEFT":"RIGHT")+(c.radius?" R="+c.radius.toFixed(2):"")+(c.arc?" arc="+c.arc.toFixed(2):"")+(c.chordD?" ch="+c.chordD.toFixed(2):"")+(usable?"":"  ⚠ needs arc/chord/delta — tap");
   }
   return (i+1)+". ⚠ incomplete — tap to fix";
