@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.28">
+<meta name="application-name" content="ChainLink-v4.3.29">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.28</title>
+<title>ChainLink Survey v4.3.29</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.28";
+const APP_VERSION = "4.3.29";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7565,7 +7565,11 @@ function parseDeedText(txt){
   // "4 chains and 20 links" intact.
   const segs=t.split(/\bTHENCE\b|;|\bRUNNING\b|,\s*AND\s+(?=(?:NORTH|SOUTH|N\s|S\s|DUE\b))|(?:\b\d{1,2}\s*[.)]\s+(?=[NSDC]))/).map(x=>x.trim()).filter(x=>x.length>3);
   const calls=[];
+  const pobSegs=[];
+  let _si=-1;
   segs.forEach(seg=>{
+    _si++;
+    if(/POINT OF BEGINNING/.test(seg))pobSegs.push(_si);
     // OCR sometimes splits one curve across segments ("…radius of 260.00
     // feet ; and a central angle of 35°00'00"…"). If this segment is curve
     // data with no CURVE keyword and the previous call is a curve missing
@@ -7610,7 +7614,7 @@ function parseDeedText(txt){
         chD=_deedParseDistance(rest);
       }
       if((dir||ccvAz!=null||radAz!=null||window.__pendRadial!=null)&&(rm||chD)){
-        calls.push({type:"curve",dir:dir||null,
+        calls.push({type:"curve",_si,_pob:/POINT OF BEGINNING/.test(seg),dir:dir||null,
           radius:rm?parseFloat(rm[1]):null,
           arc:am?parseFloat(am[1]):null,
           delta:delta,
@@ -7645,9 +7649,9 @@ function parseDeedText(txt){
     }
     const d=_deedParseDistance(segForDist);
     if(b&&d){
-      calls.push({type:"line",bearing:b,dist:d.ft,unit:d.unit,rawVal:d.val,raw:seg.slice(0,140)});
+      calls.push({type:"line",_si,_pob:/POINT OF BEGINNING/.test(seg),bearing:b,dist:d.ft,unit:d.unit,rawVal:d.val,raw:seg.slice(0,140)});
     }else if(b||d){
-      calls.push({type:"partial",bearing:b,dist:d?d.ft:null,unit:d?d.unit:null,raw:seg.slice(0,140)});
+      calls.push({type:"partial",_si,_pob:/POINT OF BEGINNING/.test(seg),bearing:b,dist:d?d.ft:null,unit:d?d.unit:null,raw:seg.slice(0,140)});
     }
   });
   // Tie-course detection: if a call's own text reaches the (TRUE) POINT OF
@@ -7658,7 +7662,14 @@ function parseDeedText(txt){
   // also contain the phrase — e.g. "…on each side of a centerline described
   // as: Commence at the POINT OF BEGINNING…")
   let pobIdx=-1;
-  calls.forEach((c,i)=>{if(i<calls.length-1&&i<=3&&/POINT OF BEGINNING/.test(c.raw||""))pobIdx=i;});
+  calls.forEach((c,i)=>{if(i<calls.length-1&&i<=3&&(c._pob||/POINT OF BEGINNING/.test(c.raw||"")))pobIdx=i;});
+  // POB declared in a call-less segment right after a call (severed by a
+  // semicolon): credit the call before it
+  pobSegs.forEach(si=>{
+    let last=-1;
+    calls.forEach((c,i)=>{if(c._si!=null&&c._si<=si)last=i;});
+    if(last>=0&&last<calls.length-1&&last<=3&&calls[last]._si<si&&(si-calls[last]._si)<=2&&last>pobIdx)pobIdx=last;
+  });
   if(pobIdx>=0){
     for(let i=0;i<=pobIdx;i++)if(calls[i].type!=="partial")calls[i].tie=true;
   }
