@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.39">
+<meta name="application-name" content="ChainLink-v4.3.40">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.39</title>
+<title>ChainLink Survey v4.3.40</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.39";
+const APP_VERSION = "4.3.40";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7491,8 +7491,11 @@ function _deedNormalize(t){
     .replace(/\b(N|S|NORTH|SOUTH)\s*[\u2013\u2014-]\s+DEGREES/g,"$1 0 DEGREES")
     // seconds marked with an apostrophe: 04'27' W -> 04'27" W
     .replace(/(\d{1,2}'\s*\d{1,2})'(?=\s*(?:EAST|WEST|E|W)\b)/g,'$1"')
-    // parenthetical right-of-way widths: "(50' R/W)" is prose, not a distance
-    .replace(/\(\s*\d+(?:\.\d+)?\s*['\u2032]?\s*R\s*\/?\s*W\s*\)/g," ")
+    // parenthetical right-of-way widths: "(50' R/W)" / "(20 FOOT R/W)"
+    .replace(/\(\s*\d+(?:\.\d+)?\s*(?:['\u2032]|FOOT|FEET)?\s*R\s*\/?\s*W\s*\)/g," ")
+    // record-value parentheticals: "(400.00 FEET DEED)", "(PASSING THROUGH …)"
+    .replace(/\([^)]{0,80}?\bDEED\)/g," ")
+    .replace(/\(PASSING[^)]{0,90}?\)/g," ")
     // thousands separators inside numbers: 5,903.00 -> 5903.00
     .replace(/(\d),(?=\d{3}\b)/g,"$1")
     // degree sign read as an apostrophe: 89' 56'29" -> 89°56'29"
@@ -7587,7 +7590,7 @@ function parseDeedText(txt){
   // ", AND NORTH…" chains two courses in one clause ("the following 2
   // courses and distances") — it starts a new segment. The comma guard keeps
   // "4 chains and 20 links" intact.
-  const segs=t.split(/\bTHENCE\b|;|\bRUNNING\b|,\s*AND\s+(?=(?:NORTH|SOUTH|N\s|S\s|DUE\b))|(?:\b\d{1,2}\s*[.)]\s+(?=[NSDC]))/).map(x=>x.trim()).filter(x=>x.length>3);
+  const segs=t.split(/\bTHENCE\b|\bTHEN\b|;|\bRUNNING\b|,\s*AND\s+(?=(?:NORTH|SOUTH|N\s|S\s|DUE\b))|(?:\b\d{1,2}\s*[.)]\s+(?=[NSDC]))/).map(x=>x.trim()).filter(x=>x.length>3);
   const calls=[];
   // pending-curve state must never survive from a previous read — a stale
   // parked curve contaminates the next deed's first curve
@@ -7763,8 +7766,10 @@ function parseDeedText(txt){
     // Deflection-angle deeds: "thence deflect 81°46'34\" right and run
     // Southeasterly, 50.18 feet" — the angle turns from the previous course
     if(/DEFLECT/.test(seg)){
-      const dAng=_deedParseAngle(seg,"DEFLECT(?:ION)?(?:\\s+AN\\s+ANGLE\\s+OF)?");
-      const dDir=/\bRIGHT\b/.test(seg)?"R":(/\bLEFT\b/.test(seg)?"L":null);
+      let dAng=_deedParseAngle(seg,"DEFLECT(?:ION)?[^0-9]{0,50}?");
+      if(dAng!=null&&/INTERIOR\s+ANGLE/.test(seg))dAng=180-dAng;
+      const ddm=seg.match(/\b(RIGHT|LEFT)\b(?!\s+OF\s+WAY)(?!-OF-WAY)/);
+      const dDir=ddm?(ddm[1]==="RIGHT"?"R":"L"):null;
       const dd=_deedParseDistance(seg);
       if(dAng!=null&&dDir&&dd){
         const wcd=seg.match(/\b(NORTH|SOUTH)?(EAST|WEST)?ERLY\b/);
