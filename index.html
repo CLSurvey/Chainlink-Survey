@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.40">
+<meta name="application-name" content="ChainLink-v4.3.61">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.40</title>
+<title>ChainLink Survey v4.3.61</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.40";
+const APP_VERSION = "4.3.61";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7445,7 +7445,8 @@ const _DEED_UNIT_FT={
   CH:66, CHAIN:66, CHAINS:66,
   ROD:16.5, RODS:16.5, POLE:16.5, POLES:16.5, PERCH:16.5, PERCHES:16.5,
   LINK:0.66, LINKS:0.66, LK:0.66, LKS:0.66,
-  VARA:2.7777778, VARAS:2.7777778,   // Texas vara, 33⅓ in
+  VARA:2.7777778, VARAS:2.7777778, VR:2.7777778, VRS:2.7777778,   // Texas vara, 33⅓ in
+  ARPENT:191.994, ARPENTS:191.994, ARPEN:191.994, ARPENS:191.994,   // Louisiana/Quebec French arpent
   M:3.280833333, METER:3.280833333, METERS:3.280833333, METRE:3.280833333, METRES:3.280833333
 };
 
@@ -7453,6 +7454,14 @@ function _deedNormalize(t){
   return (t||"")
     // invisible characters PDF copy loves to smuggle in
     .replace(/[\u00AD\u200B\u200C\u200D\u2060\uFEFF]/g,"")
+    // a line break that starts a new course (next line begins with a bearing,
+    // DUE, DEFLECT, or a list number) becomes a THENCE sentinel before the
+    // whitespace collapse erases the break
+    .replace(/\r?\n(?=\s*(?:N\b|S\b|NORTH\b|SOUTH\b|DUE\b|DEFLECT|THEN\b|\d{1,2}\s*[.)]))/gi," THENCE ")
+    .replace(/\.\s+(?=(?:N|S|NORTH|SOUTH)\s*\.?\s*\d{1,2}\s*(?:°|-|DEG)[^.]*?\d[^.]*?(?:FEET|FOOT|FT|CHAIN|ROD|POLE|PERCH|VARA|['\u2032]))/gi," THENCE ")
+    // "…described. FROM said POINT OF BEGINNING continue…" — a new sentence
+    // starting the boundary after a commence chain; break it into its own course
+    .replace(/\.\s+(?=FROM\s+(?:SAID|THE|THIS)\s+(?:TRUE\s+)?POINT OF BEGINNING)/gi," THENCE ")
     // every dash/minus variant -> plain hyphen
     .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g,"-")
     .replace(/[\u2018\u2019\u2032\u02B9\u02BC\u00B4\u0060]/g,"'")
@@ -7496,6 +7505,18 @@ function _deedNormalize(t){
     // record-value parentheticals: "(400.00 FEET DEED)", "(PASSING THROUGH …)"
     .replace(/\([^)]{0,80}?\bDEED\)/g," ")
     .replace(/\(PASSING[^)]{0,90}?\)/g," ")
+    .replace(/\bM\.?\s?B\.?\s+OF\s+/gi," ")
+    // "at right angles to the last course" is a redundant preamble when an
+    // explicit bearing/cardinal follows — strip it so that direction governs
+    .replace(/\bAT\s+RIGHT\s+ANGLES?\b(?:\s+TO\s+[^,;.]{0,50}?(?:COURSE|LINE|STREET|AVENUE|ROAD|BOUNDARY))?\s*(?:AND\s+)?/gi," ")
+    // OCR: leading "$" read for "S" in a bearing — "$36E"/"$ 58 W" -> "S 36 E"
+    .replace(/\$\s*(?=\d{1,3}\s*[\u00b0'\s]*\d*\s*[EW]\b)/gi,"S ")
+    .replace(/\b(?:WITNESS\s+CORNER|REFERENCE\s+(?:CORNER|MONUMENT))\s+BEARS\s+[NS][^;.]{0,40}?\d[^;.]{0,20}?(?:FEET|FOOT|FT|CHAINS?|RODS?|VARAS?)/gi," ")
+    // bearing-tree / witness-object call: "from which a Hickory 24 in dia bears
+    // S 82 W 8 vrs" locates a reference tree, not a boundary course
+    .replace(/\bFROM\s+WHICH[^;.]{0,60}?\bBEARS?\b[^;.]{0,50}?[NS]\s*\.?\s*\d[^;.]{0,30}?(?:FEET|FOOT|FT|CHAINS?|RODS?|VARAS?|VRS?)\b\.?/gi," ")
+    .replace(/\b([0-9OlI]{2,7}(?:\.[0-9OlI]+)?)\s+(?=(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|PERCHES?|LINKS?|VARAS?|METERS?|METRES?)\b)/gi,
+      (m,tok)=>(/[0-9]/.test(tok)&&/[OlI]/.test(tok))?tok.replace(/O/gi,"0").replace(/[lI]/g,"1")+" ":m)
     // thousands separators inside numbers: 5,903.00 -> 5903.00
     .replace(/(\d),(?=\d{3}\b)/g,"$1")
     // degree sign read as an apostrophe: 89' 56'29" -> 89°56'29"
@@ -7517,11 +7538,21 @@ function _deedNormalize(t){
 /* Bearing: returns {q1:'N'|'S', deg, min, sec, q2:'E'|'W'} or cardinal {card:'N'} */
 function _deedParseBearing(seg){
   // DUE NORTH / NORTH etc. as a whole call direction
+  const dueAbbr=seg.match(/\bDUE\s+(N|S|E|W)\b(?![A-Z])/);
   const due=seg.match(/\bDUE\s+(NORTH|SOUTH|EAST|WEST)\b/) ||
+            (dueAbbr?{1:{N:"NORTH",S:"SOUTH",E:"EAST",W:"WEST"}[dueAbbr[1]],index:dueAbbr.index,0:dueAbbr[0]}:null) ||
             seg.match(/\b(NORTH|SOUTH|EAST|WEST)\b(?!\s*\d+\s*(?:°|DEGREES?\b|DEG\b|-\s*\d))(?![A-Z])(?!.*\b(?:DEG|°)\b)/);
   if(due)due._idx=due.index;
+  // decimal-degree bearing: "N 47.3861 E" / "N47.3861E" (a dotted value with
+  // no minutes/seconds and a quadrant letter). Must have a fractional part so
+  // it isn't confused with whole-degree DMS forms.
+  const dd=seg.match(/\b(N|S|NORTH|SOUTH)\s*\.?\s*(\d{1,2}\.\d+)\s*(?:°|DEG(?:REES?)?\.?)?\s*(E|W|EAST|WEST)\b/);
+  if(dd && !/['′"″]|MIN|SEC/.test(seg.slice(dd.index,dd.index+dd[0].length+3))){
+    const a=parseFloat(dd[2]);
+    if(a<=90) return {q1:dd[1][0], deg:Math.floor(a), min:Math.floor((a-Math.floor(a))*60), sec:(((a-Math.floor(a))*60)%1)*60, q2:dd[3][0]};
+  }
   const m=seg.match(
-    /\b(N|S|NORTH|SOUTH)\s*\.?\s*(\d{1,2})\s*(?:°|DEGREES?|DEG\.?|D\b|-|\s)\s*(?:(\d{1,2}(?:\.\d+)?)\s*(?:'|′|MINUTES?|MIN\.?|M\b|-|\s))?\s*(?:(\d{1,2}(?:\.\d+)?)\s*(?:"|″|SECONDS?|SEC\.?|S\b)?)?\s*(?:(1\/2|1\/4|3\/4)\s*(?:°|DEGREES?)?\s*)?(E|W|EAST|WEST)\b/
+    /\b(N|S|NORTH|SOUTH)\s*\.?\s*(\d{1,2}(?:\.\d+)?)\s*(?:°|DEGREES?|DEG\.?|D\b|-|\.|\s)\s*(?:(\d{1,2}(?:\.\d+)?)\s*(?:'|′|MINUTES?|MIN\.?|M\b|-|\.|\s))?\s*(?:(\d{1,2}(?:\.\d+)?)\s*(?:"|″|SECONDS?|SEC\.?|S\b)?)?\s*(?:(1\/2|1\/4|3\/4)\s*(?:°|DEGREES?)?\s*)?\.?\s*(E|W|EAST|WEST)\b/
   );
   if(m){
     let deg=parseFloat(m[2]), min=m[3]!=null?parseFloat(m[3]):0, sec=m[4]!=null?parseFloat(m[4]):0;
@@ -7530,7 +7561,11 @@ function _deedParseBearing(seg){
     // guard: "12 1/2" often parses as deg=12 min=1 sec=2 — detect trailing "1/2" pattern
     const frac=seg.match(/\b(\d{1,2})\s+(1\/2|1\/4|3\/4)\s*(?:°|DEGREES?)?\s*(E|W|EAST|WEST)\b/);
     if(frac && parseFloat(frac[1])===deg){ min={"1/2":30,"1/4":15,"3/4":45}[frac[2]]; sec=0; }
-    if(deg>90||min>=60||sec>=60) return null;
+    // a decimal in the degree slot ("90.5") must be read as a decimal
+    // degree, not deg+leaked-minutes
+    const degRaw=m[2];
+    if(/\./.test(degRaw)){ const dv=parseFloat(degRaw); if(dv>90) return null; deg=Math.floor(dv); min=Math.round((dv-deg)*60); sec=0; }
+    if(deg>90||(deg===90&&(min>0||sec>0))||min>=60||sec>=60) return null;
     return{q1:m[1][0], deg, min, sec, q2:m[6][0]};
   }
   if(due) return {card:due[1][0], idx:due._idx, due:/^DUE\s/.test(due[0])};
@@ -7538,6 +7573,7 @@ function _deedParseBearing(seg){
 }
 
 function _deedBearingToAz(b){
+  if(b._az!=null) return b._az;
   if(b.card) return {N:0,E:90,S:180,W:270}[b.card];
   const a=b.deg+b.min/60+b.sec/3600;
   if(b.q1==="N"&&b.q2==="E")return a;
@@ -7566,7 +7602,7 @@ function _deedParseDistance(seg){
     return {val:comp[1]+" "+comp[2].toLowerCase()+" "+comp[3]+" links",
             unit:comp[2], ft:parseFloat(comp[1])*base+parseFloat(comp[3])*0.66};
   }
-  const re=/(\d{1,6}(?:\.\d+)?)\s*(FEET|FOOT|FT\.?|CHAINS?|CH\.?|RODS?|POLES?|PERCHES?|LINKS?|LKS?\.?|VARAS?|METERS?|METRES?|M\b)/g;
+  const re=/(\d{1,6}(?:\.\d+)?)\s*(FEET|FOOT|FT\.?|CHAINS?|CH\.?|RODS?|POLES?|PERCH(?:ES)?|LINKS?|LKS?\.?|VARAS?|VRS?\.?|ARPENTS?|ARPENS?|METERS?|METRES?|M\b)/g;
   let m;
   while((m=re.exec(scrub))){
     const u=m[2].replace(/\./g,"").replace(/S$/,"")==="FT"?"FT":m[2].replace(/\./g,"");
@@ -7574,6 +7610,8 @@ function _deedParseDistance(seg){
     const perFt=_DEED_UNIT_FT[u]||_DEED_UNIT_FT[key]||_DEED_UNIT_FT[u.replace(/S$/,"")];
     if(perFt) return {val:parseFloat(m[1]), unit:u, ft:parseFloat(m[1])*perFt};
   }
+  const fm=scrub.match(/(\d{1,6}(?:\.\d+)?)\s*['\u2032](?!\s*[\d'\u2032])/);
+  if(fm) return {val:parseFloat(fm[1]), unit:"FT", ft:parseFloat(fm[1])};
   return null;
 }
 function _deedParseAngle(seg,label){
@@ -7602,8 +7640,13 @@ function parseDeedText(txt){
     _si++;
     const _pcPrev=_lastPC;
     _lastPC=/POINT OF CURVATURE/.test(seg);
-    const _POBARR=/(?:TO|BEING|IS|AND|AT)\s+(?:THE\s+|SAID\s+|A\s+)?(?:TRUE\s+)?POINT OF BEGINNING/;
-    if(_POBARR.test(seg))pobSegs.push(_si);
+    // POB ARRIVAL: "...TO the point of beginning". Word-boundaried so "THIS"
+    // (ending in -IS) can't false-match "IS point of beginning". A "FROM ...
+    // point of beginning" is a DEPARTURE (the first real course), not an arrival.
+    const _POBARR=(/\b(?:TO|BEING|IS|AND|AT)\s+(?:THE\s+|SAID\s+|A\s+)?(?:TRUE\s+)?POINT OF BEGINNING/.test(seg)
+                  || /,\s*(?:THE\s+|SAID\s+)?(?:TRUE\s+)?POINT OF BEGINNING\b/.test(seg))
+                  && !/\bFROM\s+(?:THE\s+|THIS\s+|SAID\s+)?(?:TRUE\s+)?POINT OF BEGINNING/.test(seg);
+    if(_POBARR)pobSegs.push(_si);
     // OCR sometimes splits one curve across segments ("…radius of 260.00
     // feet ; and a central angle of 35°00'00"…"). If this segment is curve
     // data with no CURVE keyword and the previous call is a curve missing
@@ -7659,7 +7702,7 @@ function parseDeedText(txt){
         const amH=head.match(/ARC\s*(?:LENGTH|DISTANCE)?\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
         if(amH)aH=parseFloat(amH[1]);
         if(aH==null){const dmH=head.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);if(dmH)aH=parseFloat(dmH[1]);}
-        calls.push({type:"curve",_si,_pob:_POBARR.test(seg),_pt:/POINT OF TANGENCY/.test(head),_pcPrev:_pcPrev,
+        calls.push({type:"curve",_si,_pob:_POBARR,_pt:/POINT OF TANGENCY/.test(head),_pcPrev:_pcPrev,
           dir:null,radius:pcx.radius,arc:aH,delta:dH!=null?dH:pcx.delta,
           chordB:pcx.chordB,chordD:pcx.chordD,concaveAz:pcx.concaveAz,radialAz:pcx.radialAz,
           raw:seg.slice(0,140)});
@@ -7713,14 +7756,36 @@ function parseDeedText(txt){
           pd=_deedParseDistance(pfx);
         }
         if(pb&&pd){
-          calls.push({type:"line",_si,_pob:_POBARR.test(seg),bearing:pb,dist:pd.ft,unit:pd.unit,rawVal:pd.val,raw:seg.slice(0,140)});
+          calls.push({type:"line",_si,_pob:_POBARR,bearing:pb,dist:pd.ft,unit:pd.unit,rawVal:pd.val,raw:seg.slice(0,140)});
           window.__pendCurve={radius:rm?parseFloat(rm[1]):null,chordB:chB,chordD:chD?chD.ft:null,
             concaveAz:ccvAz,radialAz:radAz,delta:delta,arc:am?parseFloat(am[1]):null};
           return;
         }
       }
       const pc=window.__pendCurve||{};
-      if((dir||ccvAz!=null||radAz!=null||window.__pendRadial!=null||pc.chordB||pc.chordD!=null||pc.radius!=null)&&(rm||chD||pc.radius!=null||pc.chordD!=null||pc.chordB)){
+      // NON-TANGENT RADIAL, segment 1 of 2: "to a point on a curve to which
+      // the radius bears S 20 E a distance of 400 feet" — has the radius
+      // bearing and radius LENGTH but no arc/delta yet. Park a pending radial
+      // curve; the following "along said curve, delta, arc" segment completes it.
+      if(radAz!=null && rm==null && am==null && delta==null && !chB){
+        const rlen=seg.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
+        if(rlen){
+          window.__pendCurve={radius:parseFloat(rlen[1]),chordB:null,chordD:null,
+            concaveAz:null,radialAz:radAz,delta:null,arc:null,_radialEntry:true};
+          return;
+        }
+      }
+      // NON-TANGENT RADIAL, segment 2 of 2: "along said curve through a central
+      // angle of 10 an arc distance of 69.81" completing a parked radial entry.
+      if(pc._radialEntry && (delta!=null||am)){
+        calls.push({type:"curve",_si,_pob:_POBARR,dir:dir||null,
+          radius:pc.radius, radialAz:pc.radialAz,
+          delta:delta!=null?delta:null, arc:am?parseFloat(am[1]):null,
+          chordB:null,chordD:null,concaveAz:null,raw:seg.slice(0,140)});
+        window.__pendCurve=null; window.__pendRadial=null;
+        return;
+      }
+      if((dir||ccvAz!=null||radAz!=null||window.__pendRadial!=null||chB||delta!=null||pc.chordB||pc.chordD!=null||pc.radius!=null)&&(rm||chD||chB||pc.radius!=null||pc.chordD!=null||pc.chordB)){
         // Last-resort recovery: a leading "bearing … distance … to the
         // beginning of" line course in THIS segment is emitted before the
         // curve, no matter which upstream path was taken.
@@ -7742,7 +7807,7 @@ function parseDeedText(txt){
           const dm=seg.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
           if(dm)arcV=parseFloat(dm[1]);
         }
-        calls.push({type:"curve",_si,_pob:_POBARR.test(seg),
+        calls.push({type:"curve",_si,_pob:_POBARR,
           _pt:/POINT OF TANGENCY/.test(seg),_pcPrev:_pcPrev,dir:dir||null,
           radius:rm?parseFloat(rm[1]):(pc.radius!=null?pc.radius:null),
           arc:arcV!=null?arcV:(pc.arc!=null?pc.arc:null),
@@ -7765,27 +7830,57 @@ function parseDeedText(txt){
     }
     // Deflection-angle deeds: "thence deflect 81°46'34\" right and run
     // Southeasterly, 50.18 feet" — the angle turns from the previous course
-    if(/DEFLECT/.test(seg)){
-      let dAng=_deedParseAngle(seg,"DEFLECT(?:ION)?[^0-9]{0,50}?");
+    const bareDefl=/^\s*(?:AND\s+)?\d{1,3}\s+DEGREES?\b[\s\S]{0,40}?\bTO\s+THE\s+(RIGHT|LEFT)\b/.test(seg)&&!/\b[NS]\s*\d|NORTH|SOUTH/.test(seg.slice(0,6));
+    if(/DEFLECT/.test(seg)||bareDefl){
+      let dAng=_deedParseAngle(seg,bareDefl?"":"DEFLECT(?:ION)?[^0-9]{0,50}?");
       if(dAng!=null&&/INTERIOR\s+ANGLE/.test(seg))dAng=180-dAng;
       const ddm=seg.match(/\b(RIGHT|LEFT)\b(?!\s+OF\s+WAY)(?!-OF-WAY)/);
       const dDir=ddm?(ddm[1]==="RIGHT"?"R":"L"):null;
-      const dd=_deedParseDistance(seg);
+      let dd=_deedParseDistance(seg);
+      // closing course often omits the unit: "…130.45 to the point of
+      // beginning". If the angle+direction parsed but no united distance did,
+      // accept a bare number that sits right before "to the/a point".
+      if(!dd&&dAng!=null&&dDir){
+        const bare=seg.match(/(\d{1,6}(?:\.\d+)?)\s+TO\s+(?:THE|A)\s+(?:POINT|PLACE)\b/);
+        if(bare)dd={val:parseFloat(bare[1]),unit:"FT",ft:parseFloat(bare[1])};
+      }
       if(dAng!=null&&dDir&&dd){
         const wcd=seg.match(/\b(NORTH|SOUTH)?(EAST|WEST)?ERLY\b/);
         const wAz=wcd&&(wcd[1]||wcd[2])?{NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[(wcd[1]||"")+(wcd[2]||"")]:null;
-        calls.push({type:"line",_si,_pob:_POBARR.test(seg),defl:{ang:dAng,dir:dDir},wordAz:(wAz!==undefined?wAz:null),bearing:null,dist:dd.ft,unit:dd.unit,rawVal:dd.val,raw:seg.slice(0,140)});
+        calls.push({type:"line",_si,_pob:_POBARR,defl:{ang:dAng,dir:dDir},wordAz:(wAz!==undefined?wAz:null),bearing:null,dist:dd.ft,unit:dd.unit,rawVal:dd.val,raw:seg.slice(0,140)});
         return;
       }
     }
     let b=_deedParseBearing(seg);
+    // Whole-circle bearing (British/Australian/NZ standard): a plain angle
+    // 0-360 from north with NO quadrant letter — "thence 127°30' 45.2 metres".
+    // Tight gate: degree mark present, no N/S/E/W quadrant, no deflect/turn
+    // words, a distance follows. Falls through untouched if any US-style
+    // quadrant bearing already matched.
+    if(!b && !/\b[NSEW]\b|NORTH|SOUTH|EAST|WEST|DEFLECT|\b(RIGHT|LEFT)\b|CURVE|RADIUS|CHORD/.test(seg)){
+      const wcb=seg.match(/(?:^|[^0-9.])(\d{1,3})\s*(?:°|\bDEG(?:REES?)?\b)\.?\s*(?:(\d{1,2})\s*(?:['\u2032]|\bMIN(?:UTES?)?\b)(?:\s*(\d{1,2}(?:\.\d+)?)\s*(?:["\u2033]|\bSEC(?:ONDS?)?\b))?)?/);
+      if(wcb){
+        const wa=parseInt(wcb[1],10)+(wcb[2]?parseInt(wcb[2],10)/60:0)+(wcb[3]?parseFloat(wcb[3])/3600:0);
+        if(wa<=360 && _deedParseDistance(seg)){
+          // synthesize a quadrant bearing object from the whole-circle azimuth
+          const az=wa%360;
+          let q1,q2,a;
+          if(az<=90){q1="N";q2="E";a=az;}
+          else if(az<=180){q1="S";q2="E";a=180-az;}
+          else if(az<=270){q1="S";q2="W";a=az-180;}
+          else{q1="N";q2="W";a=360-az;}
+          const dd=Math.floor(a),mm=Math.floor((a-dd)*60),ss=Math.round(((a-dd)*60-mm)*60);
+          b={q1,deg:dd,min:mm,sec:ss,q2,_wcb:true,_az:az};
+        }
+      }
+    }
     // "thence continue Southeasterly, 270.08 feet" — deflect zero
     if(!b&&/\bCONTINUE\b/.test(seg)){
       const dd0=_deedParseDistance(seg);
       if(dd0){
         const wc0=seg.match(/\b(NORTH|SOUTH)?(EAST|WEST)?ERLY\b/);
         const wAz0=wc0&&(wc0[1]||wc0[2])?{NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[(wc0[1]||"")+(wc0[2]||"")]:null;
-        calls.push({type:"line",_si,_pob:_POBARR.test(seg),defl:{ang:0,dir:"R"},wordAz:(wAz0!==undefined?wAz0:null),bearing:null,dist:dd0.ft,unit:dd0.unit,rawVal:dd0.val,raw:seg.slice(0,140)});
+        calls.push({type:"line",_si,_pob:_POBARR,defl:{ang:0,dir:"R"},wordAz:(wAz0!==undefined?wAz0:null),bearing:null,dist:dd0.ft,unit:dd0.unit,rawVal:dd0.val,raw:seg.slice(0,140)});
         return;
       }
     }
@@ -7794,8 +7889,11 @@ function parseDeedText(txt){
     // locator prose ("131.50 feet northerly along East Avenue"), not a call.
     if(b&&b.card&&typeof b.idx==="number"){
       const di=seg.search(/\d/);
-      if(di>=0&&b.idx>di)b=null;                    // direction after the number = prose
-      else if(b&&!b.due&&b.idx>6)b=null;            // bare cardinal mid-sentence = a street name, not a course
+      // "(running) 50 feet East ..." — a run-verb + distance + cardinal at the
+      // segment head is a real course, not "being 131.50 feet northerly" prose
+      const runDistCard=/^\s*(?:RUN(?:NING)?\s+)?\d{1,6}(?:\.\d+)?\s*(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|VARAS?)\s+(?:NORTH|SOUTH|EAST|WEST|DUE)\b/.test(seg);
+      if(di>=0&&b.idx>di&&!runDistCard)b=null;      // direction after the number = prose
+      else if(b&&!b.due&&b.idx>6&&!runDistCard)b=null; // bare cardinal mid-sentence = a street name
     }
     // "run Northeasterly, … 61.12 feet" — word-compass course; direction
     // must PRECEDE the distance or it's locator prose
@@ -7803,20 +7901,31 @@ function parseDeedText(txt){
       // must be an actual course ("run Northeasterly …"), not geography
       // ("the westerly side of East Avenue")
       let wc=null;
-      if(/\b(RUN|RUNNING|CONTINUE)\b/.test(seg)){
-        const wre=/\b(NORTH|SOUTH)?(EAST|WEST)?ERLY\b(?!\s+(?:SIDE|LINE|R\s*\/?\s*W|RIGHT|MARGIN|BOUNDAR|CORNER|EDGE|FACE))/g;
-        let mw;
-        while((mw=wre.exec(seg))){ if(mw[1]||mw[2]){wc=mw;break;} }
+      // "-erly" course words only (NORTHEASTERLY etc). Anchored, no
+      // all-optional group — ReDoS-safe. Bare intercardinals ("NORTHEAST")
+      // and spelled-out numbers are intentionally left to fail LOUDLY as ⚠
+      // review rows rather than risk a hot-path regex or a wrong guess.
+      const wre=/\b(NORTH|SOUTH)?(EAST|WEST)ERLY\b(?!\s+(?:SIDE|LINE|R\s*\/?\s*W|RIGHT|MARGIN|BOUNDAR|CORNER|EDGE|FACE))|\b(NORTHERLY|SOUTHERLY)\b/g;
+      const leadErly=/^\s*(?:NORTH|SOUTH|EAST|WEST){0,2}ERLY\b/.test(seg);
+      // "in a [compass] direction" is itself a course marker — the run-verb
+      // ("thence") is consumed by the segment splitter, so don't require it
+      const inDirection=/\bIN\s+AN?\s+(?:NORTH|SOUTH|EAST|WEST)[A-Z]*\s+DIRECTION\b/.test(seg);
+      if(/\b(RUN|RUNNING|CONTINUE|THENCE)\b/.test(seg)||leadErly||inDirection){
+        const mw=wre.exec(seg);
+        if(mw){
+          const key=(mw[3]||((mw[1]||"")+(mw[2]||""))).replace(/ERLY$/,"");
+          wc={index:mw.index,0:mw[0],1:null,2:null,_key:key};
+        }
       }
-      if(wc&&(wc[1]||wc[2])){
-        const key=(wc[1]||"")+(wc[2]||"");
+      if(wc&&(wc._key||wc[1]||wc[2])){
+        const key=wc._key||((wc[1]||"")+(wc[2]||""));
         const az={NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[key];
         const dm=seg.match(/\d{1,6}(?:\.\d+)?\s*(?:FEET|FT\b|CHAINS?|RODS?|POLES?|PERCHES?|VARAS?|METERS?)/);
         const di=dm?dm.index:-1;
         if(az!==undefined&&wc.index<(di<0?1e9:di)){
           const ddw=_deedParseDistance(seg);
           if(ddw){
-            calls.push({type:"line",_si,_pob:_POBARR.test(seg),compassAz:az,bearing:null,dist:ddw.ft,unit:ddw.unit,rawVal:ddw.val,raw:seg.slice(0,140)});
+            calls.push({type:"line",_si,_pob:_POBARR,compassAz:az,bearing:null,dist:ddw.ft,unit:ddw.unit,rawVal:ddw.val,raw:seg.slice(0,140)});
             return;
           }
         }
@@ -7827,11 +7936,18 @@ function parseDeedText(txt){
     if(b&&!b.card){
       segForDist=seg.replace(/\b(N|S|NORTH|SOUTH)\s*\.?\s*\d{1,2}[^EW]{0,24}?(E|W|EAST|WEST)\b/," ");
     }
-    const d=_deedParseDistance(segForDist);
+    let d=_deedParseDistance(segForDist);
+    // bearing course with a bare (unit-less) distance right after it:
+    // "S 01°55'20\" W 165.00 along an old fence line" — accept the number that
+    // immediately follows the bearing when no united distance parsed.
+    if(!d&&b&&!b.card&&!/\t/.test(seg)){
+      const afterB=seg.match(/\b(?:E|W|EAST|WEST)\b[.,]?\s+(\d{2,6}(?:\.\d+)?)\s+(?:ALONG|TO\b|THENCE|BACK|AND\b)/);
+      if(afterB){const v=parseFloat(afterB[1]); if(v>=5)d={val:v,unit:"FT",ft:v};}
+    }
     if(b&&d){
-      calls.push({type:"line",_si,_pob:_POBARR.test(seg),bearing:b,dist:d.ft,unit:d.unit,rawVal:d.val,raw:seg.slice(0,140)});
+      calls.push({type:"line",_si,_pob:_POBARR,bearing:b,dist:d.ft,unit:d.unit,rawVal:d.val,raw:seg.slice(0,140)});
     }else if(b||d){
-      calls.push({type:"partial",_si,_pob:_POBARR.test(seg),bearing:b,dist:d?d.ft:null,unit:d?d.unit:null,raw:seg.slice(0,140)});
+      calls.push({type:"partial",_si,_pob:_POBARR,bearing:b,dist:d?d.ft:null,unit:d?d.unit:null,raw:seg.slice(0,140)});
     }
   });
   // Tie-course detection: if a call's own text reaches the (TRUE) POINT OF
@@ -7843,6 +7959,16 @@ function parseDeedText(txt){
   // as: Commence at the POINT OF BEGINNING…")
   let pobIdx=-1;
   calls.forEach((c,i)=>{if(i<calls.length-1&&i<=3&&c._pob)pobIdx=i;});
+  // LOCATOR POB: "Beginning at a point that is S 89 E 420 feet FROM the NW
+  // corner" — the offset places the POB and is a tie, not a boundary course.
+  // Only the opening course(s), and only when it names an offset FROM a corner.
+  calls.forEach((c,i)=>{
+    if(i<=1 && i<calls.length-1 && c.type!=="partial" &&
+       /\bA\s+POINT\s+(?:THAT\s+IS|WHICH\s+IS|LOCATED|DISTANT|BEING)\b[\s\S]{0,70}?\bFROM\b/.test(c.raw||"") &&
+       /\bCORNER\b|\bSECTION\b|\bMONUMENT\b|\bPIN\b|\bSTAKE\b/.test(c.raw||"")){
+      if(i>pobIdx)pobIdx=i;
+    }
+  });
   // POB declared in a call-less segment right after a call (severed by a
   // semicolon): credit the call before it
   pobSegs.forEach(si=>{
@@ -8082,7 +8208,7 @@ function parseDeedFigures(txt){
   const t=_deedNormalize(txt);
   // OCR mangles keywords ("1ESS AND EXCEPT", "BER EXCEPT", dropped
   // "TOGETHER") — so the detector is deliberately fuzzy:
-  const KEY=/(PARCEL NO\.?\s*\d+|(?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
+  const KEY=/(PARCEL\s+(?:NO\.?\s*)?\d+\b|PARCEL\s+(?:ONE|TWO|THREE|FOUR|FIVE)\b|(?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
   const parts=[];let last=0,m,firstKind="boundary",kw="";
   while((m=KEY.exec(t))){
     parts.push({kind:firstKind,text:t.slice(last,m.index),kw:kw});
