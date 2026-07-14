@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.61">
+<meta name="application-name" content="ChainLink-v4.3.65">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.61</title>
+<title>ChainLink Survey v4.3.65</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.61";
+const APP_VERSION = "4.3.65";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1272,7 +1272,7 @@ function saveData() {
   _lsSet("cl_satRot",     String(satRotNudge));
   _lsSet("cl_satBase",    satBasemap);
   _lsSet("cl_deedPlot",   _deedPlot?JSON.stringify({v:2,rot:_deedPlot.rot||0,
-    figures:_deedPlot.figures.map(f=>({kind:f.kind,name:f.name,calls:f.calls,pobE:f.pobE,pobN:f.pobN,ptNums:f.ptNums||[],width:f.width||null}))}):"");
+    figures:_deedPlot.figures.map(f=>({kind:f.kind,name:f.name,calls:f.calls,pobE:f.pobE,pobN:f.pobN,ptNums:f.ptNums||[],width:f.width||null,aliquot:f.aliquot||false,aliquotSpec:f.aliquotSpec||null,aliquotCal:f.aliquotCal||null}))}):"");
   updateStatus(); plotPoints();
   // Auto-save to file if we have a directory handle
   _autoSaveToFile();
@@ -1300,6 +1300,7 @@ function _autoSaveToFile(){
     }
   }, 1500); // 1.5s debounce
 }
+
 
 // RFC-4180-style field quoting — wrap if the value contains comma, quote, or newline
 function _csvField(v){
@@ -2517,9 +2518,20 @@ async function saveToFile(){
       }
     }catch(e){}
   }
-  // Fallback — download
+  // Fallback — installed-PWA-safe export.
+  // Blob-anchor downloads are unreliable in Android standalone/WebAPK mode
+  // (taps silently do nothing); the Web Share API with files is the
+  // mechanism built for that context — native sheet -> Files/Drive/etc.
   openModal((modal,close)=>{
-    modal.innerHTML=`<h2>📤 Export CSV</h2><p class="info">Download or copy. Connections and settings are embedded.</p>`;
+    modal.innerHTML=`<h2>📤 Export CSV</h2><p class="info">Save via the share sheet, download, or copy. Connections and settings are embedded.</p>`;
+    const fname=jobName.replace(/[^a-zA-Z0-9_-]/g,"_")+".csv";
+    let shareFile=null;
+    try{ shareFile=new File([csv],fname,{type:"text/csv"}); }catch(e){}
+    if(shareFile&&navigator.canShare&&navigator.canShare({files:[shareFile]})){
+      const sh=document.createElement("button"); sh.className="btn ok"; sh.textContent="📤 Save / Share…";
+      sh.onclick=async()=>{ try{ await navigator.share({files:[shareFile],title:fname}); }catch(e){/* user cancelled */} };
+      modal.appendChild(sh);
+    }
     const ta=document.createElement("textarea"); ta.className="csv-out"; ta.value=csv; modal.appendChild(ta);
     const row=document.createElement("div"); row.className="btn-row";
     const cp=document.createElement("button"); cp.className="btn ok"; cp.textContent="Copy";
@@ -4090,7 +4102,9 @@ function occupyPoint(){
 function _updateUndoBtn(){
   const btn=document.getElementById("undoBtn");
   if(btn){
-    const hasUndo=_snapshots.length>0||undoStack.length>0;
+    // hidden during deed slide-and-rotate — the canvas LOCK IN / Cancel
+    // buttons occupy the bottom strip, and adjust mode has its own Cancel
+    const hasUndo=(!_deedAdjust)&&(_snapshots.length>0||undoStack.length>0);
     if(hasUndo){
       btn.classList.add("visible");
       if(_snapshots.length>0){
@@ -4106,7 +4120,7 @@ function _updateUndoBtn(){
   }
   const rbtn=document.getElementById("redoBtn");
   if(rbtn){
-    if(_redoStack.length>0){
+    if(_redoStack.length>0&&!_deedAdjust){
       rbtn.classList.add("visible");
       rbtn.textContent="↪ Redo: "+_redoStack[_redoStack.length-1].label;
     } else {
@@ -5257,7 +5271,7 @@ function moreMenu(){
     mk("⚙ Settings","",()=>{close();settingsMenu()});
     mk("📋 Point List / Edit","",()=>{close();pointListMenu()});
     mk("✏ Rename Job","blue",()=>{close();alphaInput("Job Name:",jobName,jn=>{if(jn){jobName=jn;saveData()}})});
-    mk("📤 Save CSV to Folder","ok",()=>{close();saveToFile()});
+    mk("📤 Export CSV"+(typeof window.showDirectoryPicker==="function"?" (to folder)":""),"ok",()=>{close();saveToFile()});
     mk("📐 Export DXF","blue",()=>{close();exportDXF()});
     mk("📋 Export LandXML","blue",()=>{close();exportLandXML()});
     mk("🖨 Export PDF Plot (A4)","blue",()=>{close();exportPlotPDF()});
@@ -8204,6 +8218,87 @@ function _deedRemovePoints(){
   points=points.filter(p=>!(p.Type==="Deed"&&nums.includes(p.Point)));
 }
 /* split raw deed text into figures by exception/easement keywords */
+/* ── ALIQUOT-PART ENGINE ──────────────────────────────────────────────
+   "The western 9/20 of the southern half of said forty" contains no
+   geometry — it is an instruction to compute against the PLSS fabric.
+   Plotted here at NOMINAL GLO dimensions (section 5280', quarter 2640',
+   forty 1320') as a labeled approximation, exactly like any record: the
+   user seats it and fits it to found corners. Composition is read right
+   to left; each term scales one dimension of the nominal square.
+   Fails safe (returns null) on: metes-and-bounds text, government lots /
+   fractional / riparian language, directionless fractions ("9/20ths of
+   the southern half" — divide by area or frontage? the deed doesn't
+   say), and strips wider than their parent. */
+function _deedAliquot(txt){
+  let t=txt.replace(/[.,;:()]/g," ").replace(/\s+/g," ").trim().toUpperCase();
+  if(!t)return null;
+  if(/\b(THENCE|BEGINNING|BEGIN|COMMENC\w*|DEFLECT|MORE PARTICULARLY|METES)\b/.test(t))return null;
+  if(/GOVERNMENT LOT|GOVT LOT|FRACTIONAL|RIPARIAN|MEANDER/.test(t))return null;
+  if(/\b[NS]\s*\d{1,2}\s*(?:\u00b0|-|\sDEGREES?)/.test(t))return null; // bearing => metes
+  t=t.replace(/^ALL OF /,"");
+  const ops=[];
+  const SEG=/^(?:THE\s+)?(?:(NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST|NORTHERN|SOUTHERN|EASTERN|WESTERN|NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW|[NSEW]))?\s*(?:(HALF|QUARTER|1\/2|1\/4)|(\d{1,2})\s*\/\s*(\d{1,3})\s*(?:THS|TH|RDS|RD|NDS|ND)?|(\d{1,4}(?:\.\d+)?)\s*(?:FEET|FOOT|FT))\s+OF\s+/;
+  let m;
+  while((m=SEG.exec(t))){
+    ops.push({dir:m[1]||null,word:m[2]||null,fn:m[3]?parseInt(m[3],10):null,fd:m[4]?parseInt(m[4],10):null,abs:m[5]?parseFloat(m[5]):null});
+    t=t.slice(m[0].length);
+  }
+  if(!ops.length)return null;
+  const bm=t.match(/^(?:THE\s+)?(?:SAID\s+)?(FORTY|40|QUARTER[\s-]QUARTER|QUARTER|SECTION)\b/);
+  if(!bm)return null;
+  const BASE={FORTY:1320,"40":1320,"QUARTER QUARTER":1320,"QUARTER-QUARTER":1320,QUARTER:2640,SECTION:5280};
+  let w=BASE[bm[1].replace(/\s+/g," ")],h=w;
+  if(!w)return null;
+  const D={NORTHEAST:"NE",NORTHWEST:"NW",SOUTHEAST:"SE",SOUTHWEST:"SW",NORTHERN:"N",SOUTHERN:"S",EASTERN:"E",WESTERN:"W",NORTH:"N",SOUTH:"S",EAST:"E",WEST:"W",NE:"NE",NW:"NW",SE:"SE",SW:"SW",N:"N",S:"S",E:"E",W:"W"};
+  // unit-space rectangle within the parent tract: u east-west (0=west edge),
+  // v south-north (0=south edge). Retained on the figure so measured corners
+  // of the parent can re-execute the subdivision later (calibration).
+  let u0=0,u1=1,v0=0,v1=1,hasAbs=false;
+  for(let i=ops.length-1;i>=0;i--){          // innermost (nearest base) first
+    const o=ops[i],d=o.dir?D[o.dir]:null;
+    let frac=null;
+    if(o.word==="HALF"||o.word==="1/2")frac=0.5;
+    else if(o.word==="QUARTER"||o.word==="1/4")frac=0.25;
+    else if(o.fn!=null){if(!(o.fd>0)||o.fn<=0||o.fn>=o.fd)return null;frac=o.fn/o.fd;}
+    const sU=u1-u0,sV=v1-v0;
+    if(d==="NE"||d==="NW"||d==="SE"||d==="SW"){
+      if(frac!==0.25)return null;            // "NE half" / "NE 9/20" — ambiguous
+      w/=2;h/=2;
+      if(d[1]==="E")u0=u1-sU/2; else u1=u0+sU/2;
+      if(d[0]==="N")v0=v1-sV/2; else v1=v0+sV/2;
+    }else if(d==="N"||d==="S"){
+      if(o.abs!=null){if(o.abs>=h)return null;h=o.abs;hasAbs=true;}
+      else if(frac!=null){h*=frac;if(d==="N")v0=v1-sV*frac;else v1=v0+sV*frac;}
+      else return null;
+    }else if(d==="E"||d==="W"){
+      if(o.abs!=null){if(o.abs>=w)return null;w=o.abs;hasAbs=true;}
+      else if(frac!=null){w*=frac;if(d==="E")u0=u1-sU*frac;else u1=u0+sU*frac;}
+      else return null;
+    }else return null;                       // directionless — ambiguous
+  }
+  w=Math.round(w*100)/100;h=Math.round(h*100)/100;
+  const mk=(az,dd,lbl)=>({type:"line",compassAz:az,bearing:null,dist:dd,unit:"FT",rawVal:dd,
+    raw:"ALIQUOT (NOMINAL GLO): "+lbl+" "+dd.toFixed(2)+" FT"});
+  return {w,h,spec:hasAbs?null:{u0,u1,v0,v1},
+    calls:[mk(0,h,"N"),mk(90,w,"E"),mk(180,h,"S"),mk(270,w,"W")]};
+}
+
+/* Re-execute an aliquot subdivision against MEASURED parent corners.
+   Bilinear map P(u,v)=(1-u)(1-v)SW+u(1-v)SE+(1-u)v NW+uv NE — proportional
+   measurement along the actual lines, the GLO method in closed form. Works
+   for any sane quadrilateral; a perfect nominal square reproduces the
+   nominal figure exactly. Returns world-frame corners A(SW)→B(SE)→C(NE)→D(NW)
+   of the sub-parcel plus the four courses. */
+function _deedAliquotCalibrate(spec,SW,SE,NE,NW){
+  const P=(u,v)=>({E:(1-u)*(1-v)*SW.E+u*(1-v)*SE.E+(1-u)*v*NW.E+u*v*NE.E,
+                   N:(1-u)*(1-v)*SW.N+u*(1-v)*SE.N+(1-u)*v*NW.N+u*v*NE.N});
+  const A=P(spec.u0,spec.v0),B=P(spec.u1,spec.v0),C=P(spec.u1,spec.v1),D=P(spec.u0,spec.v1);
+  const crs=(p,q,lbl)=>{const dE=q.E-p.E,dN=q.N-p.N;
+    const az=((Math.atan2(dE,dN)*180/Math.PI)+360)%360,dd=Math.hypot(dE,dN);
+    return{type:"line",compassAz:az,bearing:null,dist:dd,unit:"FT",rawVal:dd,
+      raw:"ALIQUOT CALIBRATED "+lbl+": az "+az.toFixed(4)+"\u00b0 "+dd.toFixed(2)+" FT"};};
+  return {A,B,C,D,calls:[crs(A,B,"S LINE"),crs(B,C,"E LINE"),crs(C,D,"N LINE"),crs(D,A,"W LINE")]};
+}
 function parseDeedFigures(txt){
   const t=_deedNormalize(txt);
   // OCR mangles keywords ("1ESS AND EXCEPT", "BER EXCEPT", dropped
@@ -8219,6 +8314,13 @@ function parseDeedFigures(txt){
   parts.push({kind:firstKind,text:t.slice(last),kw:kw});
   const figs=[];
   parts.forEach(p=>{
+    const alq=_deedAliquot(p.text);
+    if(alq){
+      figs.push({kind:p.kind,calls:alq.calls,pobE:null,pobN:null,ptNums:[],aliquot:true,aliquotSpec:alq.spec,
+        name:(p.kind==="boundary"?"Aliquot":p.kind==="except"?"Except aliquot":"Easement aliquot")
+             +" "+alq.w+" \u00d7 "+alq.h+" ft (nominal)"});
+      return;
+    }
     const calls=parseDeedText(p.text);
     if(!calls.length)return;
     const fig={kind:p.kind,calls,pobE:null,pobN:null,ptNums:[],
@@ -8741,7 +8843,7 @@ let _deedAdjust=false,_deedAdjSnap=null,_deedAdjustScope=null; // null = whole r
 function _deedAdjustStart(){
   if(!_deedPlot)return;
   _deedAdjSnap={rot:_deedPlot.rot||0,pobs:_deedPlot.figures.map(f=>({E:f.pobE,N:f.pobN}))};
-  _deedAdjust=true;plotPoints();
+  _deedAdjust=true;_updateUndoBtn();plotPoints();
 }
 function _deedAdjustEnd(lock){
   if(!lock&&_deedAdjSnap){
@@ -8750,7 +8852,7 @@ function _deedAdjustEnd(lock){
     _deedRecompute();
   }
   if(lock&&_deedAdjustScope!=null){const f=_deedPlot.figures[_deedAdjustScope];if(f)f.autoStacked=false;}
-  _deedAdjust=false;_deedAdjSnap=null;_deedAdjustScope=null;
+  _deedAdjust=false;_deedAdjSnap=null;_deedAdjustScope=null;_updateUndoBtn();
   if(lock)saveData(); else plotPoints();
 }
 function _deedTranslate(dE,dN){
@@ -8811,6 +8913,36 @@ function deedPlotterMenu(){
     r.onchange=()=>saveData();
     w.appendChild(r);modal.appendChild(w);
     mk("🖐 Slide & rotate on the imagery","ok",()=>{close();_deedAdjustStart();});
+    // aliquot calibration — re-derive the subdivision from measured parent corners
+    _deedPlot.figures.forEach(f=>{
+      if(!f.aliquot||!f.aliquotSpec)return;
+      mk("\u2316 Calibrate "+f.name.split(" (")[0]+" to measured corners","blue",()=>{close();
+        openModal((m2,c2)=>{
+          m2.innerHTML="<h2>\u2316 Calibrate aliquot</h2><p class='info'>Enter the point numbers of the four measured corners of the <b>parent tract</b> (the forty / quarter the deed subdivides). The fractional parcel is re-derived by proportion along the actual lines \u2014 lopsided parents give the correct lopsided parcel.</p>";
+          const ids=["SW corner pt #","SE corner pt #","NE corner pt #","NW corner pt #"],inp=[];
+          ids.forEach(lb=>{const d=document.createElement("div");d.innerHTML="<div class='input-label'>"+lb+"</div>";
+            const x=document.createElement("input");x.type="number";x.inputMode="numeric";x.style.width="100%";
+            d.appendChild(x);m2.appendChild(d);inp.push(x);});
+          const go=document.createElement("button");go.className="btn ok";go.textContent="Calibrate";
+          go.onclick=()=>{
+            const ps=inp.map(x=>points.find(p=>p.Point===parseInt(x.value,10)));
+            if(ps.some(p=>!p)){alert("All four corner points must exist.");return;}
+            const [pSW,pSE,pNE,pNW]=ps.map(p=>({E:p.Easting,N:p.Northing}));
+            const cal=_deedAliquotCalibrate(f.aliquotSpec,pSW,pSE,pNE,pNW);
+            // courses are stored record-frame; recompute re-applies the global swing
+            const rot=_deedPlot.rot||0;
+            cal.calls.forEach(c=>c.compassAz=((c.compassAz-rot)%360+360)%360);
+            f.calls=cal.calls;f.pobE=cal.A.E;f.pobN=cal.A.N;f.autoStacked=false;
+            f.aliquotCal={pts:inp.map(x=>parseInt(x.value,10))};
+            f.name=f.name.split(" (")[0].replace(/^Aliquot/,"Aliquot")+" (calibrated to pts "+f.aliquotCal.pts.join(",")+")";
+            _deedRecompute();saveData();c2();
+            const sL=cal.calls.map(c=>c.dist.toFixed(1));
+            alert("Calibrated by proportion along the measured lines.\nS "+sL[0]+" \u00b7 E "+sL[1]+" \u00b7 N "+sL[2]+" \u00b7 W "+sL[3]+" ft\nThe parcel now sits on the measured parent \u2014 no seating needed.");
+          };
+          m2.appendChild(go);
+          const cc=document.createElement("button");cc.className="btn";cc.textContent="Cancel";cc.onclick=c2;m2.appendChild(cc);
+        });});
+    });
     if(_deedPlot.figures.length>1)
       mk("🖐 Move one figure","blue",()=>{close();
         openModal((m2,c2)=>{
