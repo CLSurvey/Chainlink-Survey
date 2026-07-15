@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.72">
+<meta name="application-name" content="ChainLink-v4.3.73">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.72</title>
+<title>ChainLink Survey v4.3.73</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.72";
+const APP_VERSION = "4.3.73";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -8178,7 +8178,18 @@ function _deedExceptOutside(f){
   if(f.kind!=="except"||!f.computed)return false;
   const b=_deedPlot&&_deedPlot.figures.find(x=>x.kind==="boundary");
   if(!b||!b.computed)return false;
-  return f.computed.verts.some(v=>!_deedInPoly(v.E,v.N,b.computed.verts));
+  // Nested carve-outs legitimately share edges with the parent (a west-half
+  // cut lies ON the west line), and ray-casting is unstable for points
+  // exactly on an edge. Test each vertex nudged a hair toward the except's
+  // own centroid: on-edge vertices move strictly inside; a genuinely
+  // outside figure stays outside.
+  const vs=f.computed.verts;
+  let cE=0,cN=0;vs.forEach(v=>{cE+=v.E;cN+=v.N;});cE/=vs.length;cN/=vs.length;
+  const eps=0.05;
+  return vs.some(v=>{
+    const dE=cE-v.E,dN=cN-v.N,L=Math.hypot(dE,dN)||1;
+    return !_deedInPoly(v.E+dE/L*eps,v.N+dN/L*eps,b.computed.verts);
+  });
 }
 function _deedNetAcres(){
   if(!_deedPlot)return null;
