@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.66">
+<meta name="application-name" content="ChainLink-v4.3.68">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.66</title>
+<title>ChainLink Survey v4.3.68</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.66";
+const APP_VERSION = "4.3.68";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1172,19 +1172,22 @@ function jobNew(){
         const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
         mk("📡 GPS Start (State Plane)","ok",()=>{close();_gpsStartFlow(name,false);});
         mk("📡 GPS Start + tap exact spot on imagery","ok",()=>{close();_gpsStartFlow(name,true);});
-        mk("📜 GPS Start + plot a deed","blue",()=>{close();_gpsStartFlow(name,"deed");});
+        mk("📜 Plot a deed first (no start point)","blue",()=>{close();_gpsStartFlow(name,"deed");});
         mk("🎯 Known Grid Coordinate (SPC / UTM)","blue",()=>{close();_gridStartFlow(name);});
         mk("⌨ Manual / Assumed (10000,10000)","blue",()=>{close();jobNewManual(name);});
       });
     });
   },100);
 }
-function _startNewJob(jn,N,E,Z,deferSetup){
+function _startNewJob(jn,N,E,Z,deferSetup,noStart){
   _resetViewState();
   _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
-  points=[{Point:1,Northing:N,Easting:E,Elevation:Z,
+  // noStart: deed-first job — no point dropped where the user happens to be
+  // standing; the first real points arrive from the plotted deed (or the
+  // user's own setup, wherever they decide that is).
+  points=noStart?[]:[{Point:1,Northing:N,Easting:E,Elevation:Z,
            Type:"Setup",Description:"Start",Flag:"",ih:0}];
-  undoStack=[];_snapshots=[];_redoStack=[];pointCounter=2;plotConnections=[];currentPoint=points[0];
+  undoStack=[];_snapshots=[];_redoStack=[];pointCounter=noStart?1:2;plotConnections=[];currentPoint=noStart?null:points[0];
   _polylines=[];
   recentShots=[];tempGeom=[];tempIntersections=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();_deedPlot=null;
   jobName=jn;
@@ -7399,6 +7402,10 @@ function setupHiDpi(c,w,h){
 }
 function _viewTransform(w,h){
   const valid=points.filter(p=>!isNaN(p.Easting)&&!isNaN(p.Northing));
+  // A deed-first job can exist with zero points — the geo anchor stands in
+  // as a virtual point so the view, imagery and deed still render.
+  if(!valid.length&&typeof geoAnchor!=="undefined"&&geoAnchor&&isFinite(geoAnchor.E)&&isFinite(geoAnchor.N))
+    valid.push({Easting:geoAnchor.E,Northing:geoAnchor.N});
   if(!valid.length)return null;
   const es=valid.map(p=>p.Easting),ns=valid.map(p=>p.Northing);
   const minE=Math.min(...es),maxE=Math.max(...es),minN=Math.min(...ns),maxN=Math.max(...ns);
@@ -8806,22 +8813,18 @@ function _deedFromPdf(file,prevText){
 }
 function _deedPasteModal(prefill){
   openModal((modal,close)=>{
-    modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>Photograph the deed page by page — overlapping shots are stitched automatically — or paste the text. The app reads the calls; you review them; it plots on the map.</p>"+
-      "<p class='info' style='font-size:.78em;opacity:.85'>💡 Best results: copy the text with <b>Google Lens</b> (or scan to PDF with Adobe/Microsoft Lens and use 📄) and paste it here. The built-in 📷 works offline but reads less accurately.</p>"+
+    modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>Get the deed text into the box — the app reads the calls; you review them; it plots on the map.</p>"+
+      "<div style='border:1px solid #6a5320;border-radius:8px;padding:9px 11px;margin:4px 0 8px;background:rgba(240,160,32,.06)'>"+
+      "<div style='font-family:var(--font-ui);font-size:.82em;color:#f0a020;margin-bottom:4px'>📱 Best way — Google Lens</div>"+
+      "<div class='info' style='font-size:.8em;margin:0'>① Open the <b>Google</b> app and tap the <b>Lens</b> (camera) icon &nbsp;② Aim at the deed page &nbsp;③ Tap <b>Select text</b>, drag over the description, tap <b>Copy</b> &nbsp;④ Come back here, long-press the box, <b>Paste</b>. For multiple pages, repeat — paste each page after the last.</div></div>"+
       (window._deedMergeNote?"<p class='info' style='color:#7cc26b'>✂ "+window._deedMergeNote+"</p>":"");
     window._deedMergeNote=null;
     const ta=document.createElement("textarea");
     ta.placeholder="…thence N 47°23'10\" E a distance of 156.48 feet; thence along a curve to the right…";
     ta.value=prefill||"";
     ta.style.cssText="width:100%;min-height:130px;background:#111;color:#ddd;border:1px solid #444;border-radius:6px;padding:10px;font-size:.85em";
+    modal.appendChild(ta);
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk(prefill?"📷 Photograph the NEXT page (appends)":"📷 Photograph the deed","blue",()=>{
-      const prev=ta.value.trim();
-      const inp=document.createElement("input");
-      inp.type="file";inp.accept="image/*";inp.capture="environment";
-      inp.onchange=()=>{ if(inp.files&&inp.files[0]){close();_deedOcr(inp.files[0],prev);} };
-      inp.click();
-    });
     mk("📄 Open a PDF of the deed","blue",()=>{
       const prev=ta.value.trim();
       const inp=document.createElement("input");
@@ -8829,7 +8832,26 @@ function _deedPasteModal(prefill){
       inp.onchange=()=>{ if(inp.files&&inp.files[0]){close();_deedFromPdf(inp.files[0],prev);} };
       inp.click();
     });
-    modal.appendChild(ta);
+    mk("📄 Open a .txt file","blue",()=>{
+      const prev=ta.value.trim();
+      const inp=document.createElement("input");
+      inp.type="file";inp.accept=".txt,text/plain";
+      inp.onchange=()=>{
+        if(!(inp.files&&inp.files[0]))return;
+        const r=new FileReader();
+        r.onload=ev=>{ ta.value=(prev?prev+"\n":"")+String(ev.target.result||"").trim(); };
+        r.readAsText(inp.files[0]);
+      };
+      inp.click();
+    });
+    // built-in OCR demoted: offline fallback only — Lens reads far better
+    mk(prefill?"📷 Built-in camera, NEXT page (offline fallback)":"📷 Built-in camera (offline fallback — least accurate)","",()=>{
+      const prev=ta.value.trim();
+      const inp=document.createElement("input");
+      inp.type="file";inp.accept="image/*";inp.capture="environment";
+      inp.onchange=()=>{ if(inp.files&&inp.files[0]){close();_deedOcr(inp.files[0],prev);} };
+      inp.click();
+    });
     mk("Read the calls →","ok",()=>{
       const figs=parseDeedFigures(ta.value);
       if(!figs.length){alert("No survey calls found — is the description text in the box?");return;}
@@ -9939,7 +9961,7 @@ function _gpsStartFlow(jn,fineTune){
       const zone=_spcCandidates(lat,lon)[0]||_utmZoneFor(lat,lon);
       const p=_projForward(lat,lon,zone), u=_m2u();
       _fetchGroundElev(lat,lon,(ge)=>{
-        _startNewJob(jn,p.N*u,p.E*u,ge!=null?parseFloat(ge.toFixed(1)):100,true);
+        _startNewJob(jn,p.N*u,p.E*u,ge!=null?parseFloat(ge.toFixed(1)):100,true,fineTune==="deed");
         _setAnchor(lat,lon,zone,p.E*u,p.N*u);
         satOn=true;saveData();_syncSatBtn();
         _zoomToGround(units==="ft"?300:100);
@@ -10033,7 +10055,7 @@ function plotPoints(extCtx,extW,extH){
   }
   ctx.fillStyle=lightMode?"#ffffff":"#0d1020";ctx.fillRect(0,0,w,h);
   const valid=points.filter(p=>!isNaN(p.Easting)&&!isNaN(p.Northing));
-  if(!valid.length){
+  if(!valid.length&&!(typeof geoAnchor!=="undefined"&&geoAnchor)){
     ctx.fillStyle="rgba(107,115,143,.3)";ctx.font="13px 'Courier New',monospace";
     ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("No points loaded",w/2,h/2);return;
   }
@@ -10500,6 +10522,43 @@ function plotPoints(extCtx,extW,extH){
         ctx.globalAlpha=1;
       }
       ctx.setLineDash([]);
+      // bearing + distance annotation along each course (respects the LBL
+      // toggle; segments too short on screen stay clean)
+      if(showLabels){
+        ctx.save();
+        ctx.font="9px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="middle";
+        const unitSuf=(typeof units!=="undefined"&&units==="m")?" m":"'";
+        g.verts.forEach((v,i)=>{
+          if(i===0)return;
+          const u=g.verts[i-1];
+          if(arcSeg(u,v))return;
+          const sx1=X(u.E),sy1=Y(u.N),sx2=X(v.E),sy2=Y(v.N);
+          const dx=sx2-sx1,dy=sy2-sy1,slen=Math.hypot(dx,dy);
+          if(slen<64)return;
+          let ang=Math.atan2(dy,dx);
+          if(ang>Math.PI/2)ang-=Math.PI; else if(ang<-Math.PI/2)ang+=Math.PI;
+          const az=(Math.atan2(v.E-u.E,v.N-u.N)*180/Math.PI+360)%360;
+          const dd=Math.hypot(v.E-u.E,v.N-u.N);
+          ctx.save();
+          ctx.translate((sx1+sx2)/2,(sy1+sy2)/2);ctx.rotate(ang);
+          ctx.fillStyle=st.col;ctx.globalAlpha=0.95;
+          ctx.fillText(fmtBrg(az),0,-10);
+          ctx.fillText(dd.toFixed(2)+unitSuf,0,10);
+          ctx.restore();
+        });
+        g.arcs.forEach(a=>{
+          const sx1=X(a.sE),sy1=Y(a.sN),sx2=X(a.eE),sy2=Y(a.eN);
+          if(Math.hypot(sx2-sx1,sy2-sy1)<64)return;
+          const ch=Math.hypot(a.eE-a.sE,a.eN-a.sN);
+          const delta=2*Math.asin(Math.min(1,ch/(2*a.r)));
+          const L=a.r*delta;
+          ctx.save();
+          ctx.fillStyle=st.col;ctx.globalAlpha=0.95;
+          ctx.fillText("R="+a.r.toFixed(2)+"  L="+L.toFixed(2),(sx1+sx2)/2,(sy1+sy2)/2-10);
+          ctx.restore();
+        });
+        ctx.restore();
+      }
       ctx.font="bold 10px 'Courier New',monospace";ctx.textAlign="left";
       ctx.fillStyle=st.col;
       const p0x=X(g.verts[0].E),p0y=Y(g.verts[0].N);
