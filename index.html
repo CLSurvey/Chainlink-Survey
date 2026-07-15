@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.75">
+<meta name="application-name" content="ChainLink-v4.3.76">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.75</title>
+<title>ChainLink Survey v4.3.76</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.75";
+const APP_VERSION = "4.3.76";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7473,6 +7473,7 @@ const _DEED_UNIT_FT={
   CH:66, CHAIN:66, CHAINS:66,
   ROD:16.5, RODS:16.5, POLE:16.5, POLES:16.5, PERCH:16.5, PERCHES:16.5,
   LINK:0.66, LINKS:0.66, LK:0.66, LKS:0.66,
+  YARD:3, YARDS:3, YD:3, YDS:3,   // old rural Alabama deeds chain in yards
   VARA:2.7777778, VARAS:2.7777778, VR:2.7777778, VRS:2.7777778,   // Texas vara, 33⅓ in
   ARPENT:191.994, ARPENTS:191.994, ARPEN:191.994, ARPENS:191.994,   // Louisiana/Quebec French arpent
   M:3.280833333, METER:3.280833333, METERS:3.280833333, METRE:3.280833333, METRES:3.280833333
@@ -7630,7 +7631,7 @@ function _deedParseDistance(seg){
     return {val:comp[1]+" "+comp[2].toLowerCase()+" "+comp[3]+" links",
             unit:comp[2], ft:parseFloat(comp[1])*base+parseFloat(comp[3])*0.66};
   }
-  const re=/(\d{1,6}(?:\.\d+)?)\s*(FEET|FOOT|FT\.?|CHAINS?|CH\.?|RODS?|POLES?|PERCH(?:ES)?|LINKS?|LKS?\.?|VARAS?|VRS?\.?|ARPENTS?|ARPENS?|METERS?|METRES?|M\b)/g;
+  const re=/(\d{1,6}(?:\.\d+)?)\s*(FEET|FOOT|FT\.?|YARDS?|YDS?\.?|CHAINS?|CH\.?|RODS?|POLES?|PERCH(?:ES)?|LINKS?|LKS?\.?|VARAS?|VRS?\.?|ARPENTS?|ARPENS?|METERS?|METRES?|M\b)/g;
   let m;
   while((m=re.exec(scrub))){
     const u=m[2].replace(/\./g,"").replace(/S$/,"")==="FT"?"FT":m[2].replace(/\./g,"");
@@ -7919,7 +7920,7 @@ function parseDeedText(txt){
       const di=seg.search(/\d/);
       // "(running) 50 feet East ..." — a run-verb + distance + cardinal at the
       // segment head is a real course, not "being 131.50 feet northerly" prose
-      const runDistCard=/^\s*(?:RUN(?:NING)?\s+)?\d{1,6}(?:\.\d+)?\s*(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|VARAS?)\s+(?:NORTH|SOUTH|EAST|WEST|DUE)\b/.test(seg);
+      const runDistCard=/^\s*(?:RUN(?:NING)?\s+)?\d{1,6}(?:\.\d+)?\s*(?:FEET|FOOT|FT|YARDS?|CHAINS?|RODS?|POLES?|VARAS?)\s+(?:NORTH|SOUTH|EAST|WEST|DUE)\b/.test(seg);
       if(di>=0&&b.idx>di&&!runDistCard)b=null;      // direction after the number = prose
       else if(b&&!b.due&&b.idx>6&&!runDistCard)b=null; // bare cardinal mid-sentence = a street name
     }
