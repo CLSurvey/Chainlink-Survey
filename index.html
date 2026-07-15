@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.73">
+<meta name="application-name" content="ChainLink-v4.3.75">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.73</title>
+<title>ChainLink Survey v4.3.75</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.73";
+const APP_VERSION = "4.3.75";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -8255,7 +8255,10 @@ function _deedRemovePoints(){
    the southern half" — divide by area or frontage? the deed doesn't
    say), and strips wider than their parent. */
 function _deedAliquot(txt){
-  let t=txt.replace(/[.,;:()]/g," ").replace(/\s+/g," ").trim().toUpperCase();
+  // real drafting: "the Southwest Quarter, Section 34" — comma standing in
+  // for "of" before the Section term. Normalize it before the general
+  // punctuation strip so the chain stays connected.
+  let t=txt.replace(/,\s*(?=SECTION\b)/gi," OF ").replace(/[.,;:()]/g," ").replace(/\s+/g," ").trim().toUpperCase();
   if(!t)return null;
   if(/\b(THENCE|BEGINNING|BEGIN|COMMENC\w*|DEFLECT|MORE PARTICULARLY|METES)\b/.test(t))return null;
   if(/GOVERNMENT LOT|GOVT LOT|FRACTIONAL|RIPARIAN|MEANDER/.test(t))return null;
@@ -10581,11 +10584,14 @@ function plotPoints(extCtx,extW,extH){
       // toggle; segments too short on screen stay clean)
       if(showLabels){
         ctx.save();
-        ctx.font="bold 10px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="middle";
+        ctx.textAlign="center";ctx.textBaseline="middle";
         const unitSuf=(typeof units!=="undefined"&&units==="m")?" m":"'";
         // halo: dark outline under the colored text so labels stay readable
-        // over bright imagery
-        const txt=(t,x,y)=>{ctx.lineWidth=3;ctx.lineJoin="round";
+        // over bright imagery. Size scales with the segment's on-screen
+        // length so zooming in grows the labels (10px floor, 20px cap).
+        const fsFor=len=>Math.max(10,Math.min(20,len/16));
+        const txt=(t,x,y,fs)=>{ctx.font="bold "+fs+"px 'Courier New',monospace";
+          ctx.lineWidth=Math.max(3,fs*0.32);ctx.lineJoin="round";
           ctx.strokeStyle="rgba(0,0,0,.85)";ctx.strokeText(t,x,y);ctx.fillText(t,x,y);};
         g.verts.forEach((v,i)=>{
           if(i===0)return;
@@ -10601,8 +10607,9 @@ function plotPoints(extCtx,extW,extH){
           ctx.save();
           ctx.translate((sx1+sx2)/2,(sy1+sy2)/2);ctx.rotate(ang);
           ctx.fillStyle=st.col;
-          txt(fmtBrg(az),0,-10);
-          txt(dd.toFixed(2)+unitSuf,0,10);
+          const fs=fsFor(slen);
+          txt(fmtBrg(az),0,-(fs+1),fs);
+          txt(dd.toFixed(2)+unitSuf,0,fs+1,fs);
           ctx.restore();
         });
         g.arcs.forEach(a=>{
@@ -10613,7 +10620,8 @@ function plotPoints(extCtx,extW,extH){
           const L=a.r*delta;
           ctx.save();
           ctx.fillStyle=st.col;
-          txt("R="+a.r.toFixed(2)+"  L="+L.toFixed(2),(sx1+sx2)/2,(sy1+sy2)/2-10);
+          const afs=fsFor(Math.hypot(sx2-sx1,sy2-sy1));
+          txt("R="+a.r.toFixed(2)+"  L="+L.toFixed(2),(sx1+sx2)/2,(sy1+sy2)/2-(afs+1),afs);
           ctx.restore();
         });
         ctx.restore();
