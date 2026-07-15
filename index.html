@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.70">
+<meta name="application-name" content="ChainLink-v4.3.72">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.70</title>
+<title>ChainLink Survey v4.3.72</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.70";
+const APP_VERSION = "4.3.72";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -8268,6 +8268,8 @@ function _deedAliquot(txt){
   // v south-north (0=south edge). Retained on the figure so measured corners
   // of the parent can re-execute the subdivision later (calibration).
   let u0=0,u1=1,v0=0,v1=1,hasAbs=false;
+  const baseSize=w;
+  const stages=[{r:[0,1,0,1],w:w,h:h}];       // stage 0 = the base tract itself
   for(let i=ops.length-1;i>=0;i--){          // innermost (nearest base) first
     const o=ops[i],d=o.dir?D[o.dir]:null;
     let frac=null;
@@ -8281,20 +8283,42 @@ function _deedAliquot(txt){
       if(d[1]==="E")u0=u1-sU/2; else u1=u0+sU/2;
       if(d[0]==="N")v0=v1-sV/2; else v1=v0+sV/2;
     }else if(d==="N"||d==="S"){
-      if(o.abs!=null){if(o.abs>=h)return null;h=o.abs;hasAbs=true;}
+      if(o.abs!=null){if(o.abs>=h)return null;const fr=o.abs/h;h=o.abs;hasAbs=true;
+        if(d==="N")v0=v1-sV*fr;else v1=v0+sV*fr;}
       else if(frac!=null){h*=frac;if(d==="N")v0=v1-sV*frac;else v1=v0+sV*frac;}
       else return null;
     }else if(d==="E"||d==="W"){
-      if(o.abs!=null){if(o.abs>=w)return null;w=o.abs;hasAbs=true;}
+      if(o.abs!=null){if(o.abs>=w)return null;const fr=o.abs/w;w=o.abs;hasAbs=true;
+        if(d==="E")u0=u1-sU*fr;else u1=u0+sU*fr;}
       else if(frac!=null){w*=frac;if(d==="E")u0=u1-sU*frac;else u1=u0+sU*frac;}
       else return null;
     }else return null;                       // directionless — ambiguous
+    stages.push({r:[u0,u1,v0,v1],w:w,h:h});
   }
   w=Math.round(w*100)/100;h=Math.round(h*100)/100;
   const mk=(az,dd,lbl)=>({type:"line",compassAz:az,bearing:null,dist:dd,unit:"FT",rawVal:dd,
     raw:"ALIQUOT (NOMINAL GLO): "+lbl+" "+dd.toFixed(2)+" FT"});
-  return {w,h,spec:hasAbs?null:{u0,u1,v0,v1},
+  return {w,h,spec:{u0,u1,v0,v1,base:baseSize,hasAbs,stages},
     calls:[mk(0,h,"N"),mk(90,w,"E"),mk(180,h,"S"),mk(270,w,"W")]};
+}
+
+/* Shared-base auto-placement: two aliquot figures whose chains hang from a
+   common ancestor tract ("said forty" inside a section-based chain) have a
+   relative position fully determined by the record. Walk the boundary
+   stages for a SQUARE tract matching the other figure base size; express
+   the figure rect in the boundary base frame; the record-frame offset
+   between the two POBs (each rect SW corner) is exact nominal arithmetic.
+   Returns {dE,dN} in nominal feet, or null when no unambiguous shared base
+   exists (then the figure stacks for hand placement, as before). */
+function _deedAliquotOffset(bSpec,fSpec){
+  if(!bSpec||!fSpec||!bSpec.stages||fSpec.base==null)return null;
+  const tol=0.01;
+  const st=bSpec.stages.find(g=>Math.abs(g.w-g.h)<tol&&Math.abs(g.w-fSpec.base)<tol);
+  if(!st)return null;
+  const R=st.r;
+  const u0=R[0]+(R[1]-R[0])*fSpec.u0;
+  const v0=R[2]+(R[3]-R[2])*fSpec.v0;
+  return {dE:(u0-bSpec.u0)*bSpec.base, dN:(v0-bSpec.v0)*bSpec.base};
 }
 
 /* Re-execute an aliquot subdivision against MEASURED parent corners.
@@ -8564,7 +8588,12 @@ function _deedResolveFigures(figs,E,N){
       const last=t.verts[t.verts.length-1];
       f.pobE=last.E;f.pobN=last.N;
     }else{
-      f.pobE=E;f.pobN=N;f.autoStacked=true;stacked++;
+      // shared-base aliquot: the record itself places this figure
+      let ap=null;
+      if(f.aliquotSpec&&firstB&&firstB.aliquotSpec)
+        ap=_deedAliquotOffset(firstB.aliquotSpec,f.aliquotSpec);
+      if(ap){f.pobE=E+ap.dE;f.pobN=N+ap.dN;f.autoPlacedAliquot=true;}
+      else{f.pobE=E;f.pobN=N;f.autoStacked=true;stacked++;}
     }
   });
   _deedPlot=_mkDeed(figs,0);
@@ -8577,8 +8606,15 @@ function _deedResolveFigures(figs,E,N){
     ...(b&&b.computed?[{lbl:"Boundary closure:",val:b.computed.closeDist.toFixed(2)+" "+units+(b.computed.precision?" (1:"+b.computed.precision+")":"")}]:[]),
     ...(net!=null?[{lbl:"Net area:",val:net.toFixed(2)+" acres (boundary − exceptions)"+(_deedPlot.figures.some(_deedExceptOutside)?" — verify after placing ⚠ figures":"")}]:[]),
     ...(figs.some(f=>f.kind!=="boundary"&&f.calls.some(c=>c.tie))?[{lbl:"Auto-placed:",val:"tied figures positioned by their tie courses from the POB"}]:[]),
-    ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"no tie in the deed — stacked at the POB. Use 🖐 Move one figure to drag into place."}]:[]),
-    ..._deedPlot.figures.filter(f=>!f.autoStacked&&_deedExceptOutside(f)).map(f=>({lbl:"⚠ "+f.name+":",val:"extends OUTSIDE the boundary as placed by its own ties — possible defect in the record"}))]);
+    ...(_deedPlot.figures.some(f=>f.autoPlacedAliquot)?[{lbl:"Auto-placed:",val:"aliquot figure positioned from the shared PLSS tract (nominal dimensions)"}]:[]),
+    ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"no tie in the deed — stacked at the POB; place below."}]:[]),
+    ..._deedPlot.figures.filter(f=>!f.autoStacked&&_deedExceptOutside(f)).map(f=>({lbl:"⚠ "+f.name+":",val:"extends OUTSIDE the boundary as placed by its own ties — possible defect in the record"}))],
+    (function(){
+      const need=_deedPlot.figures.map((f,i)=>({f,i})).filter(x=>x.f.autoStacked||_deedExceptOutside(x.f));
+      if(!need.length)return null;
+      return [{txt:"🖐 Place "+(need.length===1?("“"+need[0].f.name.split(" (")[0]+"” now"):("the "+need.length+" ⚠ figures now")),cls:"ok",
+               fn:()=>{ if(need.length===1){_deedAdjustScope=need[0].i;_deedAdjustStart();} else _deedMovePicker(); }}];
+    })());
 }
 function _deedPlaceFigures(figs){
   openModal((modal,close)=>{
@@ -8910,6 +8946,46 @@ function _screenToWorld(sx,sy){
   const T=_viewTransform(w,h);if(!T)return null;
   return{E:(sx-T.offX)/T.scale,N:(h-sy-T.offY)/T.scale};
 }
+/* Figure-placement picker — reachable from the Deed Plotter menu, the
+   post-plot result card, and by tapping a figure's ⚠ badge on the map. */
+function _deedMovePicker(){
+  if(!_deedPlot)return;
+  openModal((m2,c2)=>{
+    m2.innerHTML="<h2>Move which figure?</h2><p class='info'>Drag with one finger. Rotation stays with the record.</p>";
+    _deedPlot.figures.forEach((f,i)=>{
+      const b=document.createElement("button");b.className="btn blue";
+      b.textContent=f.name+(f.autoStacked?"  ⚠ needs placing":(_deedExceptOutside(f)?"  ⚠ outside parent":""));
+      b.onclick=()=>{c2();_deedFigureActions(i);};
+      m2.appendChild(b);});
+    const cc=document.createElement("button");cc.className="btn";cc.textContent="Back";
+    cc.onclick=()=>{c2();deedPlotterMenu();};m2.appendChild(cc);
+  });
+}
+function _deedFigureActions(i){
+  const f=_deedPlot.figures[i];if(!f)return;
+  openModal((m3,c3)=>{
+    m3.innerHTML="<h2>"+f.name+"</h2><p class='info'>Deeds often start these at a described corner — snapping to its point number is exact.</p>";
+    const mk3=(t,cls,fn)=>{const bb=document.createElement("button");bb.className="btn "+cls;bb.textContent=t;bb.onclick=fn;m3.appendChild(bb)};
+    mk3("🖐 Drag it on the map","ok",()=>{c3();_deedAdjustScope=i;_deedAdjustStart();});
+    mk3("⌖ Snap start to point #","blue",()=>{c3();
+      calculatorInput(f.name+" starts at point #:","",pn=>{
+        if(pn===null||pn==="")return;
+        const pt=points.find(p=>p.Point===parseInt(pn,10));
+        if(!pt){alert("Point "+pn+" not found.");return;}
+        f.pobE=pt.Easting;f.pobN=pt.Northing;f.autoStacked=false;
+        _deedRecompute();saveData();
+      });});
+    if(f.kind==="easement")
+      mk3("↔ Right-of-way width"+(f.width?" ("+f.width.toFixed(1)+" "+units+")":" (not set)"),"blue",()=>{c3();
+        calculatorInput("Full easement width ("+units+"):",f.width?String(f.width):"",wv=>{
+          if(wv===null)return;
+          const w=parseFloat(wv);
+          f.width=(!isNaN(w)&&w>0)?w:null;
+          saveData();plotPoints();
+        });});
+    mk3("Back","",()=>{c3();_deedMovePicker();});
+  });
+}
 function deedPlotterMenu(){
   if(!_deedPlot){
     _deedPasteModal("");
@@ -8944,7 +9020,7 @@ function deedPlotterMenu(){
     mk("🖐 Slide & rotate on the imagery","ok",()=>{close();_deedAdjustStart();});
     // aliquot calibration — re-derive the subdivision from measured parent corners
     _deedPlot.figures.forEach(f=>{
-      if(!f.aliquot||!f.aliquotSpec)return;
+      if(!f.aliquot||!f.aliquotSpec||f.aliquotSpec.hasAbs)return;
       mk("\u2316 Calibrate "+f.name.split(" (")[0]+" to measured corners","blue",()=>{close();
         openModal((m2,c2)=>{
           m2.innerHTML="<h2>\u2316 Calibrate aliquot</h2><p class='info'>Enter the point numbers of the four measured corners of the <b>parent tract</b> (the forty / quarter the deed subdivides). The fractional parcel is re-derived by proportion along the actual lines \u2014 lopsided parents give the correct lopsided parcel.</p>";
@@ -8973,40 +9049,7 @@ function deedPlotterMenu(){
         });});
     });
     if(_deedPlot.figures.length>1)
-      mk("🖐 Move one figure","blue",()=>{close();
-        openModal((m2,c2)=>{
-          m2.innerHTML="<h2>Move which figure?</h2><p class='info'>Drag with one finger. Rotation stays with the record.</p>";
-          _deedPlot.figures.forEach((f,i)=>{
-            const b=document.createElement("button");b.className="btn blue";
-            b.textContent=f.name+(f.autoStacked?"  ⚠ needs placing":(_deedExceptOutside(f)?"  ⚠ outside parent":""));
-            b.onclick=()=>{c2();
-              openModal((m3,c3)=>{
-                m3.innerHTML="<h2>"+f.name+"</h2><p class='info'>Deeds often start these at a described corner — snapping to its point number is exact.</p>";
-                const mk3=(t,cls,fn)=>{const bb=document.createElement("button");bb.className="btn "+cls;bb.textContent=t;bb.onclick=fn;m3.appendChild(bb)};
-                mk3("⌖ Snap start to point #","ok",()=>{c3();
-                  calculatorInput(f.name+" starts at point #:","",pn=>{
-                    if(pn===null||pn==="")return;
-                    const pt=points.find(p=>p.Point===parseInt(pn,10));
-                    if(!pt){alert("Point "+pn+" not found.");return;}
-                    f.pobE=pt.Easting;f.pobN=pt.Northing;f.autoStacked=false;
-                    _deedRecompute();saveData();
-                  });});
-                mk3("🖐 Drag it on the map","blue",()=>{c3();_deedAdjustScope=i;_deedAdjustStart();});
-                if(f.kind==="easement")
-                  mk3("↔ Right-of-way width"+(f.width?" ("+f.width.toFixed(1)+" "+units+")":" (not set)"),"blue",()=>{c3();
-                    calculatorInput("Full easement width ("+units+"):",f.width?String(f.width):"",wv=>{
-                      if(wv===null)return;
-                      const w=parseFloat(wv);
-                      f.width=(!isNaN(w)&&w>0)?w:null;
-                      saveData();plotPoints();
-                    });});
-                mk3("Back","",()=>{c3();deedPlotterMenu();});
-              });
-            };
-            m2.appendChild(b);});
-          const cc=document.createElement("button");cc.className="btn";cc.textContent="Back";
-          cc.onclick=()=>{c2();deedPlotterMenu();};m2.appendChild(cc);
-        });});
+      mk("🖐 Move one figure","blue",()=>{close();_deedMovePicker();});
     mk("⇲ Fit to 2 measured points","ok",()=>{close();_deedFitTwoPoint();});
     mk("Set exact swing angle","blue",()=>{close();
       calculatorInput("Swing (degrees, + clockwise):",String(_deedPlot.rot||0),v=>{
@@ -10488,7 +10531,8 @@ function plotPoints(extCtx,extW,extH){
     }
   }
   try{
-    if(_deedPlot)_deedPlot.figures.forEach(fig=>{
+    window._deedBadges=[];
+    if(_deedPlot)_deedPlot.figures.forEach((fig,_dfI)=>{
       const g=fig.computed; if(!g)return;
       const st=_DEED_STYLE[fig.kind]||_DEED_STYLE.boundary;
       ctx.save();
@@ -10571,10 +10615,11 @@ function plotPoints(extCtx,extW,extH){
         const wx=(X(g.verts[0].E)+X(g.verts[Math.floor((g.verts.length-1)/2)].E))/2;
         const wy=(Y(g.verts[0].N)+Y(g.verts[Math.floor((g.verts.length-1)/2)].N))/2;
         ctx.font="bold 11px 'Courier New',monospace";ctx.textAlign="center";
-        const wt="⚠ outside parent";
+        const wt="⚠ outside parent — tap to move";
         const ww=ctx.measureText(wt).width;
-        ctx.fillStyle="rgba(90,25,25,.85)";ctx.fillRect(wx-ww/2-6,wy-9,ww+12,18);
+        ctx.fillStyle="rgba(90,25,25,.85)";ctx.fillRect(wx-ww/2-6,wy-11,ww+12,22);
         ctx.fillStyle="#ffb4a0";ctx.fillText(wt,wx,wy+4);
+        window._deedBadges.push({x:wx-ww/2-6,y:wy-11,w:ww+12,h:22,fi:_dfI});
       }
       ctx.restore();
     });
@@ -11033,6 +11078,11 @@ function zoomToOccupied(){
       }
       else if(inBtn(window._deedCancelBtn)) _deedAdjustEnd(false);
       return;
+    }
+    // ⚠ outside-parent badge: tap = move that figure directly
+    if(window._deedBadges&&window._deedBadges.length&&_deedPlot){
+      const hitB=window._deedBadges.find(b=>mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h);
+      if(hitB){_deedAdjustScope=hitB.fi;_deedAdjustStart();return;}
     }
     // Stop GPS navigation via the ✕ on the panel
     const sb=window._stakeStopBtn;
