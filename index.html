@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.76">
+<meta name="application-name" content="ChainLink-v4.3.77">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.76</title>
+<title>ChainLink Survey v4.3.77</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.76";
+const APP_VERSION = "4.3.77";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7639,7 +7639,10 @@ function _deedParseDistance(seg){
     const perFt=_DEED_UNIT_FT[u]||_DEED_UNIT_FT[key]||_DEED_UNIT_FT[u.replace(/S$/,"")];
     if(perFt) return {val:parseFloat(m[1]), unit:u, ft:parseFloat(m[1])*perFt};
   }
-  const fm=scrub.match(/(\d{1,6}(?:\.\d+)?)\s*['\u2032](?!\s*[\d'\u2032])/);
+  // strip degree-minute(-second) constructs first — in "0deg.15' West"
+  // the 15' is bearing minutes, not a 15-foot distance
+  const scrub2=scrub.replace(/\d{1,3}\s*(?:\u00b0|DEG(?:REES?)?\b\.?)\s*\.?\s*\d{1,2}\s*['\u2032](?:\s*\d{1,2}(?:\.\d+)?\s*["\u2033])?/g," ");
+  const fm=scrub2.match(/(\d{1,6}(?:\.\d+)?)\s*['\u2032](?!\s*[\d'\u2032])/);
   if(fm) return {val:parseFloat(fm[1]), unit:"FT", ft:parseFloat(fm[1])};
   return null;
 }
@@ -7957,6 +7960,12 @@ function parseDeedText(txt){
             calls.push({type:"line",_si,_pob:_POBARR,compassAz:az,bearing:null,dist:ddw.ft,unit:ddw.unit,rawVal:ddw.val,raw:seg.slice(0,140)});
             return;
           }
+          // recognized course direction but no distance ("Southwesterly
+          // along the right of way to its intersection…") — a bounded
+          // course no parser can complete. Fail LOUDLY as a review row,
+          // never silently.
+          calls.push({type:"partial",_si,_pob:_POBARR,bearing:null,dist:null,unit:null,raw:seg.slice(0,140)});
+          return;
         }
       }
     }
@@ -8356,7 +8365,7 @@ function parseDeedFigures(txt){
   const t=_deedNormalize(txt);
   // OCR mangles keywords ("1ESS AND EXCEPT", "BER EXCEPT", dropped
   // "TOGETHER") — so the detector is deliberately fuzzy:
-  const KEY=/(PARCEL\s+(?:NO\.?\s*)?\d+\b|PARCEL\s+(?:ONE|TWO|THREE|FOUR|FIVE)\b|(?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
+  const KEY=/(PARCEL\s+(?:NO\.?\s*)?(?:\d+|[IVXL]+)\b|PARCEL\s+(?:ONE|TWO|THREE|FOUR|FIVE)\b|(?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
   const parts=[];let last=0,m,firstKind="boundary",kw="";
   while((m=KEY.exec(t))){
     parts.push({kind:firstKind,text:t.slice(last,m.index),kw:kw});
