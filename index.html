@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.77">
+<meta name="application-name" content="ChainLink-v4.3.78">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.77</title>
+<title>ChainLink Survey v4.3.78</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.77";
+const APP_VERSION = "4.3.78";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -8389,8 +8389,17 @@ function parseDeedFigures(txt){
       name:p.kind==="boundary"?"Boundary":(p.kind==="except"?"Except parcel":"Easement")};
     // "BEGINNING AT THE NORTHWEST CORNER OF SAID SECTION 17" — a PLSS
     // corner reference lets later parcels place themselves off the first
-    const cr=p.text.slice(0,400).match(/\b(NORTHWEST|NORTHEAST|SOUTHWEST|SOUTHEAST)\s+CORNER OF (?:SAID )?SECTION (\d{1,2})\b/);
-    if(cr)fig.cornerRef={c:cr[1],sec:parseInt(cr[2],10)};
+    // Accepts both plain section corners and aliquot-qualified corners
+    // ("SW corner of the NW 1/4 of the SW 1/4 of (said) Section 2"). The
+    // qualifier chain is part of the corner's identity — two parcels only
+    // share a corner when the chain matches too.
+    const cr=p.text.slice(0,400).match(/\b(NORTHWEST|NORTHEAST|SOUTHWEST|SOUTHEAST)\s+CORNER OF ((?:(?:THE|SAID)\s+)?(?:(?:NORTHWEST|NORTHEAST|SOUTHWEST|SOUTHEAST|NORTH|SOUTH|EAST|WEST|N[EW]|S[EW])\s*(?:QUARTER|HALF|1\/4|1\/2)(?:\s+OF)?\s*(?:THE\s+)?)*)(?:SAID\s+)?SECTION (\d{1,2})\b/);
+    if(cr){
+      const q=(cr[2]||"").replace(/\b(THE|SAID|OF)\b/g," ").replace(/1\/4/g,"QUARTER").replace(/1\/2/g,"HALF")
+        .replace(/\bNE\b/g,"NORTHEAST").replace(/\bNW\b/g,"NORTHWEST").replace(/\bSE\b/g,"SOUTHEAST").replace(/\bSW\b/g,"SOUTHWEST")
+        .replace(/\s+/g," ").trim();
+      fig.cornerRef={c:cr[1],sec:parseInt(cr[3],10),q};
+    }
     if(p.kind==="easement"){
       // width from the keyword ("a 30 foot utility easement") or the body
       // ("lying 15 feet on each side")
@@ -8597,7 +8606,7 @@ function _deedResolveFigures(figs,E,N){
       // corner = parcel 1's TPOB minus its tie; this parcel's TPOB = corner
       // plus its own tie.
       const n1=_deedCornerNode(firstB.cornerRef), n2=_deedCornerNode(f.cornerRef);
-      if(n1&&n2&&n1.x===n2.x&&n1.y===n2.y){
+      if(n1&&n2&&n1.x===n2.x&&n1.y===n2.y&&(firstB.cornerRef.q||"")===(f.cornerRef.q||"")){
         const t1=_deedTieVec(firstB), t2=_deedTieVec(f);
         f.pobE=E-t1.E+t2.E; f.pobN=N-t1.N+t2.N;
         f.autoStacked=false;
@@ -8631,7 +8640,7 @@ function _deedResolveFigures(figs,E,N){
     ...(net!=null?[{lbl:"Net area:",val:net.toFixed(2)+" acres (boundary − exceptions)"+(_deedPlot.figures.some(_deedExceptOutside)?" — verify after placing ⚠ figures":"")}]:[]),
     ...(figs.some(f=>f.kind!=="boundary"&&f.calls.some(c=>c.tie))?[{lbl:"Auto-placed:",val:"tied figures positioned by their tie courses from the POB"}]:[]),
     ...(_deedPlot.figures.some(f=>f.autoPlacedAliquot)?[{lbl:"Auto-placed:",val:"aliquot figure positioned from the shared PLSS tract (nominal dimensions)"}]:[]),
-    ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"no tie in the deed — stacked at the POB; place below."}]:[]),
+    ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"no tie or no shared commence corner in the record — stacked at the POB; place below."}]:[]),
     ..._deedPlot.figures.filter(f=>!f.autoStacked&&_deedExceptOutside(f)).map(f=>({lbl:"⚠ "+f.name+":",val:"extends OUTSIDE the boundary as placed by its own ties — possible defect in the record"}))],
     (function(){
       const need=_deedPlot.figures.map((f,i)=>({f,i})).filter(x=>x.f.autoStacked||_deedExceptOutside(x.f));
