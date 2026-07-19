@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.3.78">
+<meta name="application-name" content="ChainLink-v4.3.79">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.3.78</title>
+<title>ChainLink Survey v4.3.79</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.3.78";
+const APP_VERSION = "4.3.79";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -10599,6 +10599,32 @@ function plotPoints(extCtx,extW,extH){
         ctx.globalAlpha=1;
       }
       ctx.setLineDash([]);
+      // Tie courses — the record's path from the commence monument to the
+      // POB. Drawn dotted and dim: real geometry worth seeing (the commence
+      // corner is usually a found monument), visually subordinate to the
+      // boundary itself. Rebuilt each frame from the calls so it stays
+      // rigid with the record under swing and slide.
+      let tieVerts=null;
+      {
+        const _tc=fig.calls.filter(c=>c.tie&&(c.type==="line"||c.type==="curve")).map(c=>Object.assign({},c,{tie:false}));
+        if(_tc.length){
+          const _rot=(_deedPlot.rot||0);
+          const _tv=computeDeed(_tc,0,0,_rot);
+          const _l=_tv.verts[_tv.verts.length-1];
+          tieVerts=computeDeed(_tc,g.verts[0].E-_l.E,g.verts[0].N-_l.N,_rot).verts;
+          ctx.save();
+          ctx.strokeStyle=st.col;ctx.globalAlpha=0.45;ctx.lineWidth=1.5;ctx.setLineDash([2,6]);
+          ctx.beginPath();
+          tieVerts.forEach((v,i)=>{const sx=X(v.E),sy=Y(v.N);i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);});
+          ctx.stroke();
+          const cx=X(tieVerts[0].E),cy=Y(tieVerts[0].N);
+          ctx.setLineDash([]);ctx.beginPath();ctx.arc(cx,cy,4,0,2*Math.PI);ctx.stroke();
+          ctx.font="bold 9px 'Courier New',monospace";ctx.textAlign="left";
+          ctx.lineWidth=3;ctx.lineJoin="round";ctx.strokeStyle="rgba(0,0,0,.85)";
+          ctx.strokeText("Commence",cx+7,cy+3);ctx.fillStyle=st.col;ctx.fillText("Commence",cx+7,cy+3);
+          ctx.restore();
+        }
+      }
       // bearing + distance annotation along each course (respects the LBL
       // toggle; segments too short on screen stay clean)
       if(showLabels){
@@ -10643,6 +10669,28 @@ function plotPoints(extCtx,extW,extH){
           txt("R="+a.r.toFixed(2)+"  L="+L.toFixed(2),(sx1+sx2)/2,(sy1+sy2)/2-(afs+1),afs);
           ctx.restore();
         });
+        if(tieVerts&&tieVerts.length>1){
+          ctx.save();ctx.globalAlpha=0.6;
+          tieVerts.forEach((v,i)=>{
+            if(i===0)return;
+            const u=tieVerts[i-1];
+            const sx1=X(u.E),sy1=Y(u.N),sx2=X(v.E),sy2=Y(v.N);
+            const dx=sx2-sx1,dy=sy2-sy1,slen=Math.hypot(dx,dy);
+            if(slen<64)return;
+            let ang=Math.atan2(dy,dx);
+            if(ang>Math.PI/2)ang-=Math.PI; else if(ang<-Math.PI/2)ang+=Math.PI;
+            const az=(Math.atan2(v.E-u.E,v.N-u.N)*180/Math.PI+360)%360;
+            const dd=Math.hypot(v.E-u.E,v.N-u.N);
+            ctx.save();
+            ctx.translate((sx1+sx2)/2,(sy1+sy2)/2);ctx.rotate(ang);
+            ctx.fillStyle=st.col;
+            const fs=fsFor(slen);
+            txt(fmtBrg(az),0,-(fs+1),fs);
+            txt(dd.toFixed(2)+unitSuf+" tie",0,fs+1,fs);
+            ctx.restore();
+          });
+          ctx.restore();
+        }
         ctx.restore();
       }
       ctx.font="bold 10px 'Courier New',monospace";ctx.textAlign="left";
