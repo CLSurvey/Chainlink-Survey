@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.8">
+<meta name="application-name" content="ChainLink-v4.4.9">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.8</title>
+<title>ChainLink Survey v4.4.9</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.8";
+const APP_VERSION = "4.4.9";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1806,7 +1806,7 @@ async function _getDir(){
   catch(e){ return null; }
 }
 
-async /* Installed-PWA-safe file delivery. Blob-anchor pretend-clicks are
+/* Installed-PWA-safe file delivery. Blob-anchor pretend-clicks are
    silently swallowed in Android standalone/WebAPK mode; the Web Share API
    is the mechanism built for that context — native sheet -> Drive, Files,
    email. Plain browser tabs keep the instant download (share unsupported
@@ -1834,7 +1834,7 @@ function _deliverFile(blob,fname){
     modal.appendChild(cl);
   });
 }
-function exportDXF(){
+async function exportDXF(){
   if(!requirePro("DXF export")) return;
   // Generate a simple DXF with points and lines
   let dxf="0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n";
