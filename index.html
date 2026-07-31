@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.0">
+<meta name="application-name" content="ChainLink-v4.4.8">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.0</title>
+<title>ChainLink Survey v4.4.8</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.0";
+const APP_VERSION = "4.4.8";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1219,6 +1219,7 @@ function loadData() {
   try { const s=_lsGet("cl_points"); if(s){ points=JSON.parse(s); pointCounter=points.length?points.reduce((m,p)=>p.Point>m?p.Point:m,0)+1:1; currentPoint=points[0]||null; orientationChosen=true; } else _defaultState(); } catch(e){ _defaultState(); }
   try { plotConnections=JSON.parse(_lsGet("cl_connections")||"[]"); } catch(e){ plotConnections=[]; }
   try { _polylines=JSON.parse(_lsGet("cl_polylines")||"[]"); } catch(e){ _polylines=[]; }
+  if(typeof _ngsLoad==="function")_ngsLoad();
   try { _orientationOffset_unused=parseFloat(_lsGet("cl_orientOffset")||"0"); } catch(e){ _orientationOffset_unused=0; }
   try { surveyMode=_lsGet("cl_surveyMode")||"2D"; } catch(e){ surveyMode="2D"; }
   try { distMode=_lsGet("cl_distMode")||"SD"; } catch(e){ distMode="SD"; }
@@ -1805,7 +1806,35 @@ async function _getDir(){
   catch(e){ return null; }
 }
 
-async function exportDXF(){
+async /* Installed-PWA-safe file delivery. Blob-anchor pretend-clicks are
+   silently swallowed in Android standalone/WebAPK mode; the Web Share API
+   is the mechanism built for that context — native sheet -> Drive, Files,
+   email. Plain browser tabs keep the instant download (share unsupported
+   there is the normal case, and the old route works fine). */
+function _deliverFile(blob,fname){
+  let shareFile=null;
+  try{ shareFile=new File([blob],fname,{type:blob.type||"application/octet-stream"}); }catch(e){}
+  const canSh=shareFile&&navigator.canShare&&navigator.canShare({files:[shareFile]});
+  if(!canSh){
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download=fname; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    return;
+  }
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>\ud83d\udce4 "+fname+"</h2><p class='info'>Save via the share sheet (Drive, Files, email), or download.</p>";
+    const sh=document.createElement("button"); sh.className="btn ok"; sh.textContent="\ud83d\udce4 Save / Share\u2026";
+    sh.onclick=async()=>{ try{ await navigator.share({files:[shareFile],title:fname}); close(); }catch(e){/* user cancelled */} };
+    modal.appendChild(sh);
+    const dl=document.createElement("a"); dl.className="btn blue"; dl.textContent="\u2b07 Download";
+    Object.assign(dl.style,{textDecoration:"none",display:"block",textAlign:"center",padding:"13px 10px",margin:"5px 0"});
+    dl.href=URL.createObjectURL(blob); dl.download=fname;
+    modal.appendChild(dl);
+    const cl=document.createElement("button"); cl.className="btn"; cl.textContent="Close"; cl.onclick=close;
+    modal.appendChild(cl);
+  });
+}
+function exportDXF(){
   if(!requirePro("DXF export")) return;
   // Generate a simple DXF with points and lines
   let dxf="0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n";
@@ -1838,11 +1867,7 @@ async function exportDXF(){
   });
   dxf+="0\nENDSEC\n0\nEOF\n";
   const blob=new Blob([dxf],{type:"application/octet-stream"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=(jobName||"survey")+".dxf";
-  a.click();
-  URL.revokeObjectURL(a.href);
+  _deliverFile(blob,(jobName||"survey")+".dxf");
 }
 
 function _xmlEsc(s){
@@ -1864,11 +1889,7 @@ function exportLandXML(){
   xml+=`  </CgPoints>\n`;
   xml+=`</LandXML>\n`;
   const blob=new Blob([xml],{type:"application/xml"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=(jobName||"survey")+".xml";
-  a.click();
-  URL.revokeObjectURL(a.href);
+  _deliverFile(blob,(jobName||"survey")+".xml");
 }
 
 /* ── PDF PLOT EXPORT (A4, full extents, all labels, library-free) ── */
@@ -1916,11 +1937,7 @@ function exportPlotPDF(){
   const ptsW=landscape?841.89:595.28, ptsH=landscape?595.28:841.89;
   const pdfBytes=_buildPdfFromJpeg(jpg,cv.width,cv.height,ptsW,ptsH);
   const blob=new Blob([pdfBytes],{type:"application/pdf"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=(jobName||"survey")+"_plot.pdf";
-  a.click();
-  URL.revokeObjectURL(a.href);
+  _deliverFile(blob,(jobName||"survey")+"_plot.pdf");
 }
 
 function _drawPdfTitleBlock(ctx,pageW,pageH,th,T,landscape){
@@ -2081,11 +2098,7 @@ function exportSVG(){
   });
   s+=`</g>\n</svg>\n`;
   const blob=new Blob([s],{type:"image/svg+xml"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=(jobName||"survey")+".svg";
-  a.click();
-  URL.revokeObjectURL(a.href);
+  _deliverFile(blob,(jobName||"survey")+".svg");
 }
 
 /* ── GEOJSON EXPORT (GIS interchange — local grid coords) ─────── */
@@ -2118,11 +2131,7 @@ function exportKML(){
   });
   k+="</Document></kml>";
   const blob=new Blob([k],{type:"application/vnd.google-earth.kml+xml"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=(jobName||"survey")+".kml";
-  a.click();
-  URL.revokeObjectURL(a.href);
+  _deliverFile(blob,(jobName||"survey")+".kml");
   showResult("✓ KML Exported",[
     {lbl:"Points:",val:String(points.length)},
     {lbl:"Datum:",val:"WGS84 via "+geoAnchor.zoneName+" anchor"},
@@ -2154,11 +2163,7 @@ function exportGeoJSON(){
     crs_note:"Local grid coordinates (Easting, Northing"+(surveyMode==="3D"?", Elevation":"")+") in "+units+" — not lon/lat",
     features:feats};
   const blob=new Blob([JSON.stringify(gj,null,1)],{type:"application/geo+json"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=(jobName||"survey")+".geojson";
-  a.click();
-  URL.revokeObjectURL(a.href);
+  _deliverFile(blob,(jobName||"survey")+".geojson");
 }
 
 /* ── IMPORT: DXF + LandXML (merge into current job) ───────────── */
@@ -2407,11 +2412,7 @@ function exportFieldbookCSV(){
     }
   });
   const blob=new Blob([csv],{type:"text/csv"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=(jobName||"survey")+"_fieldbook.csv";
-  a.click();
-  URL.revokeObjectURL(a.href);
+  _deliverFile(blob,(jobName||"survey")+"_fieldbook.csv");
 }
 function exportFieldbookPDF(){
   const rows=_fieldbookRows();
@@ -2490,11 +2491,7 @@ function exportFieldbookPDF(){
   });
   const pdf=_buildMultiPagePdf(jpgs,cv.width,cv.height,595.28,841.89);
   const blob=new Blob([pdf],{type:"application/pdf"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=(jobName||"survey")+"_fieldbook.pdf";
-  a.click();
-  URL.revokeObjectURL(a.href);
+  _deliverFile(blob,(jobName||"survey")+"_fieldbook.pdf");
 }
 function exportFieldbook(){
   if(!requirePro("Fieldbook export")) return;
@@ -9557,6 +9554,170 @@ function _jobToLL(E,N){
 
 /* — Live GPS marker — */
 let _gpsWatchId=null,_liveFix=null,_gpsStakeTarget=null,_relocateTarget=null;
+
+/* ── NGS SURVEY MONUMENTS ───────────────────────────────────────────────
+   Discovery via the NDE radial API (verified: JSON, 500-mark cap); full
+   text datasheets fetched per-mark for recovery status + to-reach, cached
+   in the job so the field works offline. Endpoints are tried in order —
+   if the browser is CORS-blocked, the error message says so plainly and a
+   Cloudflare Worker relay is the documented fallback. */
+let _ngsMarks=[];          // [{pid,name,lat,lon,E,N,orthoHt,posDatum,posOrder,vertOrder,cond,condDate,toReach,destroyed}]
+let _ngsShow=true;
+let _ngsAutoBusy=false,_ngsAt=null;   // anchor key of the last automatic fetch
+const _NGS_BASE="https://geodesy.noaa.gov/api/nde";
+function _ngsSave(){ _lsSet("cl_ngsMarks",JSON.stringify(_ngsMarks)); _lsSet("cl_ngsShow",String(_ngsShow)); }
+function _ngsLoad(){ try{_ngsMarks=JSON.parse(_lsGet("cl_ngsMarks")||"[]");}catch(e){_ngsMarks=[];}
+  _ngsShow=_lsGet("cl_ngsShow")!=="false"; _ngsAt=_lsGet("cl_ngsAt")||null; }
+function _ngsKey(){ return geoAnchor?Math.round(geoAnchor.lat/0.043)+","+Math.round(geoAnchor.lon/0.043):null; } // ~3 mi cells; 5 mi fetch radius keeps margin at the edges
+/* Marks appear on their own: one silent list-fetch per anchor area, then
+   cached with the job. Failures stay quiet here — the manual menu button
+   is the loud diagnostic path. Datasheet batches remain explicit (they're
+   one request per mark). */
+async function _ngsAutoFetch(){
+  const key=_ngsKey();
+  if(!key||_ngsAutoBusy)return;
+  if(_ngsAt===key&&_ngsMarks.length)return;      // already have this area
+  if(_ngsAt===key&&!_ngsMarks.length)return;     // tried here, none/failed — manual button to retry
+  if(navigator.onLine===false)return;
+  _ngsAutoBusy=true;
+  try{
+    const r=await fetch(_NGS_BASE+"/radial?lat="+geoAnchor.lat+"&lon="+geoAnchor.lon+"&radius=5");
+    if(r.ok){
+      const data=await r.json();
+      const list=Array.isArray(data)?data:(data.ngsData||data.marks||[]);
+      const prev={}; _ngsMarks.forEach(m=>prev[m.pid]=m);
+      _ngsMarks=list.map(d=>{
+        const lat=parseFloat(d.lat),lon=parseFloat(d.lon);
+        const j=_gpsToJob(lat,lon)||{E:0,N:0};
+        const oldm=prev[(d.pid||"").trim()]||{};
+        return {pid:(d.pid||"").trim(),name:(d.name||"").trim(),lat,lon,E:j.E,N:j.N,
+          orthoHt:(d.orthoHt||"").trim(),posDatum:(d.posDatum||"").trim(),
+          posOrder:(d.posOrder||"").trim(),vertOrder:(d.vertOrder||"").trim(),
+          cond:oldm.cond||null,condDate:oldm.condDate||null,toReach:oldm.toReach||null,destroyed:oldm.destroyed||false};
+      }).filter(m=>m.pid);
+      _ngsAt=key;_lsSet("cl_ngsAt",key);_ngsSave();
+      if(_ngsMarks.length)plotPoints();
+    }else{_ngsAt=key;_lsSet("cl_ngsAt",key);}   // don't hammer a refusing server
+  }catch(e){ _ngsAt=key;_lsSet("cl_ngsAt",key); /* silent: offline or CORS — manual path reports */ }
+  _ngsAutoBusy=false;
+}
+function _ngsCondClass(m){
+  if(m.destroyed)return "gone";
+  if(!m.cond)return "unk";
+  const c=m.cond.toUpperCase();
+  if(/DESTROY/.test(c))return "gone";
+  const yr=parseInt((m.condDate||"").slice(0,4),10)||0;
+  if(/GOOD|MONUMENTED/.test(c)&&yr>=1990)return "good";
+  return "amber";   // poor, not recovered, or old news
+}
+async function _ngsFetchList(){
+  if(!geoAnchor){alert("Anchor the job first (GPS or imagery) — monuments are found around the anchor.");return;}
+  calculatorInput("Search radius (miles):","5",async rv=>{
+    if(rv===null)return;
+    const rad=Math.min(25,Math.max(0.5,parseFloat(rv)||5));
+    showResult("🔺 Fetching NGS marks…",[{lbl:"Around:",val:geoAnchor.lat.toFixed(5)+", "+geoAnchor.lon.toFixed(5)},{lbl:"Radius:",val:rad+" mi"}]);
+    try{
+      const r=await fetch(_NGS_BASE+"/radial?lat="+geoAnchor.lat+"&lon="+geoAnchor.lon+"&radius="+rad);
+      if(!r.ok)throw new Error("HTTP "+r.status);
+      const data=await r.json();
+      const list=Array.isArray(data)?data:(data.ngsData||data.marks||[]);
+      const prev={}; _ngsMarks.forEach(m=>prev[m.pid]=m);
+      _ngsMarks=list.map(d=>{
+        const lat=parseFloat(d.lat),lon=parseFloat(d.lon);
+        const j=_gpsToJob(lat,lon)||{E:0,N:0};
+        const old=prev[(d.pid||"").trim()]||{};
+        return {pid:(d.pid||"").trim(),name:(d.name||"").trim(),lat,lon,E:j.E,N:j.N,
+          orthoHt:(d.orthoHt||"").trim(),posDatum:(d.posDatum||"").trim(),
+          posOrder:(d.posOrder||"").trim(),vertOrder:(d.vertOrder||"").trim(),
+          cond:old.cond||null,condDate:old.condDate||null,toReach:old.toReach||null,destroyed:old.destroyed||false};
+      }).filter(m=>m.pid);
+      _ngsShow=true;_ngsAt=_ngsKey();_lsSet("cl_ngsAt",_ngsAt);_ngsSave();plotPoints();
+      showResult("🔺 NGS marks loaded",[
+        {lbl:"Found:",val:String(_ngsMarks.length)+(_ngsMarks.length>=500?" (API cap — shrink the radius)":"")},
+        {lbl:"Next:",val:"tap any triangle for details; \"Fetch all details\" in the 🛰 menu pulls recovery status + directions for offline use"}]);
+    }catch(e){
+      showResult("⚠ NGS fetch failed",[
+        {lbl:"Error:",val:String(e.message||e)},
+        {lbl:"If this says CORS / Failed to fetch:",val:"the NGS server refused a browser request — the fix is a tiny relay on your own Cloudflare (free). The feature is built to switch to it by changing one URL."},
+        {lbl:"Also check:",val:"data signal — fetching needs it (mobile data is plenty); once cached, dead zones don't matter."}]);
+    }
+  });
+}
+function _ngsParseDatasheet(txt){
+  // HISTORY rows: "  PID  HISTORY     - 19660601  GOOD  NGS" (date sometimes just a year)
+  const out={cond:null,condDate:null,toReach:null,destroyed:false};
+  const hist=[...txt.matchAll(/HISTORY\s+-\s*(\d{4,8})\s+([A-Z ]+?)(?:\s{2,}|\t|$)/gm)];
+  if(hist.length){
+    const last=hist[hist.length-1];
+    out.condDate=last[1];out.cond=last[2].trim();
+    out.destroyed=hist.some(h=>/DESTROY/.test(h[2]));
+  }
+  const di=txt.search(/STATION DESCRIPTION|DESCRIBED BY/);
+  if(di>=0){
+    out.toReach=txt.slice(di).split(/\n/).slice(1).join(" ").replace(/\s+/g," ").trim().slice(0,700);
+  }
+  return out;
+}
+async function _ngsFetchDetail(m){
+  const tries=[_NGS_BASE+"/datasheet?pid="+m.pid,
+               "https://www.ngs.noaa.gov/cgi-bin/ds_mark.prl?PidBox="+m.pid];
+  for(const u of tries){
+    try{
+      const r=await fetch(u);
+      if(!r.ok)continue;
+      let txt=await r.text();
+      try{const j=JSON.parse(txt);txt=JSON.stringify(j);}catch(e){}
+      txt=txt.replace(/<[^>]+>/g,"\n");
+      const p=_ngsParseDatasheet(txt);
+      if(p.cond||p.toReach){Object.assign(m,p);_ngsSave();return true;}
+    }catch(e){}
+  }
+  return false;
+}
+async function _ngsFetchAllDetails(){
+  if(!_ngsMarks.length){alert("Fetch the mark list first.");return;}
+  let ok=0,fail=0;
+  showResult("🔺 Fetching datasheets…",[{lbl:"Marks:",val:String(_ngsMarks.length)},{lbl:"Note:",val:"one small request per mark — a few MB total, fine on mobile data; results show when done"}]);
+  for(const m of _ngsMarks){
+    if(m.cond||m.destroyed){ok++;continue;}
+    (await _ngsFetchDetail(m))?ok++:fail++;
+  }
+  plotPoints();
+  showResult("🔺 Datasheets cached",[{lbl:"Loaded:",val:String(ok)},{lbl:"Failed:",val:String(fail)+(fail?" — endpoint may need the relay; tap marks individually to retry":"")},
+    {lbl:"Offline:",val:"everything fetched is stored with the job"}]);
+}
+function _ngsCard(m){
+  openModal((modal,close)=>{
+    const cls=_ngsCondClass(m);
+    const stat=m.destroyed?"DESTROYED":(m.cond?(m.cond+" ("+(m.condDate||"?")+")"):"status not fetched yet");
+    modal.innerHTML="<h2>🔺 "+(m.name||m.pid)+"</h2>"+
+      "<div class='result-box'>"+
+      "<span class='lbl'>PID:</span> <span class='val'>"+m.pid+"</span><br>"+
+      "<span class='lbl'>Status:</span> <span class='val'>"+stat+"</span><br>"+
+      "<span class='lbl'>Datum:</span> <span class='val'>"+(m.posDatum||"—")+(m.posOrder?" (order "+m.posOrder+")":"")+"</span><br>"+
+      (m.orthoHt?"<span class='lbl'>Elev (NAVD88):</span> <span class='val'>"+m.orthoHt+" m</span><br>":"")+
+      "<span class='lbl'>Job coords:</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span>"+
+      "</div>"+
+      (m.toReach?"<p class='info' style='font-size:.84em'><b>To reach:</b> "+m.toReach+"</p>":"");
+    const mk=(t,cls2,fn)=>{const b=document.createElement("button");b.className="btn "+cls2;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    if(!m.cond&&!m.destroyed)mk("📄 Fetch status & directions","ok",async()=>{
+      const okd=await _ngsFetchDetail(m);
+      close();
+      okd?_ngsCard(m):showResult("⚠ Couldn't fetch the datasheet",[{lbl:"Likely:",val:"no signal, or the endpoint needs the Cloudflare relay"}]);
+    });
+    mk("📌 Create point & navigate","ok",()=>{
+      let pt=points.find(p=>p.Type==="NGS"&&p.Description===("NGS "+m.pid));
+      if(!pt){
+        pt={Point:pointCounter++,Northing:m.N,Easting:m.E,Elevation:parseFloat(m.orthoHt)*3.280833333||100,
+            Type:"NGS",Description:"NGS "+m.pid,Flag:"",ih:0};
+        points.push(pt);saveData();
+      }
+      _gpsStakeTarget=pt.Point;close();startLiveGps&&startLiveGps();plotPoints();
+    });
+    mk("Close","",close);
+  });
+}
+
 function _gpsToJob(lat,lon){
   // Same anchor transform the imagery uses, so the marker sits on the
   // correct imagery pixel in both grid-coordinate and local-coordinate jobs.
@@ -9943,6 +10104,11 @@ function satelliteMenu(){
       satBasemap=satBasemap==="esri"?"topo":"esri";saveData();close();satelliteMenu();});
     mk("📌 Store Point at GPS position","ok",()=>{close();storeGpsPoint();});
     mk("⬇ Cache visible area for offline","blue",()=>{close();cacheAreaOffline();});
+    mk("🔺 NGS monuments — fetch nearby","blue",()=>{close();_ngsFetchList();});
+    if(_ngsMarks.length){
+      mk("🔺 Fetch all details (status + directions)","blue",()=>{close();_ngsFetchAllDetails();});
+      mk(_ngsShow?"🔺 Hide monuments":"🔺 Show monuments ("+_ngsMarks.length+")","",()=>{_ngsShow=!_ngsShow;_ngsSave();close();plotPoints();});
+    }
     sl("Opacity",satOpacity,0.15,1,0.05,v=>satOpacity=v);
     sl("Rotation nudge (°) — align imagery to plot",satRotNudge,-5,5,0.1,v=>satRotNudge=v);
     mk(_gpsWatchId!=null?"📍 Live GPS marker: ON — tap to stop":"📍 Live GPS marker: OFF — tap to start",
@@ -10601,6 +10767,29 @@ function plotPoints(extCtx,extW,extH){
     }
   }
   try{
+    if(typeof _ngsAutoFetch==="function")_ngsAutoFetch();
+    window._ngsHits=[];
+    if(typeof _ngsMarks!=="undefined"&&_ngsShow&&_ngsMarks.length){
+      ctx.save();
+      const cols={good:"#39d353",amber:"#f0a020",unk:"#9aa0a6",gone:"#555"};
+      _ngsMarks.forEach(m=>{
+        const cls=_ngsCondClass(m);
+        if(cls==="gone")return;              // destroyed: hidden (still in cache)
+        const sx=X(m.E),sy=Y(m.N);
+        if(sx<-20||sy<-20||sx>w+20||sy>h+20)return;
+        ctx.strokeStyle=cols[cls];ctx.fillStyle="rgba(0,0,0,.55)";ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(sx,sy-7);ctx.lineTo(sx-6.5,sy+5);ctx.lineTo(sx+6.5,sy+5);ctx.closePath();
+        ctx.fill();ctx.stroke();
+        ctx.beginPath();ctx.arc(sx,sy+1,1.6,0,2*Math.PI);ctx.fillStyle=cols[cls];ctx.fill();
+        if(showLabels){
+          ctx.font="9px 'Courier New',monospace";ctx.textAlign="left";ctx.textBaseline="middle";
+          ctx.lineWidth=3;ctx.lineJoin="round";ctx.strokeStyle="rgba(0,0,0,.85)";
+          ctx.strokeText(m.name||m.pid,sx+9,sy);ctx.fillStyle=cols[cls];ctx.fillText(m.name||m.pid,sx+9,sy);
+        }
+        window._ngsHits.push({x:sx,y:sy,m});
+      });
+      ctx.restore();
+    }
     window._deedBadges=[];
     if(_deedPlot)_deedPlot.figures.forEach((fig,_dfI)=>{
       const g=fig.computed; if(!g)return;
@@ -11198,6 +11387,10 @@ function zoomToOccupied(){
       return;
     }
     // ⚠ outside-parent badge: tap = move that figure directly
+    if(window._ngsHits&&window._ngsHits.length){
+      const hitN=window._ngsHits.find(t=>Math.hypot(mx-t.x,my-t.y)<=14);
+      if(hitN){_ngsCard(hitN.m);return;}
+    }
     if(window._deedBadges&&window._deedBadges.length&&_deedPlot){
       const hitB=window._deedBadges.find(b=>mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h);
       if(hitB){_deedAdjustScope=hitB.fi;_deedAdjustStart();return;}
