@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.18">
+<meta name="application-name" content="ChainLink-v4.4.19">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.18</title>
+<title>ChainLink Survey v4.4.19</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.18";
+const APP_VERSION = "4.4.19";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9758,7 +9758,7 @@ function _ngsCard(m){
       })():"")+
       "<span class='lbl'>Job coords ("+units+", this job's grid):</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span><br>"+
       (function(){
-        if(m.src==="published")return "<span class='lbl'>Source:</span> <span class='val'>PUBLISHED NGS coordinate in job units — RTK-ready"+(m.delta!=null?" (transform check Δ "+m.delta.toFixed(2)+" "+units+")":"")+"</span>";
+        if(m.src==="published")return "<span class='lbl'>Source:</span> <span class='val'>PUBLISHED NGS coordinate in job units — RTK-ready"+((typeof _jobZoneDelta==="number"&&_jobZoneDelta>2)?" · note: imagery/GPS-anchor sits ~"+_jobZoneDelta.toFixed(0)+" "+units+" off true grid here (does not affect this coordinate)":"")+"</span>";
         if(m.src==="projected")return "<span class='lbl'>Source:</span> <span class='val'>projected from mark lat/lon (published SPC unavailable or different zone)</span>";
         const jz=(typeof _jobZone==="function")?_jobZone():null;
         return "<span class='lbl'>Source:</span> <span class='val'>anchor-relative approximation — job grid is not a proven SPC/UTM zone"+((geoAnchor&&geoAnchor.zoneName)?" (anchor zoneName: "+geoAnchor.zoneName+")":"")+"</span>";
@@ -9793,26 +9793,38 @@ function _ngsCard(m){
   });
 }
 
-let _jobZoneCache;   // undefined = not resolved yet; null = resolved to "no zone"
+let _jobZoneCache;      // undefined = unresolved; null = no zone
+let _jobZoneDelta=null; // anchor's imagery-correspondence offset from pure grid (job units)
 function _jobZone(){
   if(_jobZoneCache!==undefined)return _jobZoneCache;
   const A=geoAnchor; if(!A){return _jobZoneCache=null;}
   const u=A.m2u||_m2u();
-  const cands=[];
+  const dOf=zz=>{try{const p=_projForward(A.lat,A.lon,zz);
+    return Math.hypot(p.E*u-A.E,p.N*u-A.N);}catch(e){return Infinity;}};
+  // A DECLARED zone is trusted for the grid identity: the job's
+  // coordinates were created by projecting through it. The anchor's
+  // lat/lon<->E/N pair is the IMAGERY correspondence — it carries the
+  // GPS-start error and any fine-tune drag — so its residual is recorded
+  // as the imagery offset, never used to reject the declared zone.
   if(A.zoneName){
-    const exact=_SPC_ZONES.find(zz=>zz.name===A.zoneName); if(exact)cands.push(exact);
-    const code=(A.zoneName.match(/\((\d{4})\)/)||[])[1];
-    if(code){const byCode=_SPC_ZONES.find(zz=>zz.name.indexOf("("+code+")")>=0); if(byCode&&!cands.includes(byCode))cands.push(byCode);}
-    const pref=_SPC_ZONES.find(zz=>zz.name.slice(0,10)===A.zoneName.slice(0,10)); if(pref&&!cands.includes(pref))cands.push(pref);
+    let z=null;
+    if(/^UTM /.test(A.zoneName)) z=_utmZoneFor(A.lat,A.lon);
+    else{
+      z=_SPC_ZONES.find(zz=>zz.name===A.zoneName)||null;
+      if(!z){const code=(A.zoneName.match(/\((\d{4})\)/)||[])[1];
+        if(code)z=_SPC_ZONES.find(zz=>zz.name.indexOf("("+code+")")>=0)||null;}
+      if(!z)z=_SPC_ZONES.find(zz=>zz.name.slice(0,10)===A.zoneName.slice(0,10))||null;
+    }
+    if(z){_jobZoneDelta=dOf(z);return _jobZoneCache=z;}
   }
-  (typeof _spcCandidates==="function"?_spcCandidates(A.lat,A.lon):[]).forEach(zz=>{if(!cands.includes(zz))cands.push(zz);});
-  cands.push(_utmZoneFor(A.lat,A.lon));
+  // Undeclared: guess by location, but then the anchor must PROVE it
+  // (within 1 ft) — with no declaration there is nothing else to trust.
+  const cands=(typeof _spcCandidates==="function"?_spcCandidates(A.lat,A.lon):[]).concat([_utmZoneFor(A.lat,A.lon)]);
   for(const zz of cands){
-    try{
-      const p=_projForward(A.lat,A.lon,zz);
-      if(Math.abs(p.E*u-A.E)<1&&Math.abs(p.N*u-A.N)<1){_jobZoneCache=zz;return zz;}
-    }catch(e){}
+    const d=dOf(zz);
+    if(d<1){_jobZoneDelta=d;return _jobZoneCache=zz;}
   }
+  _jobZoneDelta=null;
   return _jobZoneCache=null;
 }
 function _gpsToJob(lat,lon){
