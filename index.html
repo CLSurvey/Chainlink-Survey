@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.21">
+<meta name="application-name" content="ChainLink-v4.4.22">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.21</title>
+<title>ChainLink Survey v4.4.22</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.21";
+const APP_VERSION = "4.4.22";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9754,12 +9754,22 @@ function _ngsCard(m){
       })():"")+
       (m.monType?"<span class='lbl'>Monument:</span> <span class='val'>"+m.monType+(m.stamping?" — stamped "+m.stamping:"")+"</span><br>":"")+
       (m.setting?"<span class='lbl'>Setting:</span> <span class='val'>"+m.setting+(m.stability?" (stability "+m.stability+")":"")+"</span><br>":"")+
-      (m.spcZone?(function(){
-        const nM=parseFloat(m.spcN),eM=parseFloat(m.spcE),F=3937/1200;
-        const conv=(isFinite(nM)&&isFinite(eM))?"<br><span class='lbl'></span> <span class='val'>= N "+(nM*F).toFixed(2)+"  E "+(eM*F).toFixed(2)+" (US survey ft)</span>":"";
-        return "<span class='lbl'>SPC "+m.spcZone+" (published, meters):</span> <span class='val'>N "+m.spcN+"  E "+m.spcE+"</span>"+conv+"<br>";
-      })():"")+
-      "<span class='lbl'>Job coords ("+units+", this job's grid):</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span><br>"+
+      (function(){
+        // Published-adopted: one coordinate, stated once — job-grid units
+        // as the headline, metric SPC as the parenthetical. Otherwise both
+        // lines appear because their disagreement is the information.
+        if(m.src==="published")
+          return "<span class='lbl'>Coordinates (published NGS · "+units+", job grid):</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span><br>"+
+                 "<span class='lbl'></span> <span class='val' style='opacity:.75'>(SPC "+m.spcZone+": N "+m.spcN+"  E "+m.spcE+" m)</span><br>";
+        let out="";
+        if(m.spcZone){
+          const nM=parseFloat(m.spcN),eM=parseFloat(m.spcE),F=3937/1200;
+          const conv=(isFinite(nM)&&isFinite(eM))?"<br><span class='lbl'></span> <span class='val'>= N "+(nM*F).toFixed(2)+"  E "+(eM*F).toFixed(2)+" (US survey ft)</span>":"";
+          out+="<span class='lbl'>SPC "+m.spcZone+" (published, meters):</span> <span class='val'>N "+m.spcN+"  E "+m.spcE+"</span>"+conv+"<br>";
+        }
+        out+="<span class='lbl'>Job coords ("+units+", this job's grid):</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span><br>";
+        return out;
+      })()+
       (function(){
         if(m.src==="published")return "<span class='lbl'>Source:</span> <span class='val'>PUBLISHED NGS coordinate in job units — RTK-ready"+((typeof _jobZoneDelta==="number"&&_jobZoneDelta>2)?" · note: imagery/GPS-anchor sits ~"+_jobZoneDelta.toFixed(0)+" "+units+" off true grid here (does not affect this coordinate)":"")+"</span>";
         if(m.src==="projected")return "<span class='lbl'>Source:</span> <span class='val'>projected from mark lat/lon (published SPC unavailable or different zone)</span>";
