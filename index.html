@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.11">
+<meta name="application-name" content="ChainLink-v4.4.12">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.11</title>
+<title>ChainLink Survey v4.4.12</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.11";
+const APP_VERSION = "4.4.12";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9575,8 +9575,8 @@ async function _ngsFetch(u){
   const q="/?u="+encodeURIComponent(u);
   const seq=[_NGS_PROXY+q,_NGS_PROXY2+q,u];
   let lastErr=null;
-  for(const x of seq){
-    try{ const r=await fetch(x); if(r.ok)return r; lastErr=new Error("HTTP "+r.status); }
+  for(let i=0;i<seq.length;i++){
+    try{ const r=await fetch(seq[i]); if(r.ok){r._via=["relay","relay2","direct"][i]||"?";return r;} lastErr=new Error("HTTP "+r.status); }
     catch(e){ lastErr=e; }
   }
   throw lastErr||new Error("NGS unreachable");
@@ -9601,21 +9601,34 @@ async function _ngsAutoFetch(){
     if(r.ok){
       const data=await r.json();
       const list=Array.isArray(data)?data:(data.ngsData||data.marks||[]);
-      const prev={}; _ngsMarks.forEach(m=>prev[m.pid]=m);
-      _ngsMarks=list.map(d=>{
-        const lat=parseFloat(d.lat),lon=parseFloat(d.lon);
-        const j=_gpsToJob(lat,lon)||{E:0,N:0};
-        const oldm=prev[(d.pid||"").trim()]||{};
-        return {pid:(d.pid||"").trim(),name:(d.name||"").trim(),lat,lon,E:j.E,N:j.N,
-          orthoHt:(d.orthoHt||"").trim(),posDatum:(d.posDatum||"").trim(),
-          posOrder:(d.posOrder||"").trim(),vertOrder:(d.vertOrder||"").trim(),
-          cond:oldm.cond||null,condDate:oldm.condDate||null,toReach:oldm.toReach||null,destroyed:oldm.destroyed||false};
-      }).filter(m=>m.pid);
+      _ngsMerge(list);
       _ngsAt=key;_lsSet("cl_ngsAt",key);_ngsSave();
       if(_ngsMarks.length)plotPoints();
     }else{_ngsAt=key;_lsSet("cl_ngsAt",key);}   // don't hammer a refusing server
   }catch(e){ _ngsAt=key;_lsSet("cl_ngsAt",key); /* silent: offline or CORS — manual path reports */ }
   _ngsAutoBusy=false;
+}
+/* One mapper for both fetch paths: the radial list carries condition,
+   recovery date, monument details and SPC coords directly. */
+function _ngsMerge(list){
+  const prev={}; _ngsMarks.forEach(m=>prev[m.pid]=m);
+  _ngsMarks=list.map(d=>{
+    const lat=parseFloat(d.lat),lon=parseFloat(d.lon);
+    const j=_gpsToJob(lat,lon)||{E:0,N:0};
+    const o=prev[(d.pid||"").trim()]||{};
+    const cond=(d.condition||"").trim()||o.cond||null;
+    return {pid:(d.pid||"").trim(),name:(d.name||"").trim(),lat,lon,E:j.E,N:j.N,
+      orthoHt:(d.orthoHt||"").trim(),posDatum:(d.posDatum||"").trim(),
+      posOrder:(d.posOrder||"").trim(),vertOrder:(d.vertOrder||"").trim(),
+      monType:(d.monumentType||"").replace(/^[A-Z0-9]+ = /,"").trim(),
+      stamping:(d.stamping||"").trim(),
+      setting:(d.setting||"").replace(/^[0-9]+ = /,"").trim(),
+      stability:(d.stability||"").trim(),
+      spcZone:(d.spcZone||"").trim(),spcN:(d.spcNorthing||"").trim(),spcE:(d.spcEasting||"").trim(),
+      cond,condDate:(d.lastRecovered||"").trim()||o.condDate||null,
+      toReach:o.toReach||null,
+      destroyed:/DESTROY/i.test(cond||"")||o.destroyed||false};
+  }).filter(m=>m.pid);
 }
 function _ngsCondClass(m){
   if(m.destroyed)return "gone";
@@ -9636,20 +9649,12 @@ async function _ngsFetchList(){
       const r=await _ngsFetch(_NGS_BASE+"/radial?lat="+geoAnchor.lat+"&lon="+geoAnchor.lon+"&radius="+rad);
       const data=await r.json();
       const list=Array.isArray(data)?data:(data.ngsData||data.marks||[]);
-      const prev={}; _ngsMarks.forEach(m=>prev[m.pid]=m);
-      _ngsMarks=list.map(d=>{
-        const lat=parseFloat(d.lat),lon=parseFloat(d.lon);
-        const j=_gpsToJob(lat,lon)||{E:0,N:0};
-        const old=prev[(d.pid||"").trim()]||{};
-        return {pid:(d.pid||"").trim(),name:(d.name||"").trim(),lat,lon,E:j.E,N:j.N,
-          orthoHt:(d.orthoHt||"").trim(),posDatum:(d.posDatum||"").trim(),
-          posOrder:(d.posOrder||"").trim(),vertOrder:(d.vertOrder||"").trim(),
-          cond:old.cond||null,condDate:old.condDate||null,toReach:old.toReach||null,destroyed:old.destroyed||false};
-      }).filter(m=>m.pid);
+      _ngsMerge(list);
       _ngsShow=true;_ngsAt=_ngsKey();_lsSet("cl_ngsAt",_ngsAt);_ngsSave();plotPoints();
       showResult("🔺 NGS marks loaded",[
         {lbl:"Found:",val:String(_ngsMarks.length)+(_ngsMarks.length>=500?" (API cap — shrink the radius)":"")},
-        {lbl:"Next:",val:"tap any triangle for details; \"Fetch all details\" in the 🛰 menu pulls recovery status + directions for offline use"}]);
+        {lbl:"Queried:",val:(+geoAnchor.lat).toFixed(4)+", "+(+geoAnchor.lon).toFixed(4)+"  r="+rad+" mi  via "+(r._via||"?")},
+        {lbl:"Status:",val:"condition + last-recovery come with the list — triangles are colored now. Datasheet fetch adds walking directions."}]);
     }catch(e){
       showResult("⚠ NGS fetch failed",[
         {lbl:"Error:",val:String(e.message||e)},
@@ -9710,11 +9715,14 @@ function _ngsCard(m){
       "<span class='lbl'>Status:</span> <span class='val'>"+stat+"</span><br>"+
       "<span class='lbl'>Datum:</span> <span class='val'>"+(m.posDatum||"—")+(m.posOrder?" (order "+m.posOrder+")":"")+"</span><br>"+
       (m.orthoHt?"<span class='lbl'>Elev (NAVD88):</span> <span class='val'>"+m.orthoHt+" m</span><br>":"")+
+      (m.monType?"<span class='lbl'>Monument:</span> <span class='val'>"+m.monType+(m.stamping?" — stamped "+m.stamping:"")+"</span><br>":"")+
+      (m.setting?"<span class='lbl'>Setting:</span> <span class='val'>"+m.setting+(m.stability?" (stability "+m.stability+")":"")+"</span><br>":"")+
+      (m.spcZone?"<span class='lbl'>SPC "+m.spcZone+":</span> <span class='val'>N "+m.spcN+"  E "+m.spcE+"</span><br>":"")+
       "<span class='lbl'>Job coords:</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span>"+
       "</div>"+
       (m.toReach?"<p class='info' style='font-size:.84em'><b>To reach:</b> "+m.toReach+"</p>":"");
     const mk=(t,cls2,fn)=>{const b=document.createElement("button");b.className="btn "+cls2;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    if(!m.cond&&!m.destroyed)mk("📄 Fetch status & directions","ok",async()=>{
+    if(!m.toReach&&!m.destroyed)mk("📄 Fetch walking directions","ok",async()=>{
       const okd=await _ngsFetchDetail(m);
       close();
       okd?_ngsCard(m):showResult("⚠ Couldn't fetch the datasheet",[{lbl:"Likely:",val:"no signal, or the endpoint needs the Cloudflare relay"}]);
