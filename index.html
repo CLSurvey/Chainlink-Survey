@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.12">
+<meta name="application-name" content="ChainLink-v4.4.14">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.12</title>
+<title>ChainLink Survey v4.4.14</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.12";
+const APP_VERSION = "4.4.14";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9674,13 +9674,15 @@ function _ngsParseDatasheet(txt){
   }
   const di=txt.search(/STATION DESCRIPTION|DESCRIBED BY/);
   if(di>=0){
-    out.toReach=txt.slice(di).split(/\n/).slice(1).join(" ").replace(/\s+/g," ").trim().slice(0,700);
+    out.toReach=txt.slice(di).split(/\n/).slice(1)
+      .map(l=>l.replace(/^\s*[A-Z]{2}\d{4}['\u2019.\s]/,""))   // strip "DG3682'" line prefixes (DSDATA format)
+      .join(" ").replace(/\s+/g," ").trim().slice(0,700);
   }
   return out;
 }
 async function _ngsFetchDetail(m){
-  const tries=[_NGS_BASE+"/datasheet?pid="+m.pid,
-               "https://www.ngs.noaa.gov/cgi-bin/ds_mark.prl?PidBox="+m.pid];
+  const tries=["https://www.ngs.noaa.gov/cgi-bin/ds_mark.prl?PidBox="+m.pid,
+               _NGS_BASE+"/datasheet?pid="+m.pid];
   for(const u of tries){
     try{
       const r=await _ngsFetch(u);
@@ -9688,7 +9690,8 @@ async function _ngsFetchDetail(m){
       try{const j=JSON.parse(txt);txt=JSON.stringify(j);}catch(e){}
       txt=txt.replace(/<[^>]+>/g,"\n");
       const p=_ngsParseDatasheet(txt);
-      if(p.cond||p.toReach){Object.assign(m,p);_ngsSave();return true;}
+      if(p.toReach){if(!m.cond&&p.cond)m.cond=p.cond,m.condDate=m.condDate||p.condDate;
+        m.toReach=p.toReach;m.destroyed=m.destroyed||p.destroyed;_ngsSave();return true;}
     }catch(e){}
   }
   return false;
@@ -9714,19 +9717,37 @@ function _ngsCard(m){
       "<span class='lbl'>PID:</span> <span class='val'>"+m.pid+"</span><br>"+
       "<span class='lbl'>Status:</span> <span class='val'>"+stat+"</span><br>"+
       "<span class='lbl'>Datum:</span> <span class='val'>"+(m.posDatum||"—")+(m.posOrder?" (order "+m.posOrder+")":"")+"</span><br>"+
-      (m.orthoHt?"<span class='lbl'>Elev (NAVD88):</span> <span class='val'>"+m.orthoHt+" m</span><br>":"")+
+      (m.orthoHt&&isFinite(parseFloat(m.orthoHt))?(function(){
+        const hM=parseFloat(m.orthoHt),hF=hM*3937/1200;
+        return units==="m"
+          ?"<span class='lbl'>Elev (NAVD88):</span> <span class='val'>"+hM.toFixed(2)+" m ("+hF.toFixed(2)+" ft)</span><br>"
+          :"<span class='lbl'>Elev (NAVD88):</span> <span class='val'>"+hF.toFixed(2)+" ft ("+hM.toFixed(2)+" m)</span><br>";
+      })():"")+
       (m.monType?"<span class='lbl'>Monument:</span> <span class='val'>"+m.monType+(m.stamping?" — stamped "+m.stamping:"")+"</span><br>":"")+
       (m.setting?"<span class='lbl'>Setting:</span> <span class='val'>"+m.setting+(m.stability?" (stability "+m.stability+")":"")+"</span><br>":"")+
-      (m.spcZone?"<span class='lbl'>SPC "+m.spcZone+":</span> <span class='val'>N "+m.spcN+"  E "+m.spcE+"</span><br>":"")+
-      "<span class='lbl'>Job coords:</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span>"+
+      (m.spcZone?(function(){
+        const nM=parseFloat(m.spcN),eM=parseFloat(m.spcE),F=3937/1200;
+        const conv=(isFinite(nM)&&isFinite(eM))?"<br><span class='lbl'></span> <span class='val'>= N "+(nM*F).toFixed(2)+"  E "+(eM*F).toFixed(2)+" (US survey ft)</span>":"";
+        return "<span class='lbl'>SPC "+m.spcZone+" (published, meters):</span> <span class='val'>N "+m.spcN+"  E "+m.spcE+"</span>"+conv+"<br>";
+      })():"")+
+      "<span class='lbl'>Job coords ("+units+", this job's grid):</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span>"+
       "</div>"+
       (m.toReach?"<p class='info' style='font-size:.84em'><b>To reach:</b> "+m.toReach+"</p>":"");
     const mk=(t,cls2,fn)=>{const b=document.createElement("button");b.className="btn "+cls2;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    if(!m.toReach&&!m.destroyed)mk("📄 Fetch walking directions","ok",async()=>{
-      const okd=await _ngsFetchDetail(m);
-      close();
-      okd?_ngsCard(m):showResult("⚠ Couldn't fetch the datasheet",[{lbl:"Likely:",val:"no signal, or the endpoint needs the Cloudflare relay"}]);
-    });
+    if(!m.toReach&&!m.destroyed){
+      const fb=document.createElement("button");fb.className="btn ok";fb.textContent="📄 Fetch walking directions";
+      fb.onclick=async()=>{
+        fb.disabled=true;fb.textContent="⏳ Fetching the datasheet…";
+        let okd=false;
+        try{ okd=await _ngsFetchDetail(m); }catch(e){}
+        close();
+        okd?_ngsCard(m):showResult("⚠ Couldn't fetch the datasheet",[
+          {lbl:"Tried:",val:"the NGS datasheet page via your relay, then directly"},
+          {lbl:"Means:",val:"NGS's datasheet service refused or timed out — the mark's status and coordinates above are unaffected (they came with the list)"},
+          {lbl:"Try:",val:"again in a minute, or on better signal"}]);
+      };
+      modal.appendChild(fb);
+    }
     mk("📌 Create point & navigate","ok",()=>{
       let pt=points.find(p=>p.Type==="NGS"&&p.Description===("NGS "+m.pid));
       if(!pt){
