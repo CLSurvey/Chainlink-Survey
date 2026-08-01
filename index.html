@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.9">
+<meta name="application-name" content="ChainLink-v4.4.11">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.9</title>
+<title>ChainLink Survey v4.4.11</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.9";
+const APP_VERSION = "4.4.11";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9565,6 +9565,22 @@ let _ngsMarks=[];          // [{pid,name,lat,lon,E,N,orthoHt,posDatum,posOrder,v
 let _ngsShow=true;
 let _ngsAutoBusy=false,_ngsAt=null;   // anchor key of the last automatic fetch
 const _NGS_BASE="https://geodesy.noaa.gov/api/nde";
+/* NGS blocks cross-origin browser requests, so calls go through a tiny
+   relay Worker on the app's own domain (proxy-first), falling back to a
+   direct request in case NGS ever opens CORS. The relay just forwards to
+   allow-listed NGS hosts and adds the CORS header. */
+const _NGS_PROXY="https://ngs.chainlinksurvey.com";          // custom domain (if/when attached)
+const _NGS_PROXY2="https://ngs-relay.chainlinksurvey.workers.dev"; // the Worker's built-in address — live now
+async function _ngsFetch(u){
+  const q="/?u="+encodeURIComponent(u);
+  const seq=[_NGS_PROXY+q,_NGS_PROXY2+q,u];
+  let lastErr=null;
+  for(const x of seq){
+    try{ const r=await fetch(x); if(r.ok)return r; lastErr=new Error("HTTP "+r.status); }
+    catch(e){ lastErr=e; }
+  }
+  throw lastErr||new Error("NGS unreachable");
+}
 function _ngsSave(){ _lsSet("cl_ngsMarks",JSON.stringify(_ngsMarks)); _lsSet("cl_ngsShow",String(_ngsShow)); }
 function _ngsLoad(){ try{_ngsMarks=JSON.parse(_lsGet("cl_ngsMarks")||"[]");}catch(e){_ngsMarks=[];}
   _ngsShow=_lsGet("cl_ngsShow")!=="false"; _ngsAt=_lsGet("cl_ngsAt")||null; }
@@ -9581,7 +9597,7 @@ async function _ngsAutoFetch(){
   if(navigator.onLine===false)return;
   _ngsAutoBusy=true;
   try{
-    const r=await fetch(_NGS_BASE+"/radial?lat="+geoAnchor.lat+"&lon="+geoAnchor.lon+"&radius=5");
+    const r=await _ngsFetch(_NGS_BASE+"/radial?lat="+geoAnchor.lat+"&lon="+geoAnchor.lon+"&radius=5");
     if(r.ok){
       const data=await r.json();
       const list=Array.isArray(data)?data:(data.ngsData||data.marks||[]);
@@ -9617,8 +9633,7 @@ async function _ngsFetchList(){
     const rad=Math.min(25,Math.max(0.5,parseFloat(rv)||5));
     showResult("🔺 Fetching NGS marks…",[{lbl:"Around:",val:geoAnchor.lat.toFixed(5)+", "+geoAnchor.lon.toFixed(5)},{lbl:"Radius:",val:rad+" mi"}]);
     try{
-      const r=await fetch(_NGS_BASE+"/radial?lat="+geoAnchor.lat+"&lon="+geoAnchor.lon+"&radius="+rad);
-      if(!r.ok)throw new Error("HTTP "+r.status);
+      const r=await _ngsFetch(_NGS_BASE+"/radial?lat="+geoAnchor.lat+"&lon="+geoAnchor.lon+"&radius="+rad);
       const data=await r.json();
       const list=Array.isArray(data)?data:(data.ngsData||data.marks||[]);
       const prev={}; _ngsMarks.forEach(m=>prev[m.pid]=m);
@@ -9638,7 +9653,7 @@ async function _ngsFetchList(){
     }catch(e){
       showResult("⚠ NGS fetch failed",[
         {lbl:"Error:",val:String(e.message||e)},
-        {lbl:"If this says CORS / Failed to fetch:",val:"the NGS server refused a browser request — the fix is a tiny relay on your own Cloudflare (free). The feature is built to switch to it by changing one URL."},
+        {lbl:"If this says Failed to fetch:",val:"the NGS server refuses direct browser requests, and the relay at ngs.chainlinksurvey.com isn't answering yet. Once that Worker exists, this button works with no app update."},
         {lbl:"Also check:",val:"data signal — fetching needs it (mobile data is plenty); once cached, dead zones don't matter."}]);
     }
   });
@@ -9663,8 +9678,7 @@ async function _ngsFetchDetail(m){
                "https://www.ngs.noaa.gov/cgi-bin/ds_mark.prl?PidBox="+m.pid];
   for(const u of tries){
     try{
-      const r=await fetch(u);
-      if(!r.ok)continue;
+      const r=await _ngsFetch(u);
       let txt=await r.text();
       try{const j=JSON.parse(txt);txt=JSON.stringify(j);}catch(e){}
       txt=txt.replace(/<[^>]+>/g,"\n");
