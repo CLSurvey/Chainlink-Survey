@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.17">
+<meta name="application-name" content="ChainLink-v4.4.18">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.17</title>
+<title>ChainLink Survey v4.4.18</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.17";
+const APP_VERSION = "4.4.18";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9618,7 +9618,7 @@ function _ngsMerge(list){
     const j=_gpsToJob(lat,lon)||{E:0,N:0};
     const o=prev[(d.pid||"").trim()]||{};
     const cond=(d.condition||"").trim()||o.cond||null;
-    return {pid:(d.pid||"").trim(),name:(d.name||"").trim(),lat,lon,E:j.E,N:j.N,
+    const mm={pid:(d.pid||"").trim(),name:(d.name||"").trim(),lat,lon,E:j.E,N:j.N,
       orthoHt:(d.orthoHt||"").trim(),posDatum:(d.posDatum||"").trim(),
       posOrder:(d.posOrder||"").trim(),vertOrder:(d.vertOrder||"").trim(),
       monType:(d.monumentType||"").replace(/^[A-Z0-9]+ = /,"").trim(),
@@ -9629,7 +9629,32 @@ function _ngsMerge(list){
       cond,condDate:(d.lastRecovered||"").trim()||o.condDate||null,
       toReach:o.toReach||null,
       destroyed:/DESTROY/i.test(cond||"")||o.destroyed||false};
+    const best=_ngsBestEN(mm);
+    if(best){mm.E=best.E;mm.N=best.N;mm.src=best.src;mm.delta=best.delta;}
+    return mm;
   }).filter(m=>m.pid);
+}
+/* The published SPC coordinate IS the monument's coordinate. When the
+   job's grid is a proven SPC zone and the mark's published values agree
+   with projecting its lat/lon through that zone (same-zone check), the
+   job coordinates ARE the published values in job units — what an RTK
+   rover navigates to. Projection is the fallback; the phone-anchor
+   transform is last resort for non-grid jobs. */
+function _ngsBestEN(m){
+  const A=geoAnchor; if(!A)return null;
+  const u=A.m2u||_m2u();
+  const z=(typeof _jobZone==="function")?_jobZone():null;
+  if(z){
+    const pj=_projForward(m.lat,m.lon,z);
+    const pubN=parseFloat(m.spcN),pubE=parseFloat(m.spcE);
+    if(isFinite(pubN)&&isFinite(pubE)){
+      const dd=Math.hypot(pj.E*u-pubE*u, pj.N*u-pubN*u);
+      if(dd<10) return {E:pubE*u,N:pubN*u,src:"published",delta:dd};
+    }
+    return {E:pj.E*u,N:pj.N*u,src:"projected",delta:null};
+  }
+  const j=_gpsToJob(m.lat,m.lon);
+  return j?{E:j.E,N:j.N,src:"approx",delta:null}:null;
 }
 function _ngsCondClass(m){
   if(m.destroyed)return "gone";
@@ -9732,8 +9757,12 @@ function _ngsCard(m){
         return "<span class='lbl'>SPC "+m.spcZone+" (published, meters):</span> <span class='val'>N "+m.spcN+"  E "+m.spcE+"</span>"+conv+"<br>";
       })():"")+
       "<span class='lbl'>Job coords ("+units+", this job's grid):</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span><br>"+
-      (function(){const jz=(typeof _jobZone==="function")?_jobZone():null;
-        return "<span class='lbl'>Placed via:</span> <span class='val'>"+(jz?("true grid — "+jz.name):"anchor-relative fallback (no zone reproduced the anchor — anchor zoneName: "+((geoAnchor&&geoAnchor.zoneName)||"none")+")")+"</span>";})()+
+      (function(){
+        if(m.src==="published")return "<span class='lbl'>Source:</span> <span class='val'>PUBLISHED NGS coordinate in job units — RTK-ready"+(m.delta!=null?" (transform check Δ "+m.delta.toFixed(2)+" "+units+")":"")+"</span>";
+        if(m.src==="projected")return "<span class='lbl'>Source:</span> <span class='val'>projected from mark lat/lon (published SPC unavailable or different zone)</span>";
+        const jz=(typeof _jobZone==="function")?_jobZone():null;
+        return "<span class='lbl'>Source:</span> <span class='val'>anchor-relative approximation — job grid is not a proven SPC/UTM zone"+((geoAnchor&&geoAnchor.zoneName)?" (anchor zoneName: "+geoAnchor.zoneName+")":"")+"</span>";
+      })()+
       "</div>"+
       (m.toReach?"<p class='info' style='font-size:.84em'><b>To reach:</b> "+m.toReach+"</p>":"");
     const mk=(t,cls2,fn)=>{const b=document.createElement("button");b.className="btn "+cls2;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
@@ -10856,8 +10885,8 @@ function plotPoints(extCtx,extW,extH){
         window._ngsReproj=true;
         let moved=0;
         _ngsMarks.forEach(m=>{
-          const j=_gpsToJob(m.lat,m.lon);
-          if(j&&(Math.abs(j.E-m.E)>0.01||Math.abs(j.N-m.N)>0.01)){m.E=j.E;m.N=j.N;moved++;}
+          const b=_ngsBestEN(m);
+          if(b&&(Math.abs(b.E-m.E)>0.01||Math.abs(b.N-m.N)>0.01||m.src!==b.src)){m.E=b.E;m.N=b.N;m.src=b.src;m.delta=b.delta;moved++;}
         });
         if(moved){_ngsSave();}
       }
