@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.19">
+<meta name="application-name" content="ChainLink-v4.4.20">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.19</title>
+<title>ChainLink Survey v4.4.20</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.19";
+const APP_VERSION = "4.4.20";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9432,7 +9432,7 @@ function _setAnchor(lat,lon,zone,E,N){
   const m=_ll2merc(lat,lon);
   const p=_projForward(lat,lon,zone);
   geoAnchor={lat,lon,E,N,mx:m.mx,my:m.my,conv:p.conv,zoneName:zone.name,m2u:_m2u()};
-  _jobZoneCache=undefined;
+  _jobZoneCache=null;
 }
 
 function _getTile(z,x,y){
@@ -9584,6 +9584,7 @@ async function _ngsFetch(u){
 }
 function _ngsSave(){ _lsSet("cl_ngsMarks",JSON.stringify(_ngsMarks)); _lsSet("cl_ngsShow",String(_ngsShow)); }
 function _ngsLoad(){ try{_ngsMarks=JSON.parse(_lsGet("cl_ngsMarks")||"[]");}catch(e){_ngsMarks=[];}
+  window._ngsReproj=false;   // each job load re-derives mark coords through the current transform
   _ngsShow=_lsGet("cl_ngsShow")!=="false"; _ngsAt=_lsGet("cl_ngsAt")||null; }
 function _ngsKey(){ return geoAnchor?Math.round(geoAnchor.lat/0.043)+","+Math.round(geoAnchor.lon/0.043):null; } // ~3 mi cells; 5 mi fetch radius keeps margin at the edges
 /* Marks appear on their own: one silent list-fetch per anchor area, then
@@ -9793,11 +9794,14 @@ function _ngsCard(m){
   });
 }
 
-let _jobZoneCache;      // undefined = unresolved; null = no zone
+let _jobZoneCache=null; // {key, z} — keyed to the anchor's identity, so an
+                        // early call before the anchor loads (or a job
+                        // switch) can never poison the answer
 let _jobZoneDelta=null; // anchor's imagery-correspondence offset from pure grid (job units)
 function _jobZone(){
-  if(_jobZoneCache!==undefined)return _jobZoneCache;
-  const A=geoAnchor; if(!A){return _jobZoneCache=null;}
+  const A=geoAnchor; if(!A){_jobZoneDelta=null;return null;}
+  const _k=A.lat+","+A.lon+","+A.E+","+A.N+","+(A.zoneName||"");
+  if(_jobZoneCache&&_jobZoneCache.key===_k)return _jobZoneCache.z;
   const u=A.m2u||_m2u();
   const dOf=zz=>{try{const p=_projForward(A.lat,A.lon,zz);
     return Math.hypot(p.E*u-A.E,p.N*u-A.N);}catch(e){return Infinity;}};
@@ -9815,17 +9819,18 @@ function _jobZone(){
         if(code)z=_SPC_ZONES.find(zz=>zz.name.indexOf("("+code+")")>=0)||null;}
       if(!z)z=_SPC_ZONES.find(zz=>zz.name.slice(0,10)===A.zoneName.slice(0,10))||null;
     }
-    if(z){_jobZoneDelta=dOf(z);return _jobZoneCache=z;}
+    if(z){_jobZoneDelta=dOf(z);_jobZoneCache={key:_k,z};return z;}
   }
   // Undeclared: guess by location, but then the anchor must PROVE it
   // (within 1 ft) — with no declaration there is nothing else to trust.
   const cands=(typeof _spcCandidates==="function"?_spcCandidates(A.lat,A.lon):[]).concat([_utmZoneFor(A.lat,A.lon)]);
   for(const zz of cands){
     const d=dOf(zz);
-    if(d<1){_jobZoneDelta=d;return _jobZoneCache=zz;}
+    if(d<1){_jobZoneDelta=d;_jobZoneCache={key:_k,z:zz};return zz;}
   }
   _jobZoneDelta=null;
-  return _jobZoneCache=null;
+  _jobZoneCache={key:_k,z:null};
+  return null;
 }
 function _gpsToJob(lat,lon){
   const A=geoAnchor; if(!A)return null;
