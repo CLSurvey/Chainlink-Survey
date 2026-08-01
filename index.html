@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.22">
+<meta name="application-name" content="ChainLink-v4.4.23">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.22</title>
+<title>ChainLink Survey v4.4.23</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.22";
+const APP_VERSION = "4.4.23";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9562,6 +9562,96 @@ let _gpsWatchId=null,_liveFix=null,_gpsStakeTarget=null,_relocateTarget=null;
    in the job so the field works offline. Endpoints are tried in order —
    if the browser is CORS-blocked, the error message says so plainly and a
    Cloudflare Worker relay is the documented fallback. */
+/* ── ADDRESS SEARCH + PARCEL HIGHLIGHT ──────────────────────────────────
+   Census geocoder (address -> lat/lon) and the county's public ArcGIS
+   parcel layer (point -> polygon), both via JSONP so no relay changes are
+   needed. Parcel linework is county tax mapping — recon grade, stated on
+   the card. Etowah's service is the built-in default; other counties can
+   come later as a configurable URL. */
+let _parcelHi=null;   // {pts:[[{E,N},...]...], attrs:{}, label} — session only
+let _jsonpN=0;
+function _jsonp(url,timeoutMs){
+  return new Promise((res,rej)=>{
+    const cb="_clJp"+(++_jsonpN);
+    const t=setTimeout(()=>{cleanup();rej(new Error("timed out"));},timeoutMs||15000);
+    function cleanup(){clearTimeout(t);delete window[cb];sc.remove();}
+    window[cb]=d=>{cleanup();res(d);};
+    const sc=document.createElement("script");
+    sc.src=url+(url.indexOf("?")>=0?"&":"?")+"callback="+cb;
+    sc.onerror=()=>{cleanup();rej(new Error("script load failed"));};
+    document.head.appendChild(sc);
+  });
+}
+async function _geocodeAddress(q){
+  const u="https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address="+
+          encodeURIComponent(q)+"&benchmark=Public_AR_Current&format=jsonp";
+  const d=await _jsonp(u);
+  const m=d&&d.result&&d.result.addressMatches&&d.result.addressMatches[0];
+  if(!m)return null;
+  return {lat:m.coordinates.y, lon:m.coordinates.x, matched:m.matchedAddress||q};
+}
+const _PARCEL_SVC="https://web3.kcsgis.com/kcsgis/rest/services/Etowah/Etowah_Public_ISV/MapServer/91";
+function _merc(latDeg,lonDeg){const R=6378137,r=Math.PI/180;
+  return {x:lonDeg*r*R, y:R*Math.log(Math.tan(Math.PI/4+latDeg*r/2))};}
+function _imerc(x,y){const R=6378137,d=180/Math.PI;
+  return {lat:(2*Math.atan(Math.exp(y/R))-Math.PI/2)*d, lon:(x/R)*d};}
+async function _parcelAt(lat,lon){
+  const p=_merc(lat,lon);
+  const u=_PARCEL_SVC+"/query?geometry="+p.x.toFixed(2)+","+p.y.toFixed(2)+
+    "&geometryType=esriGeometryPoint&inSR=3857&spatialRel=esriSpatialRelIntersects"+
+    "&outFields=*&returnGeometry=true&outSR=3857&f=json";
+  const d=await _jsonp(u,20000);
+  if(d&&d.error)throw new Error(d.error.message||("service error "+d.error.code));
+  const f=d&&d.features&&d.features[0];
+  if(!f||!f.geometry||!f.geometry.rings)return null;
+  const rings=f.geometry.rings.map(r=>r.map(([mx,my])=>{
+    const ll=_imerc(mx,my); const j=_gpsToJob(ll.lat,ll.lon); return j?{E:j.E,N:j.N}:null;
+  }).filter(Boolean));
+  return {rings,attrs:f.attributes||{}};
+}
+function _parcelCard(pc){
+  const a=pc.attrs||{};
+  const keys=Object.keys(a).filter(k=>a[k]!==null&&a[k]!==""&&!/^(shape|objectid|globalid)/i.test(k)).slice(0,10);
+  const rows=keys.map(k=>({lbl:k+":",val:String(a[k]).slice(0,90)}));
+  rows.push({lbl:"⚠",val:"county tax-map linework — recon grade, not a boundary survey"});
+  rows.push({lbl:"Clear:",val:"🛰 menu → Clear parcel highlight"});
+  showResult("🔲 Parcel highlighted",rows);
+}
+async function _findAddressFlow(){
+  if(!geoAnchor){alert("Anchor the job first — the parcel lands in job coordinates.");return;}
+  calculatorInput("Address (street, city):","",async q=>{
+    if(q===null||!String(q).trim())return;
+    showResult("🔎 Searching…",[{lbl:"Address:",val:q}]);
+    try{
+      const g=await _geocodeAddress(q);
+      if(!g){showResult("🔎 No match",[{lbl:"Tried:",val:q},{lbl:"Tip:",val:"include the city — e.g. 210 Hoke St, Gadsden AL"}]);return;}
+      const j=_gpsToJob(g.lat,g.lon);
+      if(j){window._pendingCenter={E:j.E,N:j.N};}
+      let pc=null,perr=null;
+      try{ pc=await _parcelAt(g.lat,g.lon); }catch(e){ perr=String(e.message||e); }
+      if(pc){ pc.label=g.matched; _parcelHi=pc; plotPoints(); _parcelCard(pc); }
+      else showResult("🔎 Address found — no parcel",[
+        {lbl:"Matched:",val:g.matched},
+        {lbl:"View centered",val:"there"},
+        {lbl:"Parcel:",val:perr?("service said: "+perr):"no polygon at that point (outside Etowah's layer, or the service refused the browser — tell Claude what this card says)"}]);
+    }catch(e){
+      showResult("⚠ Address search failed",[{lbl:"Error:",val:String(e.message||e)},
+        {lbl:"Means:",val:"the Census geocoder didn't answer — needs signal; if it repeats, tell Claude"}]);
+    }
+  });
+}
+async function _parcelHereFlow(){
+  if(!geoAnchor){alert("Anchor the job first.");return;}
+  const c=window._viewCenterEN||null;
+  const ll=c?_jobToLL(c.E,c.N):null;
+  if(!ll){alert("Couldn't read the map center.");return;}
+  showResult("🔲 Querying parcel…",[{lbl:"At:",val:"map center"}]);
+  try{
+    const pc=await _parcelAt(ll.lat,ll.lon);
+    if(pc){pc.label="map center";_parcelHi=pc;plotPoints();_parcelCard(pc);}
+    else showResult("🔲 No parcel",[{lbl:"Here:",val:"nothing in the county layer at this point"}]);
+  }catch(e){showResult("⚠ Parcel query failed",[{lbl:"Error:",val:String(e.message||e)}]);}
+}
 let _ngsMarks=[];          // [{pid,name,lat,lon,E,N,orthoHt,posDatum,posOrder,vertOrder,cond,condDate,toReach,destroyed}]
 let _ngsShow=true;
 let _ngsAutoBusy=false,_ngsAt=null;   // anchor key of the last automatic fetch
@@ -10241,6 +10331,9 @@ function satelliteMenu(){
       satBasemap=satBasemap==="esri"?"topo":"esri";saveData();close();satelliteMenu();});
     mk("📌 Store Point at GPS position","ok",()=>{close();storeGpsPoint();});
     mk("⬇ Cache visible area for offline","blue",()=>{close();cacheAreaOffline();});
+    mk("🔎 Find address & parcel","blue",()=>{close();_findAddressFlow();});
+    mk("🔲 Parcel at map center","blue",()=>{close();_parcelHereFlow();});
+    if(typeof _parcelHi!=="undefined"&&_parcelHi)mk("✕ Clear parcel highlight","",()=>{_parcelHi=null;close();plotPoints();});
     mk("🔺 NGS monuments — fetch nearby","blue",()=>{close();_ngsFetchList();});
     mk("🔧 NGS diagnostics","",()=>{close();
       const rows=[{lbl:"App:",val:(typeof APP_VERSION!=="undefined"?APP_VERSION:"?")}];
@@ -10521,6 +10614,14 @@ function plotPoints(extCtx,extW,extH){
   const{scale,offX,offY}=T;
   const X=e=>e*scale+offX;
   const Y=n=>h-(n*scale+offY);
+  // one-shot recenter request (address search etc.) — done here because
+  // this is where the live transform actually exists
+  if(window._pendingCenter){
+    const pc=window._pendingCenter; window._pendingCenter=null;
+    viewOffsetX+=(w/2-X(pc.E)); viewOffsetY+=(h/2-Y(pc.N));
+    plotPoints(); return;
+  }
+  window._viewCenterEN={E:(w/2-offX)/scale, N:(h-(h/2)-offY)/scale};
   try{ _drawSatellite(ctx,w,h,T); }catch(e){}
   // Grid — ensure a sensible step even with 1 point (rng=1)
   // Minimum step = enough to show at least 3 grid lines across the view
@@ -10932,6 +11033,17 @@ function plotPoints(extCtx,extW,extH){
   }
   try{
     if(typeof _ngsAutoFetch==="function")_ngsAutoFetch();
+    if(typeof _parcelHi!=="undefined"&&_parcelHi&&_parcelHi.rings){
+      ctx.save();
+      ctx.fillStyle="rgba(240,160,32,.13)";ctx.strokeStyle="#f0a020";ctx.lineWidth=2.5;
+      _parcelHi.rings.forEach(r=>{
+        if(r.length<3)return;
+        ctx.beginPath();
+        r.forEach((v,i)=>{const sx=X(v.E),sy=Y(v.N);i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);});
+        ctx.closePath();ctx.fill();ctx.stroke();
+      });
+      ctx.restore();
+    }
     window._ngsHits=[];
     if(typeof _ngsMarks!=="undefined"&&_ngsShow&&_ngsMarks.length){
       // Cached marks re-derive job coordinates from their stored lat/lon
