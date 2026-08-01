@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.15">
+<meta name="application-name" content="ChainLink-v4.4.17">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.15</title>
+<title>ChainLink Survey v4.4.17</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.15";
+const APP_VERSION = "4.4.17";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9432,6 +9432,7 @@ function _setAnchor(lat,lon,zone,E,N){
   const m=_ll2merc(lat,lon);
   const p=_projForward(lat,lon,zone);
   geoAnchor={lat,lon,E,N,mx:m.mx,my:m.my,conv:p.conv,zoneName:zone.name,m2u:_m2u()};
+  _jobZoneCache=undefined;
 }
 
 function _getTile(z,x,y){
@@ -9730,7 +9731,9 @@ function _ngsCard(m){
         const conv=(isFinite(nM)&&isFinite(eM))?"<br><span class='lbl'></span> <span class='val'>= N "+(nM*F).toFixed(2)+"  E "+(eM*F).toFixed(2)+" (US survey ft)</span>":"";
         return "<span class='lbl'>SPC "+m.spcZone+" (published, meters):</span> <span class='val'>N "+m.spcN+"  E "+m.spcE+"</span>"+conv+"<br>";
       })():"")+
-      "<span class='lbl'>Job coords ("+units+", this job's grid):</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span>"+
+      "<span class='lbl'>Job coords ("+units+", this job's grid):</span> <span class='val'>N "+m.N.toFixed(2)+"  E "+m.E.toFixed(2)+"</span><br>"+
+      (function(){const jz=(typeof _jobZone==="function")?_jobZone():null;
+        return "<span class='lbl'>Placed via:</span> <span class='val'>"+(jz?("true grid — "+jz.name):"anchor-relative fallback (no zone reproduced the anchor — anchor zoneName: "+((geoAnchor&&geoAnchor.zoneName)||"none")+")")+"</span>";})()+
       "</div>"+
       (m.toReach?"<p class='info' style='font-size:.84em'><b>To reach:</b> "+m.toReach+"</p>":"");
     const mk=(t,cls2,fn)=>{const b=document.createElement("button");b.className="btn "+cls2;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
@@ -9761,21 +9764,41 @@ function _ngsCard(m){
   });
 }
 
+let _jobZoneCache;   // undefined = not resolved yet; null = resolved to "no zone"
+function _jobZone(){
+  if(_jobZoneCache!==undefined)return _jobZoneCache;
+  const A=geoAnchor; if(!A){return _jobZoneCache=null;}
+  const u=A.m2u||_m2u();
+  const cands=[];
+  if(A.zoneName){
+    const exact=_SPC_ZONES.find(zz=>zz.name===A.zoneName); if(exact)cands.push(exact);
+    const code=(A.zoneName.match(/\((\d{4})\)/)||[])[1];
+    if(code){const byCode=_SPC_ZONES.find(zz=>zz.name.indexOf("("+code+")")>=0); if(byCode&&!cands.includes(byCode))cands.push(byCode);}
+    const pref=_SPC_ZONES.find(zz=>zz.name.slice(0,10)===A.zoneName.slice(0,10)); if(pref&&!cands.includes(pref))cands.push(pref);
+  }
+  (typeof _spcCandidates==="function"?_spcCandidates(A.lat,A.lon):[]).forEach(zz=>{if(!cands.includes(zz))cands.push(zz);});
+  cands.push(_utmZoneFor(A.lat,A.lon));
+  for(const zz of cands){
+    try{
+      const p=_projForward(A.lat,A.lon,zz);
+      if(Math.abs(p.E*u-A.E)<1&&Math.abs(p.N*u-A.N)<1){_jobZoneCache=zz;return zz;}
+    }catch(e){}
+  }
+  return _jobZoneCache=null;
+}
 function _gpsToJob(lat,lon){
   const A=geoAnchor; if(!A)return null;
-  // TRUE-GRID PATH: when the job rides a known SPC/UTM zone, project the
-  // point through the zone itself — verified to centimeters against
-  // NGS-published coordinates. The mercator-delta shortcut below stays as
-  // the fallback for local/assumed jobs; it matches imagery perfectly but
-  // accumulates ~0.4% northing error per distance from the anchor.
-  if(A.zoneName){
-    let z=null;
-    if(/^UTM /.test(A.zoneName)) z=_utmZoneFor(A.lat,A.lon);       // the ANCHOR's zone = the job's grid
-    else z=_SPC_ZONES.find(zz=>zz.name===A.zoneName)||null;
-    if(z){
-      const p=_projForward(lat,lon,z), u=A.m2u||_m2u();
-      return {E:p.E*u, N:p.N*u};
-    }
+  // TRUE-GRID PATH: find the zone that actually generated this job's
+  // grid — candidate zones are PROVEN by projecting the anchor's own
+  // lat/lon and requiring it to reproduce the anchor's stored E/N within
+  // a foot. Name strings can drift between versions; the anchor's own
+  // coordinates cannot lie. No zone reproduces the anchor => the job grid
+  // isn't plain SPC/UTM (local, assumed, or shifted) and the
+  // imagery-consistent fallback below is the correct behavior.
+  const z=_jobZone();
+  if(z){
+    const p=_projForward(lat,lon,z), u=A.m2u||_m2u();
+    return {E:p.E*u, N:p.N*u};
   }
   // fallback: anchor-relative mercator delta (imagery-consistent)
   const M2U=A.m2u||_m2u();
@@ -10826,6 +10849,18 @@ function plotPoints(extCtx,extW,extH){
     if(typeof _ngsAutoFetch==="function")_ngsAutoFetch();
     window._ngsHits=[];
     if(typeof _ngsMarks!=="undefined"&&_ngsShow&&_ngsMarks.length){
+      // Cached marks re-derive job coordinates from their stored lat/lon
+      // once per session — so a transform improvement (or a re-anchor)
+      // reaches the cache instead of leaving stale derived values behind.
+      if(!window._ngsReproj){
+        window._ngsReproj=true;
+        let moved=0;
+        _ngsMarks.forEach(m=>{
+          const j=_gpsToJob(m.lat,m.lon);
+          if(j&&(Math.abs(j.E-m.E)>0.01||Math.abs(j.N-m.N)>0.01)){m.E=j.E;m.N=j.N;moved++;}
+        });
+        if(moved){_ngsSave();}
+      }
       ctx.save();
       const cols={good:"#39d353",amber:"#f0a020",unk:"#9aa0a6",gone:"#555"};
       _ngsMarks.forEach(m=>{
