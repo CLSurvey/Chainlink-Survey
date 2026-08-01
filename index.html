@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.25">
+<meta name="application-name" content="ChainLink-v4.4.26">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.25</title>
+<title>ChainLink Survey v4.4.26</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -904,7 +904,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.25";
+const APP_VERSION = "4.4.26";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9623,22 +9623,45 @@ function _imerc(x,y){const R=6378137,d=180/Math.PI;
   return {lat:(2*Math.atan(Math.exp(y/R))-Math.PI/2)*d, lon:(x/R)*d};}
 async function _parcelAt(lat,lon){
   const p=_merc(lat,lon);
-  const u=_PARCEL_SVC+"/query?geometry="+p.x.toFixed(2)+","+p.y.toFixed(2)+
+  const base=_PARCEL_SVC+"/query?geometry="+p.x.toFixed(2)+","+p.y.toFixed(2)+
     "&geometryType=esriGeometryPoint&inSR=3857&spatialRel=esriSpatialRelIntersects"+
     "&outFields=*&returnGeometry=true&outSR=3857&f=json";
-  const d=await _jsonp(u,20000);
+  let d=await _jsonp(base,20000);
   if(d&&d.error)throw new Error(d.error.message||("service error "+d.error.code));
-  const f=d&&d.features&&d.features[0];
-  if(!f||!f.geometry||!f.geometry.rings)return null;
+  let near=false;
+  if(!d||!d.features||!d.features.length){
+    // Address points geocode to the STREET CENTERLINE, and tax parcels
+    // stop at the right-of-way — so an exact-point miss is normal. Search
+    // a 40 m circle and take the nearest parcel instead.
+    d=await _jsonp(base+"&distance=40&units=esriSRUnit_Meter",20000);
+    if(d&&d.error)throw new Error(d.error.message||("service error "+d.error.code));
+    near=true;
+  }
+  const feats=(d&&d.features)||[];
+  if(!feats.length)return null;
+  let f=feats[0];
+  if(feats.length>1){
+    // nearest centroid to the queried point wins
+    let best=Infinity;
+    feats.forEach(ff=>{
+      const r0=(ff.geometry&&ff.geometry.rings&&ff.geometry.rings[0])||[];
+      if(!r0.length)return;
+      let cx=0,cy=0;r0.forEach(([mx,my])=>{cx+=mx;cy+=my;});cx/=r0.length;cy/=r0.length;
+      const dd=Math.hypot(cx-p.x,cy-p.y);
+      if(dd<best){best=dd;f=ff;}
+    });
+  }
+  if(!f.geometry||!f.geometry.rings)return null;
   const rings=f.geometry.rings.map(r=>r.map(([mx,my])=>{
     const ll=_imerc(mx,my); const j=_gpsToJob(ll.lat,ll.lon); return j?{E:j.E,N:j.N}:null;
   }).filter(Boolean));
-  return {rings,attrs:f.attributes||{}};
+  return {rings,attrs:f.attributes||{},near,count:feats.length};
 }
 function _parcelCard(pc){
   const a=pc.attrs||{};
   const keys=Object.keys(a).filter(k=>a[k]!==null&&a[k]!==""&&!/^(shape|objectid|globalid)/i.test(k)).slice(0,10);
   const rows=keys.map(k=>({lbl:k+":",val:String(a[k]).slice(0,90)}));
+  if(pc.near)rows.push({lbl:"Note:",val:"addresses geocode to the street — this is the nearest parcel to that point"+(pc.count>1?" ("+pc.count+" nearby; closest chosen)":"")});
   rows.push({lbl:"⚠",val:"county tax-map linework — recon grade, not a boundary survey"});
   rows.push({lbl:"Clear:",val:"🛰 menu → Clear parcel highlight"});
   showResult("🔲 Parcel highlighted",rows);
