@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.5.6">
+<meta name="application-name" content="ChainLink-v4.5.7">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.5.6</title>
+<title>ChainLink Survey v4.5.7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -775,7 +775,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 
 
 
-/* ══ CHAINLINK WORKSPACE SHELL v4.5.6 ═══════════════════════════ */
+/* ══ CHAINLINK WORKSPACE SHELL v4.5.7 ═══════════════════════════ */
 #drawerToggle{
   width:38px;height:38px;border-radius:10px;border:1px solid var(--border2);
   background:var(--surface2);color:var(--accent);display:flex;align-items:center;
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.5.6";
+const APP_VERSION = "4.5.7";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9342,6 +9342,48 @@ function _deedNewRecordId(){return "deed-"+Date.now().toString(36)+"-"+Math.rand
 function _deedRecordIds(){return [...new Set((_deedPlot?_deedPlot.figures:[]).map(f=>f.recordId||"deed-1"))];}
 function _deedRecordFigures(id){return _deedPlot?_deedPlot.figures.filter(f=>(f.recordId||"deed-1")===id):[];}
 function _deedRecordLabel(id){const f=_deedRecordFigures(id)[0];return f?(f.recordName||id):id;}
+/* v4.5.7 — record lifecycle: every imported deed, including the first, can be removed
+   independently. Shared deed/tie points are retained when another figure still owns them. */
+function _deedDeleteRecord(id){
+  if(!_deedPlot)return;
+  const figs=_deedRecordFigures(id);
+  if(!figs.length)return;
+  const label=_deedRecordLabel(id);
+  confirmDialog("Delete "+label+" and all of its figures from this job? Measured/job points and other deed records will be kept.",yes=>{
+    if(!yes)return;
+    _takeSnapshot("Delete deed record");
+    const candidate=new Set();
+    figs.forEach(f=>{(f.ptNums||[]).forEach(n=>candidate.add(n));(f.tiePtNums||[]).forEach(n=>candidate.add(n));});
+    _deedPlot.figures=_deedPlot.figures.filter(f=>(f.recordId||"deed-1")!==id);
+    const retained=new Set();
+    _deedPlot.figures.forEach(f=>{(f.ptNums||[]).forEach(n=>retained.add(n));(f.tiePtNums||[]).forEach(n=>retained.add(n));});
+    points=points.filter(p=>!(p.Type==="Deed"&&candidate.has(p.Point)&&!retained.has(p.Point)));
+    if(!_deedPlot.figures.length)_deedPlot=null;
+    else _deedRecompute();
+    _deedAdjustRecordId=null;_deedAdjustScope=null;_deedAppendMode=false;
+    saveData();updateStatus();plotPoints();
+    if(document.getElementById("projectDrawer")?.classList.contains("open"))renderDrawerTab("records");
+  });
+}
+function _deedDeleteRecordPicker(){
+  const ids=_deedRecordIds();
+  if(!ids.length){alert("There are no deed records to delete.");return;}
+  openModal((m,c)=>{
+    m.innerHTML="<h2>Delete Deed Record</h2><p class='info'>Choose a record to remove. Only geometry belonging to that imported deed is removed; measured/job points and other records stay in the job.</p>";
+    ids.forEach(id=>{const b=document.createElement("button");b.className="btn danger";b.textContent="🗑 "+_deedRecordLabel(id)+" ("+_deedRecordFigures(id).length+" figures)";b.onclick=()=>{c();_deedDeleteRecord(id);};m.appendChild(b);});
+    const x=document.createElement("button");x.className="btn";x.textContent="Back";x.onclick=c;m.appendChild(x);
+  });
+}
+function _deedRecordActions(id){
+  const figs=_deedRecordFigures(id);if(!figs.length)return;
+  openModal((m,c)=>{
+    m.innerHTML="<h2>"+_esc(_deedRecordLabel(id))+"</h2><p class='info'>"+figs.length+" figure"+(figs.length===1?"":"s")+" in this imported record.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+(cls||"");b.textContent=t;b.onclick=()=>{c();fn();};m.appendChild(b);};
+    mk("↔ Move / snap this record","ok",()=>{_deedAdjustRecordId=id;_deedAdjustScope=null;_deedAdjustStart();});
+    mk("🗑 Delete this record","danger",()=>_deedDeleteRecord(id));
+    mk("Back","",()=>openProjectDrawer("records"));
+  });
+}
 function _deedAssignRecord(figs,name){
   const id=_deedNewRecordId();
   figs.forEach(f=>{f.recordId=id;f.recordName=name||("Deed "+(_deedRecordIds().length+1));f.recordRot=f.recordRot||0;});
@@ -9933,7 +9975,8 @@ function _deedMovePicker(){
     m2.innerHTML="<h2>Move which figure?</h2><p class='info'>Drag with one finger. Rotation stays with the record.</p>";
     _deedPlot.figures.forEach((f,i)=>{
       const b=document.createElement("button");b.className="btn blue";
-      b.textContent=f.name+(f.autoStacked?"  ⚠ needs placing":(_deedExceptOutside(f)?"  ⚠ outside parent":""));
+      const rec=(f.recordName||_deedRecordLabel(f.recordId||"deed-1"));
+      b.textContent=(rec?rec+" · ":"")+f.name+(f.autoStacked?"  ⚠ needs placing":(_deedExceptOutside(f)?"  ⚠ outside parent":""));
       b.onclick=()=>{c2();_deedFigureActions(i);};
       m2.appendChild(b);});
     const cc=document.createElement("button");cc.className="btn";cc.textContent="Back";
@@ -9945,6 +9988,7 @@ function _deedFigureActions(i){
   openModal((m3,c3)=>{
     m3.innerHTML="<h2>"+f.name+"</h2><p class='info'>Deeds often start these at a described corner — snapping to its point number is exact.</p>";
     const mk3=(t,cls,fn)=>{const bb=document.createElement("button");bb.className="btn "+cls;bb.textContent=t;bb.onclick=fn;m3.appendChild(bb)};
+    mk3("✏ Rename figure","blue",()=>{c3();alphaInput("Figure name:",f.name||"",nm=>{nm=String(nm||"").trim();if(nm){f.name=nm;saveData();plotPoints();_deedFigureActions(i);}});});
     mk3("🖐 Drag it on the map","ok",()=>{c3();_deedAdjustScope=i;_deedAdjustStart();});
     mk3("⌖ Snap start to point #","blue",()=>{c3();
       calculatorInput(f.name+" starts at point #:","",pn=>{
@@ -14146,7 +14190,7 @@ window.addEventListener("keydown",e=>{
 
 
 
-/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.5.6 ════════════════ */
+/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.5.7 ════════════════ */
 let _drawerTab="overview";
 let _activeWorkspace="field";
 function _esc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -14186,12 +14230,13 @@ function renderDrawerTab(tab){
     ids.forEach(id=>{
       const figs=_deedRecordFigures(id),boundary=figs.find(f=>f.kind==="boundary")||figs[0];
       const ac=boundary&&boundary.computed&&boundary.kind!=="easement"?(_deedArea(boundary.computed)/43560).toFixed(3)+" ac":"";
-      _drawerItem(body,String(id),_deedRecordLabel(id),figs.length+" figure"+(figs.length===1?"":"s")+(ac?" · "+ac:""),()=>{closeProjectDrawer();_deedAdjustRecordId=id;_deedAdjustScope=null;_deedAdjustStart()});
+      _drawerItem(body,String(id),_deedRecordLabel(id),figs.length+" figure"+(figs.length===1?"":"s")+(ac?" · "+ac:""),()=>{closeProjectDrawer();_deedRecordActions(id)});
     });
     _drawerSection(body,"Record tools");
     _drawerItem(body,"+","Import another deed",ids.length?"Add an independent record":"Start a deed record",()=>{closeProjectDrawer();ids.length?_deedImportAnother():deedPlotterMenu()});
     if(ids.length)_drawerItem(body,"↔","Move / snap record","Rigid placement against points or courses",()=>{closeProjectDrawer();_deedRecordPicker()});
     if(ids.length)_drawerItem(body,"2","Two-point fit","Fit record to measured control",()=>{closeProjectDrawer();_deedFitTwoPoint()});
+    if(ids.length)_drawerItem(body,"×","Delete deed record","Remove one imported record without clearing the job",()=>{closeProjectDrawer();_deedDeleteRecordPicker()});
   } else if(_drawerTab==="points"){
     _drawerSection(body,"Points");
     const arr=points.slice().sort((a,b)=>Number(a.Point)-Number(b.Point)).slice(0,150);
@@ -14225,8 +14270,8 @@ function openWorkspace(name){
     _wsGroup2(body,"Field data");add("Point List","Review and edit stored points","",pointListMenu,points.length+" PTS");add("Shift Elevations","Tie assumed elevations to a benchmark","",elevationShift);add("Flag Point","Mark control or questionable shots","",flagPoint);
   } else if(name==="records"){
     const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
-    _wsGroup2(body,"Import and assemble");add(ids.length?"Open Deed Plotter":"Import First Deed","Paste legal text, photo or PDF","accent",deedPlotterMenu,ids.length?ids.length+" RECORDS":null);add("Import Another Deed","Keep existing record geometry","accent",()=>ids.length?_deedImportAnother():deedPlotterMenu());if(ids.length)add("Move / Snap Record","Rigid corner and course fitting","primary",_deedRecordPicker);if(ids.length)add("Two-Point Fit","Fit one record to two measured points","",_deedFitTwoPoint);if(ids.length)add("Move One Figure","Adjust an exception or easement","",_deedMovePicker);
-    if(ids.length){_wsGroup2(body,"Current records");ids.forEach(id=>{const figs=_deedRecordFigures(id);add(_deedRecordLabel(id),figs.length+" figure"+(figs.length===1?"":"s"),"",()=>{_deedAdjustRecordId=id;_deedAdjustScope=null;_deedAdjustStart()},"RECORD "+id)})}
+    _wsGroup2(body,"Import and assemble");add(ids.length?"Open Deed Plotter":"Import First Deed","Paste legal text, photo or PDF","accent",deedPlotterMenu,ids.length?ids.length+" RECORDS":null);add("Import Another Deed","Keep existing record geometry","accent",()=>ids.length?_deedImportAnother():deedPlotterMenu());if(ids.length)add("Move / Snap Record","Rigid corner and course fitting","primary",_deedRecordPicker);if(ids.length)add("Two-Point Fit","Fit one record to two measured points","",_deedFitTwoPoint);if(ids.length)add("Move One Figure","Adjust an exception or easement","",_deedMovePicker);if(ids.length)add("Delete Deed Record","Remove one imported record without clearing the job","",_deedDeleteRecordPicker);
+    if(ids.length){_wsGroup2(body,"Current records");ids.forEach(id=>{const figs=_deedRecordFigures(id);add(_deedRecordLabel(id),figs.length+" figure"+(figs.length===1?"":"s"),"",()=>_deedRecordActions(id),"RECORD "+id)})}
   } else if(name==="cogo"){
     _wsGroup2(body,"Coordinate geometry");add("Open COGO Tools","Inverse, projection, intersections and area","accent",cogoMenu);add("Inverse","Distance and direction between points","",cogoInverse);add("Area / Perimeter","Compute selected boundary area","",cogoArea);add("Rotate / Align","Transform stored job geometry","",cogoRotateAlign);add("Draw Connection","Connect stored points","",drawConnection);
   } else if(name==="stake"){
