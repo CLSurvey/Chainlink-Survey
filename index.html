@@ -8677,6 +8677,45 @@ function _deedAliquotCalibrate(spec,SW,SE,NE,NW){
       raw:"ALIQUOT CALIBRATED "+lbl+": az "+az.toFixed(4)+"\u00b0 "+dd.toFixed(2)+" FT"};};
   return {A,B,C,D,calls:[crs(A,B,"S LINE"),crs(B,C,"E LINE"),crs(C,D,"N LINE"),crs(D,A,"W LINE")]};
 }
+
+function _deedParcelKey(v){
+  const s=String(v||"").toUpperCase().replace(/[^A-Z0-9 -]/g," ").replace(/\s+/g," ").trim();
+  if(!s)return null;
+  const words={ONE:"1",TWO:"2",THREE:"3",FOUR:"4",FIVE:"5",SIX:"6",SEVEN:"7",EIGHT:"8",NINE:"9",TEN:"10"};
+  const m=s.match(/\b(PARCEL|TRACT)\s+(?:NO\.?\s*)?([A-Z0-9-]+)\b/);
+  return m?m[1]+" "+(words[m[2]]||m[2]):null;
+}
+function _deedHeadingInfo(txt){
+  const m=String(txt||"").trim().match(/^(?:#{1,6}\s*)?((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|[A-Z]))\b\s*:?/i);
+  return m?{label:m[1].replace(/\s+/g," ").trim(),key:_deedParcelKey(m[1])}:null;
+}
+function _deedNamedCornerRef(txt){
+  const m=String(txt||"").toUpperCase().match(/\b(?:COMMENC\w*|BEGINNING)\s+AT\s+(?:THE\s+)?(NORTHWEST|NORTHEAST|SOUTHWEST|SOUTHEAST)\s+CORNER\s+OF\s+(?:THE\s+)?((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|[A-Z]))\b/);
+  return m?{corner:m[1],parcelKey:_deedParcelKey(m[2]),raw:m[0]}:null;
+}
+function _deedParentRef(txt,ownKey){
+  const re=/\b(?:PORTION|PART)\s+OF\s+(?:THE\s+)?((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|[A-Z]))\b/g;
+  const u=String(txt||"").toUpperCase();let m;
+  while((m=re.exec(u))){const k=_deedParcelKey(m[1]);if(k&&k!==ownKey)return k;}
+  return null;
+}
+function _deedSectionNo(txt){const m=String(txt||"").match(/\bSECTION\s+(\d{1,2})\b/i);return m?parseInt(m[1],10):null;}
+function _deedFigureVerts(f){
+  if(!f||f.pobE==null)return [];
+  const g=f.computed||computeDeed(f.calls,f.pobE,f.pobN,0);
+  return !g||!g.verts?[]:(f.kind==="easement"?g.verts:g.verts.slice(0,Math.max(1,g.verts.length-1)));
+}
+function _deedCornerOfFigures(figs,corner){
+  const vs=[];(figs||[]).forEach(f=>vs.push(..._deedFigureVerts(f)));if(!vs.length)return null;
+  const score={SOUTHWEST:p=>p.E+p.N,SOUTHEAST:p=>-p.E+p.N,NORTHEAST:p=>-p.E-p.N,NORTHWEST:p=>p.E-p.N}[corner];
+  return score?vs.reduce((a,b)=>score(b)<score(a)?b:a):null;
+}
+function _deedSectionCornerFromAliquot(f,corner){
+  if(!f||f.pobE==null||!f.aliquotSpec||f.aliquotSpec.base!==5280)return null;
+  const sp=f.aliquotSpec,b=sp.base,sw={E:f.pobE-sp.u0*b,N:f.pobN-sp.v0*b};
+  return corner==="SOUTHWEST"?sw:corner==="SOUTHEAST"?{E:sw.E+b,N:sw.N}:corner==="NORTHWEST"?{E:sw.E,N:sw.N+b}:corner==="NORTHEAST"?{E:sw.E+b,N:sw.N+b}:null;
+}
+function _deedSetComputed(f){if(f&&f.pobE!=null)f.computed=computeDeed(f.calls,f.pobE,f.pobN,0);}
 function parseDeedFigures(txt){
   // Preserve real figure headings before whitespace normalization. Inline
   // references such as "portion of Parcel 2" are NOT headings and must never
@@ -8697,13 +8736,19 @@ function parseDeedFigures(txt){
   }
   parts.push({kind:firstKind,text:t.slice(last),kw:kw});
   const figs=[];
+  let activeParcelKey=null,activeParcelLabel=null;
   parts.forEach(p=>{
+    const hi=p.kind==="boundary"?_deedHeadingInfo(p.text):null;
+    if(hi){activeParcelKey=hi.key;activeParcelLabel=hi.label;}
+    const ownKey=hi?hi.key:activeParcelKey;
+    const ownLabel=hi?hi.label:activeParcelLabel;
     // A parcel heading may contain BOTH an aliquot grant and a separately
     // described additional tract. Keep both instead of letting THENCE cause
     // the aliquot portion to disappear.
     const alq=_deedAliquot(p.text)||(p.kind==="boundary"?_deedAliquotClause(p.text):null);
     if(alq){
       figs.push({kind:p.kind,calls:alq.calls,pobE:null,pobN:null,ptNums:[],aliquot:true,aliquotSpec:alq.spec,
+        parcelKey:ownKey,parcelLabel:ownLabel,ownerKey:p.kind!=="boundary"?activeParcelKey:null,sectionNo:_deedSectionNo(alq.source||p.text),
         name:(p.kind==="boundary"?"Aliquot":p.kind==="except"?"Except aliquot":"Easement aliquot")
              +" "+alq.w+" \u00d7 "+alq.h+" ft (nominal)"});
     }
@@ -8712,6 +8757,8 @@ function parseDeedFigures(txt){
     const calls=parseDeedText(p.text);
     if(!calls.length)return;
     const fig={kind:p.kind,calls,pobE:null,pobN:null,ptNums:[],
+      parcelKey:ownKey,parcelLabel:ownLabel,ownerKey:p.kind!=="boundary"?activeParcelKey:null,
+      parentRef:_deedParentRef(p.text,ownKey),startRef:_deedNamedCornerRef(p.text),sectionNo:_deedSectionNo(p.text),
       name:p.kind==="boundary"?"Boundary":(p.kind==="except"?"Except parcel":"Easement")};
     // "BEGINNING AT THE NORTHWEST CORNER OF SAID SECTION 17" — a PLSS
     // corner reference lets later parcels place themselves off the first
@@ -8738,9 +8785,12 @@ function parseDeedFigures(txt){
     }
     figs.push(fig);
   });
-  // number duplicates
-  let bd=0;figs.forEach(f=>{if(f.kind==="boundary")bd++;});
-  if(bd>1){let n=0;figs.forEach(f=>{if(f.kind==="boundary")f.name="Parcel "+(++n);});}
+  // Preserve named parcel identity across aliquot and metes components.
+  const keyCounts={};figs.forEach(f=>{if(f.kind==="boundary"&&f.parcelKey)keyCounts[f.parcelKey]=(keyCounts[f.parcelKey]||0)+1;});
+  let anon=0;figs.forEach(f=>{if(f.kind!=="boundary")return;
+    if(f.parcelKey){const suffix=keyCounts[f.parcelKey]>1?(f.aliquot?" aliquot":" described tract"):"";f.name=(f.parcelLabel||f.parcelKey)+suffix;}
+    else f.name="Parcel "+(++anon);
+  });
   let ex=0,es=0;
   figs.forEach(f=>{if(f.kind==="except"){++ex;if(!f.aliquot)f.name="Except parcel "+ex;}
                    if(f.kind==="easement")f.name="Easement "+(++es);});
@@ -8916,71 +8966,61 @@ function _deedTieVec(f){
   return {E:l.E,N:l.N};
 }
 function _deedResolveFigures(figs,E,N){
-  // The record is rigid: boundary POB is given; every secondary figure with
-  // tie courses is positioned by RUNNING ITS TIES from the parent POB.
-  // Figures with no ties (position given only in prose) stack at the parent
-  // POB, flagged for the per-figure Move tool.
-  let stacked=0, firstB=null;
-  figs.forEach(f=>{
-    if(f.kind==="boundary"){
-      if(!firstB){
-        f.pobE=E;f.pobN=N;firstB=f;
-        return;
+  let stacked=0;
+  const placed=new Set();
+  const groups=()=>{const g={};figs.forEach(f=>{if(f.parcelKey&&placed.has(f))(g[f.parcelKey]||(g[f.parcelKey]=[])).push(f);});return g;};
+  const place=(f,pob,why)=>{f.pobE=pob.E;f.pobN=pob.N;f.autoStacked=false;f.placementReason=why||"record";_deedSetComputed(f);placed.add(f);};
+  const runFrom=(f,start,why)=>{const v=_deedTieVec(f);place(f,{E:start.E+v.E,N:start.N+v.N},why);};
+  const first=figs.find(f=>f.kind==="boundary");
+  if(first)place(first,{E,N},"selected boundary POB");
+  for(let pass=0;pass<figs.length+3;pass++){
+    let changed=false;
+    for(const f of figs){
+      if(placed.has(f))continue;
+      const g=groups();
+      if(f.aliquotSpec){
+        let anchor=null,ap=null;
+        for(const a of placed){
+          if(!a.aliquotSpec)continue;
+          ap=_deedAliquotOffset(a.aliquotSpec,f.aliquotSpec);
+          if(!ap&&a.aliquotSpec.base===f.aliquotSpec.base)ap={dE:(f.aliquotSpec.u0-a.aliquotSpec.u0)*a.aliquotSpec.base,dN:(f.aliquotSpec.v0-a.aliquotSpec.v0)*a.aliquotSpec.base};
+          if(ap){anchor=a;break;}
+        }
+        if(anchor){place(f,{E:anchor.pobE+ap.dE,N:anchor.pobN+ap.dN},"shared PLSS subdivision");f.autoPlacedAliquot=true;changed=true;continue;}
       }
-      // Later aliquot parcel sharing the same PLSS base can be positioned
-      // directly from the subdivision chain (for example W 1/2 and E 1/2
-      // of the same forty). This is record geometry, not a visual guess.
-      if(f.aliquotSpec&&firstB.aliquotSpec){
-        const ap=_deedAliquotOffset(firstB.aliquotSpec,f.aliquotSpec);
-        if(ap){f.pobE=E+ap.dE;f.pobN=N+ap.dN;f.autoPlacedAliquot=true;f.autoStacked=false;return;}
+      if(f.startRef){
+        const c=_deedCornerOfFigures(g[f.startRef.parcelKey]||[],f.startRef.corner);
+        if(c){runFrom(f,c,"named parcel corner");changed=true;continue;}
       }
-      // Later parcel: if its commencement names the SAME physical section
-      // corner as parcel 1's (PLSS grid equality), the record places it —
-      // corner = parcel 1's TPOB minus its tie; this parcel's TPOB = corner
-      // plus its own tie.
-      const n1=_deedCornerNode(firstB.cornerRef), n2=_deedCornerNode(f.cornerRef);
-      if(n1&&n2&&n1.x===n2.x&&n1.y===n2.y&&(firstB.cornerRef.q||"")===(f.cornerRef.q||"")){
-        const t1=_deedTieVec(firstB), t2=_deedTieVec(f);
-        f.pobE=E-t1.E+t2.E; f.pobN=N-t1.N+t2.N;
-        f.autoStacked=false;
-      }else{
-        f.pobE=E;f.pobN=N;f.autoStacked=true;stacked++;
+      if(f.cornerRef){
+        let c=null;
+        for(const a of placed){
+          if(!a.aliquotSpec||a.aliquotSpec.base!==5280)continue;
+          if(f.sectionNo&&a.sectionNo&&f.sectionNo!==a.sectionNo)continue;
+          c=_deedSectionCornerFromAliquot(a,f.cornerRef.c);if(c)break;
+        }
+        if(c){runFrom(f,c,"PLSS section corner");changed=true;continue;}
       }
-      return;
+      if(first&&first.cornerRef&&f.cornerRef){
+        const n1=_deedCornerNode(first.cornerRef),n2=_deedCornerNode(f.cornerRef);
+        if(n1&&n2&&n1.x===n2.x&&n1.y===n2.y&&(first.cornerRef.q||"")===(f.cornerRef.q||"")){
+          const t1=_deedTieVec(first),t2=_deedTieVec(f);place(f,{E:E-t1.E+t2.E,N:N-t1.N+t2.N},"shared PLSS commence corner");changed=true;continue;
+        }
+      }
     }
-    const ties=f.calls.filter(c=>c.tie).map(c=>Object.assign({},c,{tie:false}));
-    if(ties.length){
-      const t=computeDeed(ties,E,N,0);
-      const last=t.verts[t.verts.length-1];
-      f.pobE=last.E;f.pobN=last.N;
-    }else{
-      // shared-base aliquot: the record itself places this figure
-      let ap=null;
-      if(f.aliquotSpec&&firstB&&firstB.aliquotSpec)
-        ap=_deedAliquotOffset(firstB.aliquotSpec,f.aliquotSpec);
-      if(ap){f.pobE=E+ap.dE;f.pobN=N+ap.dN;f.autoPlacedAliquot=true;}
-      else{f.pobE=E;f.pobN=N;f.autoStacked=true;stacked++;}
-    }
-  });
-  _deedPlot=_mkDeed(figs,0);
-  _deedRecompute();saveData();
-  const b=_deedPlot.figures.find(f=>f.kind==="boundary");
-  const net=_deedNetAcres();
+    if(!changed)break;
+  }
+  figs.forEach(f=>{if(placed.has(f))return;f.pobE=E;f.pobN=N;f.autoStacked=true;f.placementReason="unresolved reference";_deedSetComputed(f);stacked++;});
+  _deedPlot=_mkDeed(figs,0);_deedRecompute();saveData();
+  const b=_deedPlot.figures.find(f=>f.kind==="boundary"),net=_deedNetAcres();
   if(window._deferredJobSetup){window._pendingSetup=window._deferredJobSetup;window._deferredJobSetup=null;}
   showResult("📜 Deed Plotted — "+figs.length+" figures",[
     {lbl:"Figures:",val:_deedPlot.figures.map(f=>f.name).join(", ")},
     ...(b&&b.computed?[{lbl:"Boundary closure:",val:b.computed.closeDist.toFixed(2)+" "+units+(b.computed.precision?" (1:"+b.computed.precision+")":"")}]:[]),
-    ...(net!=null?[{lbl:"Net area:",val:net.toFixed(2)+" acres (boundary − exceptions)"+(_deedPlot.figures.some(_deedExceptOutside)?" — verify after placing ⚠ figures":"")}]:[]),
-    ...(figs.some(f=>f.kind!=="boundary"&&f.calls.some(c=>c.tie))?[{lbl:"Auto-placed:",val:"tied figures positioned by their tie courses from the POB"}]:[]),
-    ...(_deedPlot.figures.some(f=>f.autoPlacedAliquot)?[{lbl:"Auto-placed:",val:"aliquot figure positioned from the shared PLSS tract (nominal dimensions)"}]:[]),
-    ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"no tie or no shared commence corner in the record — stacked at the POB; place below."}]:[]),
-    ..._deedPlot.figures.filter(f=>!f.autoStacked&&_deedExceptOutside(f)).map(f=>({lbl:"⚠ "+f.name+":",val:"extends OUTSIDE the boundary as placed by its own ties — possible defect in the record"}))],
-    (function(){
-      const need=_deedPlot.figures.map((f,i)=>({f,i})).filter(x=>x.f.autoStacked||_deedExceptOutside(x.f));
-      if(!need.length)return null;
-      return [{txt:"🖐 Place "+(need.length===1?("“"+need[0].f.name.split(" (")[0]+"” now"):("the "+need.length+" ⚠ figures now")),cls:"ok",
-               fn:()=>{ if(need.length===1){_deedAdjustScope=need[0].i;_deedAdjustStart();} else _deedMovePicker(); }}];
-    })());
+    ...(net!=null?[{lbl:"Net area:",val:net.toFixed(2)+" acres (boundary − exceptions)"}]:[]),
+    ...(_deedPlot.figures.some(f=>f.placementReason&&f.placementReason!=="selected boundary POB")?[{lbl:"Resolved:",val:"named parcel corners and PLSS section corners used where stated"}]:[]),
+    ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"reference could not be resolved automatically; stacked at selected POB"}]:[])],
+    (function(){const need=_deedPlot.figures.map((f,i)=>({f,i})).filter(x=>x.f.autoStacked);if(!need.length)return null;return [{txt:"🖐 Place "+(need.length===1?("“"+need[0].f.name.split(" (")[0]+"” now"):("the "+need.length+" unresolved figures now")),cls:"ok",fn:()=>{if(need.length===1){_deedAdjustScope=need[0].i;_deedAdjustStart();}else _deedMovePicker();}}];})());
 }
 function _deedPlaceFigures(figs){
   openModal((modal,close)=>{
