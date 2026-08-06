@@ -8555,6 +8555,33 @@ function _deedAliquot(txt){
     calls:[mk(0,h,"N"),mk(90,w,"E"),mk(180,h,"S"),mk(270,w,"W")]};
 }
 
+
+/* Extract one explicit PLSS aliquot clause from a longer parcel description.
+   Real deeds often combine an aliquot parcel with an additional metes-and-
+   bounds tract in the same PARCEL heading.  _deedAliquot() intentionally
+   rejects the whole paragraph once it sees THENCE; this helper isolates only
+   the leading aliquot clause so both pieces can be retained. */
+function _deedAliquotClause(txt){
+  const s=String(txt||"").replace(/\s+/g," ");
+  const up=s.toUpperCase();
+  const startRe=/(?:\bTHE\s+)?\b(?:NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST|NORTHERN|SOUTHERN|EASTERN|WESTERN|NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW|N|S|E|W)\s+(?:HALF|QUARTER|1\s*\/\s*2|1\s*\/\s*4)\s+OF\b/g;
+  let m;
+  while((m=startRe.exec(up))){
+    // "a portion of the SE 1/4" is not the whole aliquot and must not be
+    // promoted into a full quarter-section polygon.
+    const pre=up.slice(Math.max(0,m.index-120),m.index);
+    if(/\b(?:PORTION|PART)\s+OF\b/.test(pre))continue;
+    const tail=up.slice(m.index);
+    const em=tail.match(/\bSECTION\s+\d{1,2}\b/);
+    if(!em)continue;
+    const candidate=s.slice(m.index,m.index+em.index+em[0].length)
+      .replace(/^\s*THE\s+/i,"");
+    const a=_deedAliquot(candidate);
+    if(a){a.source=candidate;return a;}
+  }
+  return null;
+}
+
 /* Shared-base auto-placement: two aliquot figures whose chains hang from a
    common ancestor tract ("said forty" inside a section-based chain) have a
    relative position fully determined by the record. Walk the boundary
@@ -8596,7 +8623,7 @@ function parseDeedFigures(txt){
   // split the description. Line-start FIELD NOTES and PARCEL/TRACT labels are.
   let prepared=String(txt||"")
     .replace(/(^|\r?\n)\s*(?=FIELD\s+NOTES\s+OF\b)/gim,"$1 [[FIG_BOUNDARY]] ")
-    .replace(/(^|\r?\n)\s*(?=((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|[A-Z]|ONE|TWO|THREE|FOUR|FIVE)\b\s*:))/gim,"$1 [[FIG_BOUNDARY]] ")
+    .replace(/(^|\r?\n)\s*(?:#{1,6}\s*)?(?=((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|[A-Z])\b\s*:?[ \t]*))/gim,"$1 [[FIG_BOUNDARY]] ")
     .replace(/(^|\r?\n)\s*(?=(?:[L1I|]ESS|SAVE)\s+AND\s+EXCEPT\b|EXCEPTING\s+THEREFROM\b|EXCEPT\s+THE\s+FOLLOWING\b)/gim,"$1 [[FIG_EXCEPT]] ")
     .replace(/(^|\r?\n)\s*(?=(?:TOGETHER\s+WITH|SUBJECT\s+TO)\s+AN?\b[^\r\n]{0,60}\bEASEMENT\b)/gim,"$1 [[FIG_EASEMENT]] ");
   const t=_deedNormalize(prepared);
@@ -8611,13 +8638,17 @@ function parseDeedFigures(txt){
   parts.push({kind:firstKind,text:t.slice(last),kw:kw});
   const figs=[];
   parts.forEach(p=>{
-    const alq=_deedAliquot(p.text);
+    // A parcel heading may contain BOTH an aliquot grant and a separately
+    // described additional tract. Keep both instead of letting THENCE cause
+    // the aliquot portion to disappear.
+    const alq=_deedAliquot(p.text)||(p.kind==="boundary"?_deedAliquotClause(p.text):null);
     if(alq){
       figs.push({kind:p.kind,calls:alq.calls,pobE:null,pobN:null,ptNums:[],aliquot:true,aliquotSpec:alq.spec,
         name:(p.kind==="boundary"?"Aliquot":p.kind==="except"?"Except aliquot":"Easement aliquot")
              +" "+alq.w+" \u00d7 "+alq.h+" ft (nominal)"});
-      return;
     }
+    const hasMetes=/\b(?:THENCE|COMMENC\w*|POINT OF BEGINNING|TRUE POINT OF BEGINNING|CURVE)\b/i.test(p.text);
+    if(alq&&!hasMetes)return;
     const calls=parseDeedText(p.text);
     if(!calls.length)return;
     const fig={kind:p.kind,calls,pobE:null,pobN:null,ptNums:[],
@@ -8835,6 +8866,13 @@ function _deedResolveFigures(figs,E,N){
       if(!firstB){
         f.pobE=E;f.pobN=N;firstB=f;
         return;
+      }
+      // Later aliquot parcel sharing the same PLSS base can be positioned
+      // directly from the subdivision chain (for example W 1/2 and E 1/2
+      // of the same forty). This is record geometry, not a visual guess.
+      if(f.aliquotSpec&&firstB.aliquotSpec){
+        const ap=_deedAliquotOffset(firstB.aliquotSpec,f.aliquotSpec);
+        if(ap){f.pobE=E+ap.dE;f.pobN=N+ap.dN;f.autoPlacedAliquot=true;f.autoStacked=false;return;}
       }
       // Later parcel: if its commencement names the SAME physical section
       // corner as parcel 1's (PLSS grid equality), the record places it —
