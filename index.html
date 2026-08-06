@@ -1060,7 +1060,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.24";
+const APP_VERSION = "4.4.26";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7702,19 +7702,11 @@ function _deedNormalize(t){
     // recorded/SEC transcription typo seen in a real Alabama exhibit: "787.00 tent"
     // in a bearing-and-distance course. Treat only a numeric TENT token as FEET.
     .replace(/(\d+(?:\.\d+)?)\s+TENT\b/g,"$1 FEET")
-    // Common OCR/transcription failures found in public exhibits. These are
-    // deliberately narrow and only repair tokens adjacent to survey numbers.
+    // OCR/source defects seen in public recorded exhibits
     .replace(/(\d+(?:\.\d+)?)\s+FEEL\b/g,"$1 FEET")
-    .replace(/\bCARVE\b(?=\s+TO\s+THE\s+(?:LEFT|RIGHT)|[^.;]{0,60}\bRADIUS\b)/g,"CURVE")
-    // European decimal comma accidentally retained in US deed transcription:
-    // "32,66 feet" -> 32.66 feet. Thousands commas are handled separately.
-    .replace(/\b(\d{1,4}),(\d{2})\s+(?=(?:FEET|FOOT|FT|METERS?|METRES?)\b)/g,"$1.$2 ")
-    // OCR sometimes substitutes a double quote for the degree sign and a
-    // single quote for minutes, e.g. 15"51'16". The final quote anchors DMS.
-    .replace(/(\d{1,3})\s*"\s*(\d{1,2})\s*'\s*(\d{1,2})\s*"/g,"$1°$2'$3\"")
-    // Numbered course lists copied from exhibits: '(16) Along...', '1) N...'.
-    // Keep the number from becoming a candidate distance at segment start.
-    .replace(/(?:^|\s)[(]?\d{1,3}[).]\s+(?=(?:THENCE\s+)?(?:ALONG|NORTH|SOUTH|EAST|WEST|N\b|S\b|DUE\b|WITH\s+A\s+CURVE))/g," THENCE ")
+    .replace(/\bCARVE\b(?=[^;]{0,140}\b(?:RADIUS|ARC LENGTH|CHORD|CENTRAL ANGLE)\b)/g,"CURVE")
+    // decimal comma in a course distance: 32,66 feet -> 32.66 feet
+    .replace(/(\d{1,6}),(\d{2})(?=\s*(?:FEET|FOOT|FT)\b)/g,"$1.$2")
     // thousands separators inside numbers: 5,903.00 -> 5903.00
     .replace(/(\d),(?=\d{3}\b)/g,"$1")
     // degree sign read as an apostrophe: 89' 56'29" -> 89°56'29"
@@ -7793,6 +7785,16 @@ function _deedAzToBearingStr(az){
 /* Distance: first "number unit" in segment (skipping numbers that belong to bearings/radius) */
 function _deedParseDistance(seg){
   const scrub=seg.replace(/\b(RADIUS|DELTA|CENTRAL ANGLE|ARC)\s*(?:OF|LENGTH|=|:)?\s*[\d.]+\s*(?:FEET|FT|')?/g," ");
+  // Prefer an explicitly introduced course distance over incidental widths,
+  // acreage references, coordinates, and monument dimensions earlier in the
+  // same call: "50 feet wide ... for a distance of 815.11 feet".
+  const explicit=scrub.match(/(?:FOR\s+)?(?:AN?\s+)?(?:HORIZONTAL\s+|GROUND\s+|ACTUAL\s+)?(?:ARC\s+)?DISTANCE\s+(?:OF\s+)?(\d{1,6}(?:\.\d+)?)\s*(FEET|FOOT|FT\.?|YARDS?|YDS?\.?|CHAINS?|CH\.?|RODS?|POLES?|PERCH(?:ES)?|LINKS?|LKS?\.?|VARAS?|VRS?\.?|METERS?|METRES?|M\b)/);
+  if(explicit){
+    const u=explicit[2].replace(/\./g,"");
+    const key=u.replace(/S$/,"");
+    const perFt=_DEED_UNIT_FT[u]||_DEED_UNIT_FT[key]||_DEED_UNIT_FT[u.replace(/S$/,"")];
+    if(perFt)return {val:parseFloat(explicit[1]),unit:u,ft:parseFloat(explicit[1])*perFt};
+  }
   // compound old-style distances: "4 chains and 20 links", "5 poles 10 links"
   const comp=scrub.match(/(\d{1,4}(?:\.\d+)?)\s*(CHAINS?|POLES?|RODS?|PERCHES?)\s*(?:AND\s+)?(\d{1,3}(?:\.\d+)?)\s*LINKS?\b/);
   if(comp){
@@ -7844,7 +7846,7 @@ function parseDeedText(txt){
     // POB ARRIVAL: "...TO the point of beginning". Word-boundaried so "THIS"
     // (ending in -IS) can't false-match "IS point of beginning". A "FROM ...
     // point of beginning" is a DEPARTURE (the first real course), not an arrival.
-    const _POBARR=(/\b(?:TO|BEING|IS|AND|AT)\s+(?:THE\s+|SAID\s+|A\s+)?(?:TRUE\s+)?POINT OF BEGINNING/.test(seg)
+    const _POBARR=(/\b(?:TO|BEING|IS|AND|AT|FOR)\s+(?:THE\s+|SAID\s+|A\s+)?(?:TRUE\s+)?POINT OF BEGINNING/.test(seg)
                   || /,\s*(?:THE\s+|SAID\s+)?(?:TRUE\s+)?POINT OF BEGINNING\b/.test(seg))
                   && !/\bFROM\s+(?:THE\s+|THIS\s+|SAID\s+)?(?:TRUE\s+)?POINT OF BEGINNING/.test(seg);
     if(_POBARR)pobSegs.push(_si);
@@ -7929,7 +7931,7 @@ function parseDeedText(txt){
         if(ccvAz===undefined)ccvAz=null;
       }
       let radAz=null;
-      const rb=seg.match(/(?:RADIUS(?:\s+POINT)?|CENTER\s+OF\s+WHICH)\s+BEARS\s+/);
+      const rb=seg.match(/(?:RADIUS(?:\s+POINT)?|CENTER\s+OF\s+WHICH|RADIAL\s+LINE)\s+BEARS\s+/);
       if(rb){const rbB=_deedParseBearing(seg.slice(rb.index+rb[0].length,rb.index+rb[0].length+70));
         if(rbB&&!rbB.card)radAz=_deedBearingToAz(rbB);}
       const am=seg.match(/ARC\s*(?:LENGTH|DISTANCE)?\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
@@ -8030,7 +8032,7 @@ function parseDeedText(txt){
     // "…to a point on a curve from which the radius bears S 39°E 614.58
     // feet" arrives in the LINE segment before the curve — park the radial
     if(!/\bCURVE\b[\s\S]*RADIUS\s*(?:OF|=|:)/.test(seg)){
-      const rb0=seg.match(/(?:RADIUS(?:\s+POINT)?|CENTER\s+OF\s+WHICH)\s+BEARS\s+/);
+      const rb0=seg.match(/(?:RADIUS(?:\s+POINT)?|CENTER\s+OF\s+WHICH|RADIAL\s+LINE)\s+BEARS\s+/);
       if(rb0){const rbB0=_deedParseBearing(seg.slice(rb0.index+rb0[0].length,rb0.index+rb0[0].length+70));
         if(rbB0&&!rbB0.card)window.__pendRadial=_deedBearingToAz(rbB0);}
     }
@@ -8167,7 +8169,13 @@ function parseDeedText(txt){
     if(b&&d){
       calls.push({type:"line",_si,_pob:_POBARR,bearing:b,dist:d.ft,unit:d.unit,rawVal:d.val,raw:seg.slice(0,140)});
     }else if(b||d){
-      calls.push({type:"partial",_si,_pob:_POBARR,bearing:b,dist:d?d.ft:null,unit:d?d.unit:null,raw:seg.slice(0,140)});
+      const preambleOnly = !b && !!d && (
+        /^(?:FIELD NOTES|DESCRIPTION|COMMENCING|BEGINNING)\b/.test(seg) &&
+        /(?:RIGHT[- ]OF[- ]WAY|\bWIDE\b|STATE PLANE|COORDINATE|\bX\s*=|\bY\s*=|\bACRES?\b|VOLUME|PAGE|ABSTRACT|SURVEY NO)/.test(seg)
+      );
+      if(!preambleOnly){
+        calls.push({type:"partial",_si,_pob:_POBARR,bearing:b,dist:d?d.ft:null,unit:d?d.unit:null,raw:seg.slice(0,140)});
+      }
     }
   });
   // Tie-course detection: if a call's own text reaches the (TRUE) POINT OF
@@ -8178,13 +8186,15 @@ function parseDeedText(txt){
   // also contain the phrase — e.g. "…on each side of a centerline described
   // as: Commence at the POINT OF BEGINNING…")
   let pobIdx=-1;
-  calls.forEach((c,i)=>{if(i<calls.length-1&&i<=3&&c._pob)pobIdx=i;});
+  calls.forEach((c,i)=>{
+    if(i<calls.length-1&&c._pob&&(i<=3||/POINT OF BEGINNING OF [\s\S]{0,80}TO BE DESCRIBED/.test(c.raw||"")))pobIdx=i;
+  });
   // LOCATOR POB: "Beginning at a point that is S 89 E 420 feet FROM the NW
   // corner" — the offset places the POB and is a tie, not a boundary course.
   // Only the opening course(s), and only when it names an offset FROM a corner.
   calls.forEach((c,i)=>{
     if(i<=1 && i<calls.length-1 && c.type!=="partial" &&
-       /\bA\s+POINT\s+(?:THAT\s+IS|WHICH\s+IS|LOCATED|DISTANT|BEING)\b[\s\S]{0,70}?\bFROM\b/.test(c.raw||"") &&
+       /\bA\s+POINT\s+(?:THAT\s+IS|WHICH\s+IS|WHICH\s+BEARS|LOCATED|DISTANT|BEING)\b[\s\S]{0,90}?\bFROM\b/.test(c.raw||"") &&
        /\bCORNER\b|\bSECTION\b|\bMONUMENT\b|\bPIN\b|\bSTAKE\b/.test(c.raw||"")){
       if(i>pobIdx)pobIdx=i;
     }
@@ -8581,14 +8591,20 @@ function _deedAliquotCalibrate(spec,SW,SE,NE,NW){
   return {A,B,C,D,calls:[crs(A,B,"S LINE"),crs(B,C,"E LINE"),crs(C,D,"N LINE"),crs(D,A,"W LINE")]};
 }
 function parseDeedFigures(txt){
-  const t=_deedNormalize(txt);
-  // OCR mangles keywords ("1ESS AND EXCEPT", "BER EXCEPT", dropped
-  // "TOGETHER") — so the detector is deliberately fuzzy:
-  const KEY=/((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|[A-Z])\b|(?:PARCEL|TRACT)\s+(?:ONE|TWO|THREE|FOUR|FIVE)\b|(?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
+  // Preserve real figure headings before whitespace normalization. Inline
+  // references such as "portion of Parcel 2" are NOT headings and must never
+  // split the description. Line-start FIELD NOTES and PARCEL/TRACT labels are.
+  let prepared=String(txt||"")
+    .replace(/(^|\r?\n)\s*(?=FIELD\s+NOTES\s+OF\b)/gim,"$1 [[FIG_BOUNDARY]] ")
+    .replace(/(^|\r?\n)\s*(?=((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|[A-Z]|ONE|TWO|THREE|FOUR|FIVE)\b\s*:))/gim,"$1 [[FIG_BOUNDARY]] ")
+    .replace(/(^|\r?\n)\s*(?=(?:[L1I|]ESS|SAVE)\s+AND\s+EXCEPT\b|EXCEPTING\s+THEREFROM\b|EXCEPT\s+THE\s+FOLLOWING\b)/gim,"$1 [[FIG_EXCEPT]] ")
+    .replace(/(^|\r?\n)\s*(?=(?:TOGETHER\s+WITH|SUBJECT\s+TO)\s+AN?\b[^\r\n]{0,60}\bEASEMENT\b)/gim,"$1 [[FIG_EASEMENT]] ");
+  const t=_deedNormalize(prepared);
+  const KEY=/(\[\[FIG_BOUNDARY\]\]|\[\[FIG_EXCEPT\]\]|\[\[FIG_EASEMENT\]\]|(?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
   const parts=[];let last=0,m,firstKind="boundary",kw="";
   while((m=KEY.exec(t))){
     parts.push({kind:firstKind,text:t.slice(last,m.index),kw:kw});
-    firstKind=/^(?:PARCEL|TRACT)/.test(m[1])?"boundary":(/EXCEPT/.test(m[1])&&!/EASEMENT/.test(m[1])?"except":"easement");
+    firstKind=m[1]==="[[FIG_BOUNDARY]]"?"boundary":(m[1]==="[[FIG_EXCEPT]]"?"except":(m[1]==="[[FIG_EASEMENT]]"?"easement":(/EXCEPT/.test(m[1])&&!/EASEMENT/.test(m[1])?"except":"easement")));
     kw=m[1];
     last=m.index+m[1].length;
   }
