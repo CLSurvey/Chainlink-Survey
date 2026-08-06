@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.4.22">
+<meta name="application-name" content="ChainLink-v4.5.1">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.4.22</title>
+<title>ChainLink Survey v4.5.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -775,7 +775,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 
 
 
-/* ══ CHAINLINK WORKSPACE SHELL v4.4.34 ═══════════════════════════ */
+/* ══ CHAINLINK WORKSPACE SHELL v4.5.1 ═══════════════════════════ */
 #drawerToggle{
   width:38px;height:38px;border-radius:10px;border:1px solid var(--border2);
   background:var(--surface2);color:var(--accent);display:flex;align-items:center;
@@ -936,6 +936,10 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 #plotControls{right:10px;bottom:12px;display:grid;grid-template-columns:repeat(2,46px);gap:6px;padding:7px;border-radius:18px;background:linear-gradient(145deg,rgba(18,28,32,.86),rgba(8,13,15,.84));border:1px solid var(--border2);backdrop-filter:blur(18px);box-shadow:0 18px 48px rgba(0,0,0,.32)}
 #plotControls button{width:46px;height:46px;border-radius:13px;border:1px solid var(--border);background:linear-gradient(145deg,rgba(28,42,47,.92),rgba(14,22,25,.92));color:var(--text2);font-size:.74rem;font-weight:800;box-shadow:inset 0 1px rgba(255,255,255,.03)}
 #plotControls button:active{transform:translateY(1px);border-color:rgba(230,183,95,.35);color:var(--accent)}
+#plotControlsToggle{grid-column:1/-1;width:100% !important;height:30px !important;border-radius:10px !important;font-size:.68rem !important;letter-spacing:.08em;}
+#plotControls.collapsed{display:flex;grid-template-columns:none;padding:5px;border-radius:15px;}
+#plotControls.collapsed > button:not(#plotControlsToggle){display:none !important;}
+#plotControls.collapsed #plotControlsToggle{width:46px !important;height:42px !important;padding:0 !important;grid-column:auto;}
 #plotControls button:nth-child(5),#plotControls button:nth-child(6),#plotControls button:nth-child(7),#plotControls button:nth-child(8){display:none}
 #undoBtn,#redoBtn{min-height:44px;border-radius:999px;padding:9px 16px;background:rgba(13,21,24,.9);backdrop-filter:blur(14px);box-shadow:0 12px 30px rgba(0,0,0,.27);font-size:.72rem}
 
@@ -1123,6 +1127,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
   </svg>
 
   <div id="plotControls">
+    <button id="plotControlsToggle" title="Hide map controls" aria-label="Hide map controls" aria-expanded="true" onclick="togglePlotControls()">HIDE</button>
     <button title="Zoom In" aria-label="Zoom in" onclick="zoomBy(1.5)">+</button>
     <button title="Zoom Out" aria-label="Zoom out" onclick="zoomBy(1/1.5)">−</button>
     <button title="Fit All" aria-label="Fit all" onclick="resetPlot()">FIT</button>
@@ -1152,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.34";
+const APP_VERSION = "4.5.1";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1296,7 +1301,14 @@ function _snapState(label){
         pobE:f.pobE,pobN:f.pobN,ptNums:[...(f.ptNums||[])],
         tiePtNums:[...(f.tiePtNums||[])],width:f.width||null,
         aliquot:!!f.aliquot,aliquotSpec:f.aliquotSpec||null,
-        aliquotCal:f.aliquotCal?JSON.parse(JSON.stringify(f.aliquotCal)):null
+        aliquotCal:f.aliquotCal?JSON.parse(JSON.stringify(f.aliquotCal)):null,
+        // multi-record identity + semantic placement: an undo must never
+        // demote a deed to the implicit first record (same set saveData keeps)
+        sectionAxes:f.sectionAxes||null,recordId:f.recordId||"deed-1",
+        recordName:f.recordName||"Deed 1",recordRot:f.recordRot||0,
+        ownerKey:f.ownerKey||null,parentRef:f.parentRef||null,
+        parcelKey:f.parcelKey||null,startRef:f.startRef||null,
+        cornerRef:f.cornerRef||null,sectionNo:f.sectionNo||null
       }))
     } : null,
   };
@@ -6701,7 +6713,6 @@ function cogoTraverseClosure(){
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     mk("Done — Compute","ok",()=>{close();_tvFinish();});
     mk("Cancel","",()=>{
-      _deedAppendMode=false;window._deedPendingRecordName=null;
       close();
       _pickedPts=[];
       tempGeom=tempGeom.filter(g=>g._tv!==true);
@@ -8106,7 +8117,7 @@ function parseDeedText(txt){
     // POB ARRIVAL: "...TO the point of beginning". Word-boundaried so "THIS"
     // (ending in -IS) can't false-match "IS point of beginning". A "FROM ...
     // point of beginning" is a DEPARTURE (the first real course), not an arrival.
-    const _POBARR=(/\b(?:TO|BEING|IS|AND|AT|FOR)\s+(?:THE\s+|SAID\s+|A\s+)?(?:TRUE\s+)?POINT OF BEGINNING/.test(seg)
+    const _POBARR=(/\b(?:TO|BEING|IS|AND|AT)\s+(?:THE\s+|SAID\s+|A\s+)?(?:TRUE\s+)?POINT OF BEGINNING/.test(seg)
                   || /,\s*(?:THE\s+|SAID\s+)?(?:TRUE\s+)?POINT OF BEGINNING\b/.test(seg))
                   && !/\bFROM\s+(?:THE\s+|THIS\s+|SAID\s+)?(?:TRUE\s+)?POINT OF BEGINNING/.test(seg);
     if(_POBARR)pobSegs.push(_si);
@@ -8454,7 +8465,7 @@ function parseDeedText(txt){
   // Only the opening course(s), and only when it names an offset FROM a corner.
   calls.forEach((c,i)=>{
     if(i<=1 && i<calls.length-1 && c.type!=="partial" &&
-       /\bA\s+POINT\s+(?:THAT\s+IS|WHICH\s+IS|WHICH\s+BEARS|LOCATED|DISTANT|BEING)\b[\s\S]{0,90}?\bFROM\b/.test(c.raw||"") &&
+       /\bA\s+POINT\s+(?:THAT\s+IS|WHICH\s+IS|LOCATED|DISTANT|BEING)\b[\s\S]{0,70}?\bFROM\b/.test(c.raw||"") &&
        /\bCORNER\b|\bSECTION\b|\bMONUMENT\b|\bPIN\b|\bSTAKE\b/.test(c.raw||"")){
       if(i>pobIdx)pobIdx=i;
     }
@@ -8827,6 +8838,10 @@ function _deedAliquot(txt){
 function _deedAliquotClause(txt){
   const s=String(txt||"").replace(/\s+/g," ");
   const up=s.toUpperCase();
+  // measured strips ("The East 3000 feet of the NW 1/4...") belong to the
+  // main engine, which validates strip size against the parent frame —
+  // promoting any bare quarter from such text skips that safety
+  if(/\b(?:EAST|WEST|NORTH|SOUTH)(?:ERN)?\s+[\d,.]+\s+(?:FEET|FT)\s+OF\b/.test(up))return null;
   const startRe=/(?:\bTHE\s+)?\b(?:NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST|NORTHERN|SOUTHERN|EASTERN|WESTERN|NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW|N|S|E|W)\s+(?:HALF|QUARTER|1\s*\/\s*2|1\s*\/\s*4)\s+OF\b/g;
   let m;
   while((m=startRe.exec(up))){
@@ -8834,6 +8849,9 @@ function _deedAliquotClause(txt){
     // promoted into a full quarter-section polygon.
     const pre=up.slice(Math.max(0,m.index-120),m.index);
     if(/\b(?:PORTION|PART)\s+OF\b/.test(pre))continue;
+    if(/\bGOVERNMENT\s+LOT\b/.test(up))continue;              // gov lots are NOT aliquot fractions — fails safe
+    if(/\b(?:EAST|WEST|NORTH|SOUTH)(?:ERN)?\s+[\d,.]+\s+(?:FEET|FT)\s+OF\s*(?:THE\s+)?$/.test(pre))continue; // measured strip-of: size validation belongs to the main engine
+    if(/\b(?:CONTAINING\s+)?\d{3,}\s+ACRES\b/.test(up))continue; // oversize strip — fails safe
     const tail=up.slice(m.index);
     const em=tail.match(/\bSECTION\s+\d{1,2}\b/);
     if(!em)continue;
@@ -9025,6 +9043,7 @@ function parseDeedFigures(txt){
   let prepared=String(txt||"")
     .replace(/(^|\r?\n)\s*(?=FIELD\s+NOTES\s+OF\b)/gim,"$1 [[FIG_BOUNDARY]] ")
     .replace(/(^|\r?\n)\s*(?:#{1,6}\s*)?(?=((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|[A-Z])\b\s*:?[ \t]*))/gim,"$1 [[FIG_BOUNDARY]] ")
+    .replace(/([.;]\s+)(?=(?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b\s*:?)/gim,"$1 [[FIG_BOUNDARY]] ")
     .replace(/(^|\r?\n)\s*(?=(?:[L1I|]ESS|SAVE)\s+AND\s+EXCEPT\b|EXCEPTING\s+THEREFROM\b|EXCEPT\s+THE\s+FOLLOWING\b)/gim,"$1 [[FIG_EXCEPT]] ")
     .replace(/(^|\r?\n)\s*(?=(?:TOGETHER\s+WITH|SUBJECT\s+TO)\s+AN?\b[^\r\n]{0,60}\bEASEMENT\b)/gim,"$1 [[FIG_EASEMENT]] ");
   const t=_deedNormalize(prepared);
@@ -9049,15 +9068,19 @@ function parseDeedFigures(txt){
     // A parcel heading may contain BOTH an aliquot grant and a separately
     // described additional tract. Keep both instead of letting THENCE cause
     // the aliquot portion to disappear.
-    const alq=_deedAliquot(p.text)||(p.kind==="boundary"?_deedAliquotClause(p.text):null);
+    // Aliquot figures exist only for aliquot-ONLY parcels (4.4.22 semantics):
+    // a metes-and-bounds parcel that merely cites aliquot ancestry gets no
+    // nominal companion rectangle — companions reorder figures, hijack
+    // areas, and wrongly match government-lot texts.
+    const hasMetes=/\b(?:THENCE|COMMENC\w*|POINT OF BEGINNING|TRUE POINT OF BEGINNING|CURVE)\b/i.test(p.text);
+    const alq=hasMetes?null:(_deedAliquot(p.text)||(p.kind==="boundary"?_deedAliquotClause(p.text):null));
     if(alq){
       figs.push({kind:semanticKind,calls:alq.calls,pobE:null,pobN:null,ptNums:[],aliquot:true,aliquotSpec:alq.spec,
         parcelKey:ownKey,parcelLabel:ownLabel,ownerKey:semanticKind!=="boundary"?(explicitOwner||activeParcelKey):null,sectionNo:_deedSectionNo(alq.source||p.text),
         name:(semanticKind==="boundary"?"Aliquot":semanticKind==="except"?"Except aliquot":"Easement aliquot")
              +" "+alq.w+" \u00d7 "+alq.h+" ft (nominal)"});
+      return;
     }
-    const hasMetes=/\b(?:THENCE|COMMENC\w*|POINT OF BEGINNING|TRUE POINT OF BEGINNING|CURVE)\b/i.test(p.text);
-    if(alq&&!hasMetes)return;
     const calls=parseDeedText(p.text);
     if(!calls.length)return;
     const fig={kind:semanticKind,calls,pobE:null,pobN:null,ptNums:[],
@@ -9092,7 +9115,13 @@ function parseDeedFigures(txt){
   // Preserve named parcel identity across aliquot and metes components.
   const keyCounts={};figs.forEach(f=>{if(f.kind==="boundary"&&f.parcelKey)keyCounts[f.parcelKey]=(keyCounts[f.parcelKey]||0)+1;});
   let anon=0;figs.forEach(f=>{if(f.kind!=="boundary")return;
-    if(f.parcelKey){const suffix=keyCounts[f.parcelKey]>1?(f.aliquot?" aliquot":" described tract"):"";f.name=(f.parcelLabel||f.parcelKey)+suffix;}
+    if(f.aliquot){
+      // aliquot names carry their nominal dimensions — never strip them;
+      // a named parcel prefixes its label instead of replacing the name
+      if(f.parcelKey&&(f.parcelLabel||f.parcelKey))f.name=(f.parcelLabel||f.parcelKey)+" \u2014 "+f.name;
+      return;
+    }
+    if(f.parcelKey){const suffix=keyCounts[f.parcelKey]>1?" described tract":"";f.name=(f.parcelLabel||f.parcelKey)+suffix;}
     else f.name="Parcel "+(++anon);
   });
   let ex=0,es=0;
@@ -9305,7 +9334,7 @@ function _deedMovingPointSet(){
   const set=new Set();_deedMovingFigures().forEach(f=>{(f.ptNums||[]).forEach(n=>set.add(n));(f.tiePtNums||[]).forEach(n=>set.add(n));});return set;
 }
 function _deedSegments(figs){
-  const out=[];figs.forEach(f=>{if(!f.computed)return;const v=f.computed.verts||[];for(let i=0;i<v.length-1;i++)out.push({a:v[i],b:v[i+1],f});});return out;
+  const out=[];figs.forEach(f=>{if(!f.computed)return;const v=f.computed.verts||[];for(let i=0;i<v.length-1;i++)out.push({a:v[i],b:v[i+1],f,i});});return out;
 }
 function _deedFindSnapCandidate(){
   if(!_deedPlot)return null;
@@ -9401,10 +9430,18 @@ function _deedApplySnapCandidate(hit){
     if(Math.abs(dr)>90)dr+=dr>0?-180:180;
     const pivot={E:(hit.source.a.E+hit.source.b.E)/2,N:(hit.source.a.N+hit.source.b.N)/2};
     _deedRotateAbout(pivot.E,pivot.N,dr);
-    // Re-find the moving segment nearest the target after rotation.
-    const segs=_deedSegments(_deedMovingFigures());
-    let sg2=null,best=Infinity;
-    segs.forEach(s=>{const m={E:(s.a.E+s.b.E)/2,N:(s.a.N+s.b.N)/2};const tm={E:(hit.target.a.E+hit.target.b.E)/2,N:(hit.target.a.N+hit.target.b.N)/2};const d=Math.hypot(m.E-tm.E,m.N-tm.N);if(d<best){best=d;sg2=s;}});
+    // Recompute the SAME source course after rotation — identity, not
+    // nearest-midpoint, so parallel/short segments can't swap underneath.
+    let sg2=null;
+    if(hit.source.f&&hit.source.i!=null){
+      const segs=_deedSegments([hit.source.f]);
+      sg2=segs.find(s=>s.i===hit.source.i)||null;
+    }
+    if(!sg2){
+      const segs=_deedSegments(_deedMovingFigures());
+      let best=Infinity;
+      segs.forEach(s=>{const m={E:(s.a.E+s.b.E)/2,N:(s.a.N+s.b.N)/2};const tm={E:(hit.target.a.E+hit.target.b.E)/2,N:(hit.target.a.N+hit.target.b.N)/2};const d=Math.hypot(m.E-tm.E,m.N-tm.N);if(d<best){best=d;sg2=s;}});
+    }
     sg2=sg2||hit.source;
     const sm={E:(sg2.a.E+sg2.b.E)/2,N:(sg2.a.N+sg2.b.N)/2};
     const vx=hit.target.b.E-hit.target.a.E,vy=hit.target.b.N-hit.target.a.N,L2=vx*vx+vy*vy||1;
@@ -9777,6 +9814,7 @@ function _deedPasteModal(prefill){
       else _deedReviewFigures(figs);
     });
     mk("Cancel","",()=>{
+      _deedAppendMode=false;window._deedPendingRecordName=null;
       close();
       if(window._deferredJobSetup){window._pendingSetup=window._deferredJobSetup;window._deferredJobSetup=null;}
     });
@@ -9788,6 +9826,8 @@ function _deedPasteModal(prefill){
 let _deedAdjust=false,_deedAdjSnap=null,_deedAdjustScope=null; // scope: whole set, one figure, or _deedAdjustRecordId
 let _deedSnapPreview=null;
 function _deedAdjustStart(){
+  // a mistaken LOCK IN must be undoable: snapshot before any movement
+  try{ _takeSnapshot("move/snap deed record"); }catch(e){}
   if(!_deedPlot)return;
   _deedAdjSnap={rot:_deedPlot.rot||0,pobs:_deedPlot.figures.map(f=>({E:f.pobE,N:f.pobN,recordRot:f.recordRot||0}))};
   _deedAdjust=true;_deedSnapPreview=null;_updateUndoBtn();plotPoints();
@@ -11039,6 +11079,25 @@ function _syncSatBtn(){
   const b=document.getElementById("btnSat"); if(!b)return;
   b.style.opacity=(geoAnchor&&satOn)?"1":"0.45";
 }
+function togglePlotControls(forceCollapsed){
+  const panel=document.getElementById("plotControls");
+  const btn=document.getElementById("plotControlsToggle");
+  if(!panel||!btn)return;
+  const collapse = typeof forceCollapsed==="boolean" ? forceCollapsed : !panel.classList.contains("collapsed");
+  panel.classList.toggle("collapsed",collapse);
+  btn.textContent=collapse?"MAP":"HIDE";
+  btn.title=collapse?"Show map controls":"Hide map controls";
+  btn.setAttribute("aria-label",btn.title);
+  btn.setAttribute("aria-expanded",String(!collapse));
+  _lsSet("cl_plotControlsCollapsed",String(collapse));
+}
+
+function _restorePlotControlsState(){
+  togglePlotControls(_lsGet("cl_plotControlsCollapsed")==="true");
+}
+
+document.addEventListener("DOMContentLoaded",()=>setTimeout(_restorePlotControlsState,0));
+
 function toggleSatAndGps(){
   if(!geoAnchor){_satSetupFlow();return;} // not anchored yet — run setup
   satOn=!satOn;
@@ -14009,7 +14068,7 @@ window.addEventListener("keydown",e=>{
 
 
 
-/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.4.34 ════════════════ */
+/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.5.1 ════════════════ */
 let _drawerTab="overview";
 let _activeWorkspace="field";
 function _esc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
