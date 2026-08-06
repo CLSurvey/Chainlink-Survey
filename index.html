@@ -1060,7 +1060,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.22";
+const APP_VERSION = "4.4.24";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7699,6 +7699,22 @@ function _deedNormalize(t){
     .replace(/\bFROM\s+WHICH[^;.]{0,60}?\bBEARS?\b[^;.]{0,50}?[NS]\s*\.?\s*\d[^;.]{0,30}?(?:FEET|FOOT|FT|CHAINS?|RODS?|VARAS?|VRS?)\b\.?/gi," ")
     .replace(/\b([0-9OlI]{2,7}(?:\.[0-9OlI]+)?)\s+(?=(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|PERCHES?|LINKS?|VARAS?|METERS?|METRES?)\b)/gi,
       (m,tok)=>(/[0-9]/.test(tok)&&/[OlI]/.test(tok))?tok.replace(/O/gi,"0").replace(/[lI]/g,"1")+" ":m)
+    // recorded/SEC transcription typo seen in a real Alabama exhibit: "787.00 tent"
+    // in a bearing-and-distance course. Treat only a numeric TENT token as FEET.
+    .replace(/(\d+(?:\.\d+)?)\s+TENT\b/g,"$1 FEET")
+    // Common OCR/transcription failures found in public exhibits. These are
+    // deliberately narrow and only repair tokens adjacent to survey numbers.
+    .replace(/(\d+(?:\.\d+)?)\s+FEEL\b/g,"$1 FEET")
+    .replace(/\bCARVE\b(?=\s+TO\s+THE\s+(?:LEFT|RIGHT)|[^.;]{0,60}\bRADIUS\b)/g,"CURVE")
+    // European decimal comma accidentally retained in US deed transcription:
+    // "32,66 feet" -> 32.66 feet. Thousands commas are handled separately.
+    .replace(/\b(\d{1,4}),(\d{2})\s+(?=(?:FEET|FOOT|FT|METERS?|METRES?)\b)/g,"$1.$2 ")
+    // OCR sometimes substitutes a double quote for the degree sign and a
+    // single quote for minutes, e.g. 15"51'16". The final quote anchors DMS.
+    .replace(/(\d{1,3})\s*"\s*(\d{1,2})\s*'\s*(\d{1,2})\s*"/g,"$1°$2'$3\"")
+    // Numbered course lists copied from exhibits: '(16) Along...', '1) N...'.
+    // Keep the number from becoming a candidate distance at segment start.
+    .replace(/(?:^|\s)[(]?\d{1,3}[).]\s+(?=(?:THENCE\s+)?(?:ALONG|NORTH|SOUTH|EAST|WEST|N\b|S\b|DUE\b|WITH\s+A\s+CURVE))/g," THENCE ")
     // thousands separators inside numbers: 5,903.00 -> 5903.00
     .replace(/(\d),(?=\d{3}\b)/g,"$1")
     // degree sign read as an apostrophe: 89' 56'29" -> 89°56'29"
@@ -7988,8 +8004,13 @@ function parseDeedText(txt){
           }
         }
         let arcV=am?parseFloat(am[1]):null;
-        if(arcV==null&&(pc.chordB||pc.chordD!=null)){
-          const dm=seg.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
+        // Common recorded form: "along a curve ... a distance of 108.67 feet
+        // (said curve having ... chord bearing ...)". That first distance is
+        // the arc length even when the word ARC is omitted. Previously this
+        // stayed null and the following straight course could be swallowed as
+        // curve continuation data.
+        if(arcV==null&&(chB||chD||rm||pc.chordB||pc.chordD!=null||pc.radius!=null)){
+          const dm=seg.match(/(?:A\s+)?DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
           if(dm)arcV=parseFloat(dm[1]);
         }
         calls.push({type:"curve",_si,_pob:_POBARR,
@@ -8077,7 +8098,7 @@ function parseDeedText(txt){
       // "(running) 50 feet East ..." — a run-verb + distance + cardinal at the
       // segment head is a real course, not "being 131.50 feet northerly" prose
       const runDistCard=/^\s*(?:RUN(?:NING)?\s+)?\d{1,6}(?:\.\d+)?\s*(?:FEET|FOOT|FT|YARDS?|CHAINS?|RODS?|POLES?|VARAS?)\s+(?:NORTH|SOUTH|EAST|WEST|DUE)\b/.test(seg);
-      if(di>=0&&b.idx>di&&!runDistCard)b=null;      // direction after the number = prose
+      if(di>=0&&b.idx>di&&!runDistCard&&!b.due)b=null; // explicit DUE direction may follow offset/reference prose
       else if(b&&!b.due&&b.idx>6&&!runDistCard)b=null; // bare cardinal mid-sentence = a street name
     }
     // "run Northeasterly, … 61.12 feet" — word-compass course; direction
@@ -8128,6 +8149,14 @@ function parseDeedText(txt){
       segForDist=seg.replace(/\b(N|S|NORTH|SOUTH)\s*\.?\s*\d{1,2}[^EW]{0,24}?(E|W|EAST|WEST)\b/," ");
     }
     let d=_deedParseDistance(segForDist);
+    // In calls such as "with a line 132 feet east of ... due north, 600 feet",
+    // the first number is an offset descriptor, not the course distance. For a
+    // cardinal direction, prefer the first distance occurring after the
+    // direction token.
+    if(b&&b.card&&typeof b.idx==="number"){
+      const afterCard=_deedParseDistance(seg.slice(b.idx));
+      if(afterCard)d=afterCard;
+    }
     // bearing course with a bare (unit-less) distance right after it:
     // "S 01°55'20\" W 165.00 along an old fence line" — accept the number that
     // immediately follows the bearing when no united distance parsed.
@@ -8555,11 +8584,11 @@ function parseDeedFigures(txt){
   const t=_deedNormalize(txt);
   // OCR mangles keywords ("1ESS AND EXCEPT", "BER EXCEPT", dropped
   // "TOGETHER") — so the detector is deliberately fuzzy:
-  const KEY=/(PARCEL\s+(?:NO\.?\s*)?(?:\d+|[IVXL]+)\b|PARCEL\s+(?:ONE|TWO|THREE|FOUR|FIVE)\b|(?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
+  const KEY=/((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|[A-Z])\b|(?:PARCEL|TRACT)\s+(?:ONE|TWO|THREE|FOUR|FIVE)\b|(?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
   const parts=[];let last=0,m,firstKind="boundary",kw="";
   while((m=KEY.exec(t))){
     parts.push({kind:firstKind,text:t.slice(last,m.index),kw:kw});
-    firstKind=/^PARCEL/.test(m[1])?"boundary":(/EXCEPT/.test(m[1])&&!/EASEMENT/.test(m[1])?"except":"easement");
+    firstKind=/^(?:PARCEL|TRACT)/.test(m[1])?"boundary":(/EXCEPT/.test(m[1])&&!/EASEMENT/.test(m[1])?"except":"easement");
     kw=m[1];
     last=m.index+m[1].length;
   }
