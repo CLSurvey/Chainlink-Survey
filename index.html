@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.5.7">
+<meta name="application-name" content="ChainLink-v4.6.0">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.5.7</title>
+<title>ChainLink Survey v4.6.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -775,7 +775,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 
 
 
-/* ══ CHAINLINK WORKSPACE SHELL v4.5.7 ═══════════════════════════ */
+/* ══ CHAINLINK WORKSPACE SHELL v4.6.0 ═══════════════════════════ */
 #drawerToggle{
   width:38px;height:38px;border-radius:10px;border:1px solid var(--border2);
   background:var(--surface2);color:var(--accent);display:flex;align-items:center;
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.5.7";
+const APP_VERSION = "4.6.0";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -5706,6 +5706,7 @@ function cogoMenu(){
     mk("Resection","blue",                  ()=>{close();cogoResection()});
     mk("Average Points","blue",             ()=>{close();cogoAveragePoints()});
     mk("Arc / Curve Layout","blue",         ()=>{close();cogoArc()});
+    mk("Spiral / Transition Curve","blue",    ()=>{close();cogoSpiral()});
     mk("Build Polyline","blue",              ()=>{close();cogoPolyline()});
     mk("Polyline Manager","blue",            ()=>{close();_polylineMenu()});
     mk("Prorate on Line","",                ()=>{close();cogoProrate()});
@@ -7088,6 +7089,89 @@ function cogoProrate(fromPt, toPt){
   });
 }
 
+
+function cogoSpiral(){
+  _helpContext="cogo-arc";
+  calculatorInput("Spiral start / TS or CS point #:","",pn=>{if(!pn)return;
+    const p0=points.find(p=>p.Point==+pn);if(!p0)return alert("Point not found.");
+    bearingInput("Incoming tangent azimuth:","",azs=>{if(!azs)return;
+      const az=parseBrg(azs);if(isNaN(az))return alert("Bad azimuth.");
+      calculatorInput("Spiral length ("+units+"):","200",ls=>{if(!ls)return;
+        const L=parseFloat(ls);if(!isFinite(L)||L<=0)return alert("Bad spiral length.");
+        calculatorInput("Circular radius ("+units+"):","1200",rs=>{if(!rs)return;
+          const R=parseFloat(rs);if(!isFinite(R)||R<=0)return alert("Bad radius.");
+          openModal((m,c)=>{
+            m.innerHTML="<h2>Spiral Direction</h2><p class='info'>Choose turn direction, then whether curvature increases into the circular curve (IN) or decreases back to tangent (OUT).</p>";
+            const chooseDir=dir=>{
+              c();
+              openModal((m2,c2)=>{
+                m2.innerHTML="<h2>Transition</h2>";
+                [["Spiral IN — tangent → circular","in"],["Spiral OUT — circular → tangent","out"]].forEach(([lab,tr])=>{
+                  const b=document.createElement("button");b.className="btn "+(tr==="in"?"ok":"blue");b.textContent=lab;
+                  b.onclick=()=>{c2();_cogoSpiralResult(p0,az,L,R,dir,tr);};m2.appendChild(b);
+                });
+                const x=document.createElement("button");x.className="btn";x.textContent="Cancel";x.onclick=c2;m2.appendChild(x);
+              });
+            };
+            [["RIGHT","R"],["LEFT","L"]].forEach(([lab,dir])=>{const b=document.createElement("button");b.className="btn blue";b.textContent=lab;b.onclick=()=>chooseDir(dir);m.appendChild(b);});
+            const x=document.createElement("button");x.className="btn";x.textContent="Cancel";x.onclick=c;m.appendChild(x);
+          });
+        });
+      });
+    });
+  });
+}
+function _cogoSpiralResult(p0,az,L,R,dir,tr){
+  const sp=_spiralSolve(p0.Easting,p0.Northing,az,L,R,dir,tr);
+  if(!sp)return alert("Could not solve spiral.");
+  tempGeom=[{type:"polyline",pts:sp.samples.map(q=>({E:q.E,N:q.N})),color:"rgba(232,176,48,.8)"}];
+  tempIntersections=[{Easting:sp.endE,Northing:sp.endN}];plotPoints();
+  showResult("Spiral Computed",[
+    {lbl:tr==="in"?"TS:":"CS:",val:"#"+p0.Point},
+    {lbl:tr==="in"?"SC N:":"ST N:",val:sp.endN.toFixed(3)},
+    {lbl:tr==="in"?"SC E:":"ST E:",val:sp.endE.toFixed(3)},
+    {lbl:"Length:",val:L.toFixed(3)+" "+units},
+    {lbl:"Radius:",val:R.toFixed(3)+" "+units},
+    {lbl:"Spiral Δ:",val:toDMS(sp.spiralAngle)},
+    {lbl:"Exit tangent:",val:fmtBrg(sp.endAz)},
+    {lbl:"Chord:",val:sp.chord.toFixed(3)+" "+units+" @ "+fmtBrg(sp.chordAz)}
+  ],[
+    {txt:"Store Spiral",cls:"ok",fn:()=>{tempGeom=[];tempIntersections=[];_storeSpiralConnection(p0,sp);}},
+    {txt:"Generate Points",cls:"blue",fn:()=>{tempGeom=[];tempIntersections=[];_generateSpiralPoints(p0,sp);}},
+    {txt:"Done",cls:"",fn:()=>{tempGeom=[];tempIntersections=[];plotPoints();}}
+  ]);
+}
+function _storeSpiralConnection(p0,sp,skipSnapshot){
+  if(!skipSnapshot)_takeSnapshot("Draw Spiral");
+  plotConnections.push({type:"spiral",startE:sp.startE,startN:sp.startN,startAz:sp.startAz,
+    L:sp.L,R:sp.R,dir:sp.dir,transition:sp.transition,endE:sp.endE,endN:sp.endN,
+    endAz:sp.endAz,chord:sp.chord,chordAz:sp.chordAz,spiralAngle:sp.spiralAngle,
+    samples:sp.samples.map(q=>({E:q.E,N:q.N,s:q.s})),style:"solid"});
+  saveData();
+}
+function _generateSpiralPoints(p0,sp){
+  calculatorInput("Point interval along spiral ("+units+"):","25",is=>{if(!is)return;
+    const interval=parseFloat(is);if(!isFinite(interval)||interval<=0)return alert("Bad interval.");
+    _takeSnapshot("Generate Spiral Points");
+    const made=[],stationTargets=[];
+    for(let x=interval;x<sp.L-1e-8;x+=interval)stationTargets.push(x);
+    stationTargets.push(sp.L);
+    const dense=sp.samples;
+    stationTargets.forEach(st=>{
+      let j=1;while(j<dense.length&&dense[j].s<st)j++;
+      const a=dense[Math.max(0,j-1)],b=dense[Math.min(dense.length-1,j)];
+      const t=(b.s-a.s)>1e-9?(st-a.s)/(b.s-a.s):0;
+      const E=a.E+(b.E-a.E)*t,N=a.N+(b.N-a.N)*t;
+      const num=pointCounter++;
+      points.push({Point:num,Northing:N,Easting:E,Elevation:p0.Elevation||0,Type:"COGO",Flag:"",ih:0,
+        Description:(st>=sp.L-1e-6?(sp.transition==="in"?"SC":"ST"):"SPIRAL "+st.toFixed(1))});
+      made.push(num);
+    });
+    _storeSpiralConnection(p0,sp,true);
+    showResult("Spiral Points Generated",[{lbl:"Points:",val:String(made.length)},{lbl:"End:",val:"#"+made[made.length-1]}]);
+  });
+}
+
 function cogoArc(){
   openModal((modal,close)=>{
     _helpContext="cogo-arc";
@@ -7097,6 +7181,7 @@ function cogoArc(){
     mk("3-Point Arc — Tap, Generate Points","blue",()=>{close();_arc3Point()});
     mk("Center + Radius — Draw Only",      "ok",    ()=>{close();_arcDrawOnly()});
     mk("3-Point Arc — Tap, Draw Only",     "blue",  ()=>{close();_arc3PointDraw()});
+    mk("Spiral / Transition Curve","accent", ()=>{close();cogoSpiral()});
     mk("Cancel","",close);
   });
 }
@@ -7611,6 +7696,15 @@ function cogoRotateAlign(){
         // Rotate arc connections — center point and start/end angles
         const rotRad=rot*Math.PI/180;
         plotConnections.forEach(conn=>{
+          if(conn.type==="spiral"){
+            const a=_rotateEN(conn.startE,conn.startN,px,py,cosT,sinT);
+            const b=_rotateEN(conn.endE,conn.endN,px,py,cosT,sinT);
+            conn.startE=a.E;conn.startN=a.N;conn.endE=b.E;conn.endN=b.N;
+            conn.startAz=((conn.startAz+rot)%360+360)%360;conn.endAz=((conn.endAz+rot)%360+360)%360;
+            conn.chordAz=((conn.chordAz+rot)%360+360)%360;
+            (conn.samples||[]).forEach(q=>{const z=_rotateEN(q.E,q.N,px,py,cosT,sinT);q.E=z.E;q.N=z.N;});
+            return;
+          }
           if(conn.type!=="arc") return;
           // Rotate center about pivot
           const rx=conn.centerE-px, ry=conn.centerN-py;
@@ -7647,6 +7741,11 @@ function cogoTranslate(){
         _translateDeedModel(dE_,dN_);
         // Translate arc connection centers too
         plotConnections.forEach(conn=>{
+          if(conn.type==="spiral"){
+            conn.startE+=dE_;conn.startN+=dN_;conn.endE+=dE_;conn.endN+=dN_;
+            (conn.samples||[]).forEach(q=>{q.E+=dE_;q.N+=dN_;});
+            return;
+          }
           if(conn.type!=="arc") return;
           conn.centerE+=dE_;
           conn.centerN+=dN_;
@@ -7671,6 +7770,13 @@ function cogoScale(){
         _scaleDeedModel(pivot.Easting,pivot.Northing,factor);
         // Scale arc centers and radii
         plotConnections.forEach(conn=>{
+          if(conn.type==="spiral"){
+            conn.startE=(conn.startE-pivot.Easting)*factor+pivot.Easting;conn.startN=(conn.startN-pivot.Northing)*factor+pivot.Northing;
+            conn.endE=(conn.endE-pivot.Easting)*factor+pivot.Easting;conn.endN=(conn.endN-pivot.Northing)*factor+pivot.Northing;
+            conn.L*=factor;conn.R*=factor;conn.chord*=factor;
+            (conn.samples||[]).forEach(q=>{q.E=(q.E-pivot.Easting)*factor+pivot.Easting;q.N=(q.N-pivot.Northing)*factor+pivot.Northing;q.s*=factor;});
+            return;
+          }
           if(conn.type!=="arc") return;
           conn.centerE=(conn.centerE-pivot.Easting )*factor+pivot.Easting;
           conn.centerN=(conn.centerN-pivot.Northing)*factor+pivot.Northing;
@@ -7934,6 +8040,46 @@ function _deedTableToProse(txt){
   if(thences>=2) return txt;   // prose-dominant: the table is decoration
   return conv.map(x=>x.t).join("\n");
 }
+
+/* ── CLOTHOID / EULER SPIRAL CORE (v4.6.0) ──────────────────────
+   Survey azimuths: 0° North, clockwise positive.
+   Curvature is signed: RIGHT positive, LEFT negative.
+   IN = tangent -> circular; OUT = circular -> tangent. */
+function _spiralSolve(startE,startN,startAz,L,R,dir,transition){
+  L=Number(L);R=Number(R);
+  if(!isFinite(startE)||!isFinite(startN)||!isFinite(startAz)||!isFinite(L)||!isFinite(R)||L<=0||R<=0)
+    return null;
+  dir=(String(dir||"R").toUpperCase().startsWith("L"))?"L":"R";
+  transition=(String(transition||"in").toLowerCase()==="out")?"out":"in";
+  const sg=dir==="R"?1:-1, rad=Math.PI/180;
+  const kCirc=sg/R;
+  const k0=transition==="out"?kCirc:0;
+  const k1=transition==="out"?0:kCirc;
+  const a=(k1-k0)/L;
+  const n=Math.max(64,Math.min(4096,Math.ceil(L/2)));
+  const ds=L/n;
+  let E=startE,N=startN;
+  const samples=[{E,N,s:0,az:((startAz%360)+360)%360,k:k0}];
+  const keepEvery=Math.max(1,Math.floor(n/96));
+  for(let i=0;i<n;i++){
+    const sm=(i+0.5)*ds;
+    const th=startAz*rad+k0*sm+0.5*a*sm*sm;
+    E+=ds*Math.sin(th); N+=ds*Math.cos(th);
+    if(i===n-1 || i%keepEvery===0){
+      const ss=(i+1)*ds;
+      const da=(k0*ss+0.5*a*ss*ss)/rad;
+      samples.push({E,N,s:ss,az:((startAz+da)%360+360)%360,k:k0+a*ss});
+    }
+  }
+  const dAz=(k0*L+0.5*a*L*L)/rad;
+  const endAz=((startAz+dAz)%360+360)%360;
+  const chE=E-startE,chN=N-startN;
+  const chord=Math.hypot(chE,chN);
+  const chordAz=((Math.atan2(chE,chN)/rad)%360+360)%360;
+  return {startE,startN,endE:E,endN:N,startAz:((startAz%360)+360)%360,endAz,
+          L,R,dir,transition,k0,k1,spiralAngle:Math.abs(dAz),chord,chordAz,samples};
+}
+
 function _deedNormalize(t){
   return (t||"")
     // invisible characters PDF copy loves to smuggle in
@@ -8197,6 +8343,40 @@ function parseDeedText(txt){
         }
         return;
       }
+    }
+    const isSpiral=/\bSPIRAL\b|\bCLOTHOID\b|\bEULER\s+SPIRAL\b|\bTRANSITION\s+CURVE\b/.test(seg);
+    if(isSpiral){
+      const dir=/\bLEFT\b/.test(seg)?"L":(/\bRIGHT\b/.test(seg)?"R":null);
+      let L=null,R=null;
+      const lm=seg.match(/\bSPIRAL\s+(?:CURVE\s+)?(?:HAVING|WITH)?\s*(?:A\s+)?(?:LENGTH|DISTANCE)\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/) ||
+               seg.match(/\b(?:LENGTH|DISTANCE)\s+OF\s+(?:THE\s+)?SPIRAL\s*(?:IS|=|:)?\s*(\d{1,6}(?:\.\d+)?)/) ||
+               seg.match(/\b(?:LENGTH|DISTANCE)\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)\s*(?:FEET|FOOT|FT)\b/) ||
+               seg.match(/\b(\d{1,6}(?:\.\d+)?)\s*[- ]?\s*(?:FOOT|FEET|FT)\s+(?:LONG\s+)?SPIRAL\b/) ||
+               seg.match(/\bSPIRAL\s+(?:CURVE\s+)?(\d{1,6}(?:\.\d+)?)\s*(?:FEET|FOOT|FT)\s+IN\s+LENGTH\b/);
+      if(lm)L=parseFloat(lm[1]);
+      const rm=seg.match(/\b(?:FINAL|TERMINAL|ENDING|CIRCULAR)?\s*RADIUS\s*(?:AT\s+(?:THE\s+)?(?:SC|CS)\s*)?(?:OF|=|:)?\s*(\d{1,7}(?:\.\d+)?)/) ||
+               seg.match(/\bRADIUS\s+(?:OF\s+)?(?:THE\s+)?(?:SPIRAL\s+)?(?:AT\s+(?:THE\s+)?(?:SC|CS)\s+)?(?:IS\s+)?(\d{1,7}(?:\.\d+)?)/) ||
+               seg.match(/\b(\d{1,7}(?:\.\d+)?)\s*[- ]?\s*(?:FOOT|FEET|FT)\s+RADIUS\b/);
+      if(rm)R=parseFloat(rm[1]);
+      let transition=null;
+      if(/\b(?:TS|TANGENT\s+TO\s+SPIRAL)\b[\s\S]{0,80}\b(?:SC|SPIRAL\s+TO\s+CURVE)\b/.test(seg) ||
+         /\bFROM\s+(?:A\s+)?TANGENT\b[\s\S]{0,80}\b(?:TO|INTO)\b[\s\S]{0,40}\b(?:CIRCULAR\s+)?CURVE\b/.test(seg) ||
+         /\bINFINITY\b[\s\S]{0,70}\b(?:TO|AT)\b[\s\S]{0,30}\bRADIUS\b/.test(seg)) transition="in";
+      if(/\b(?:CS|CURVE\s+TO\s+SPIRAL)\b[\s\S]{0,80}\b(?:ST|SPIRAL\s+TO\s+TANGENT)\b/.test(seg) ||
+         /\bFROM\s+(?:A\s+)?(?:CIRCULAR\s+)?CURVE\b[\s\S]{0,80}\b(?:TO|INTO)\b[\s\S]{0,40}\bTANGENT\b/.test(seg) ||
+         /\bRADIUS\b[\s\S]{0,70}\b(?:TO|AT)\b[\s\S]{0,30}\bINFINITY\b/.test(seg)) transition="out";
+      let startBearing=null;
+      const tb=seg.search(/\b(?:INITIAL\s+)?TANGENT\s+(?:BEARING|AZIMUTH)\s*(?:OF|=|:)?\s*/);
+      if(tb>=0){
+        const tail=seg.slice(tb).replace(/^.*?\b(?:BEARING|AZIMUTH)\b\s*(?:OF|=|:)?\s*/,"");
+        startBearing=_deedParseBearing(tail);
+      }
+      let chB=null,chD=null;
+      const sci=seg.indexOf("CHORD");
+      if(sci>=0){const sr=seg.slice(sci);chB=_deedParseBearing(sr);chD=_deedParseDistance(sr);}
+      calls.push({type:"spiral",_si,_pob:_POBARR,dir,length:L,radius:R,transition,
+                  startBearing,chordB:chB,chordD:chD?chD.ft:null,raw:seg.slice(0,180)});
+      return;
     }
     const isCurve=/\bCURVE\b|\bCURVING\b|\bALONG THE ARC\b/.test(seg);
     if(isCurve){
@@ -8523,8 +8703,8 @@ function parseDeedText(txt){
 function computeDeed(calls,pobE,pobN,rotDeg){
   const rad=Math.PI/180;
   let E=pobE,N=pobN,tangent=null;
-  const verts=[{E,N}], arcs=[];
-  const usable=calls.filter(c=>(c.type==="line"||c.type==="curve")&&!c.tie);
+  const verts=[{E,N}], arcs=[], spirals=[], areaVerts=[{E,N}];
+  const usable=calls.filter(c=>(c.type==="line"||c.type==="curve"||c.type==="spiral")&&!c.tie);
   usable.forEach(c=>{
     if(c.type==="line"){
       let az;
@@ -8537,7 +8717,29 @@ function computeDeed(calls,pobE,pobN,rotDeg){
         az=c.compassAz+rotDeg;
       }else{ verts.push({E,N,skip:true}); return; }
       E+=c.dist*Math.sin(az*rad); N+=c.dist*Math.cos(az*rad);
-      verts.push({E,N}); tangent=az;
+      verts.push({E,N}); areaVerts.push({E,N}); tangent=az;
+      return;
+    }
+    if(c.type==="spiral"){
+      const me=usable.indexOf(c), prev=usable[me-1], next=usable[me+1];
+      let tr=c.transition;
+      if(!tr){
+        if(next&&next.type==="curve")tr="in";
+        else if(prev&&prev.type==="curve")tr="out";
+        else tr="in";
+      }
+      let stAz=tangent;
+      if(c.startBearing)stAz=_deedBearingToAz(c.startBearing)+rotDeg;
+      if(stAz==null||!c.length||!c.radius||!c.dir){
+        verts.push({E,N,skip:true});areaVerts.push({E,N,skip:true});return;
+      }
+      const sp=_spiralSolve(E,N,stAz,c.length,c.radius,c.dir,tr);
+      if(!sp){verts.push({E,N,skip:true});areaVerts.push({E,N,skip:true});return;}
+      const sE=E,sN=N;
+      E=sp.endE;N=sp.endN;tangent=sp.endAz;
+      verts.push({E,N});
+      sp.samples.slice(1).forEach(q=>areaVerts.push({E:q.E,N:q.N}));
+      spirals.push({...sp,sE,sN,eE:E,eN:N,call:c});
       return;
     }
     // curve
@@ -8569,7 +8771,7 @@ function computeDeed(calls,pobE,pobN,rotDeg){
       }else if(dir){ pick=(dir==="L")===(true)?cand[0]:cand[1]; }
       const sE0=E,sN0=N;
       E=pick.E; N=pick.N;
-      verts.push({E,N});
+      verts.push({E,N}); areaVerts.push({E,N});
       arcs.push({cE,cN,r:c.radius,a1,a2:pick.a2,ccw:pick.sg>0,sE:sE0,sN:sN0,eE:E,eN:N});
       // exit tangent = chord azimuth + half-delta toward the turn side
       const chA=Math.atan2(E-sE0,N-sN0)/rad;
@@ -8598,10 +8800,10 @@ function computeDeed(calls,pobE,pobN,rotDeg){
     }
     if(chAz==null&&tangent!=null&&delta!=null&&dir)
       chAz=tangent+(dir==="L"?-delta/2:delta/2);
-    if(chAz==null||chLen==null){ verts.push({E,N,skip:true}); return; }
+    if(chAz==null||chLen==null){ verts.push({E,N,skip:true}); areaVerts.push({E,N,skip:true}); return; }
     const sE=E,sN=N;
     E+=chLen*Math.sin(chAz*rad); N+=chLen*Math.cos(chAz*rad);
-    verts.push({E,N});
+    verts.push({E,N}); areaVerts.push({E,N});
     if(R&&R>=chLen/2){
       const h=Math.sqrt(Math.max(0,R*R-chLen*chLen/4));
       const mE=(sE+E)/2,mN=(sN+N)/2;
@@ -8617,8 +8819,8 @@ function computeDeed(calls,pobE,pobN,rotDeg){
   const closeE=verts[0].E-E, closeN=verts[0].N-N;
   const closeDist=Math.hypot(closeE,closeN);
   let perim=0;
-  usable.forEach(c=>{perim+=c.type==="line"?c.dist:(c.arc||c.chordD||0);});
-  return {verts,arcs,closeDist,perim,
+  usable.forEach(c=>{perim+=c.type==="line"?c.dist:(c.type==="spiral"?(c.length||0):(c.arc||c.chordD||0));});
+  return {verts,arcs,spirals,areaVerts,closeDist,perim,
     precision:closeDist>0.001?Math.round(perim/closeDist):null,
     closeAz:closeDist>0.001?((Math.atan2(closeE,closeN)/rad)%360+360)%360:0,
     skipped:calls.length-usable.length};
@@ -8660,7 +8862,7 @@ function _deedRecompute(){
 /* signed area with true arc segments (chords ± circular segments) */
 function _deedArea(g){
   if(!g||g.verts.length<3)return 0;
-  const v=g.verts;let A=0;
+  const v=(g.areaVerts&&g.areaVerts.length>=3)?g.areaVerts:g.verts;let A=0;
   for(let i=0;i<v.length-1;i++)A+=(v[i].E*v[i+1].N-v[i+1].E*v[i].N);
   // close the polygon virtually across any misclosure (origin-independent)
   const f=v[0], l=v[v.length-1];
@@ -8718,7 +8920,7 @@ function _deedNetAcres(){
    Last vertex coincides with the POB. Null when the figure has no ties. */
 function _deedTieVerts(f){
   if(!f||!f.computed||!f.computed.verts.length)return null;
-  const tc=f.calls.filter(c=>c.tie&&(c.type==="line"||c.type==="curve")).map(c=>Object.assign({},c,{tie:false}));
+  const tc=f.calls.filter(c=>c.tie&&(c.type==="line"||c.type==="curve"||c.type==="spiral")).map(c=>Object.assign({},c,{tie:false}));
   if(!tc.length)return null;
   const rot=((_deedPlot&&_deedPlot.rot)||0)+(f.recordRot||0);
   const tv=computeDeed(tc,0,0,rot);
@@ -9182,6 +9384,13 @@ function _deedCallLabel(c,i){
 
   const tie=c.tie?"TIE→POB (excluded): ":"";
   if(c.type==="line")return (i+1)+". "+tie+_deedAzToBearingStr(_deedBearingToAz(c.bearing))+" — "+c.dist.toFixed(2)+" "+(units==="ft"?"ft":"m eq")+(c.unit&&!/FEET|FT|FOOT/.test(c.unit)?" ("+c.rawVal+" "+String(c.unit).toLowerCase()+")":"");
+  if(c.type==="spiral"){
+    const tr=c.transition?c.transition.toUpperCase():"AUTO";
+    const usable=!!(c.length&&c.radius&&c.dir);
+    return (i+1)+". Spiral "+(c.dir==="L"?"LEFT":"RIGHT")+" "+tr+
+      (c.length?" L="+c.length.toFixed(2):"")+(c.radius?" R="+c.radius.toFixed(2):"")+
+      (usable?"":"  ⚠ needs length/radius/direction — tap");
+  }
   if(c.type==="curve"){
     const usable=((c.arc!=null)||(c.delta!=null)||(c.chordD!=null))&&(c.dir||c.concaveAz!=null||c.radialAz!=null||c.chordB);
     return (i+1)+". Curve "+(c.dir==="L"?"LEFT":"RIGHT")+(c.radius?" R="+c.radius.toFixed(2):"")+(c.arc?" arc="+c.arc.toFixed(2):"")+(c.chordD?" ch="+c.chordD.toFixed(2):"")+(usable?"":"  ⚠ needs arc/chord/delta — tap");
@@ -9230,13 +9439,20 @@ function _deedEditCall(calls,i){
     };
     const bIn=fld("Bearing (e.g. N 47°23'10\" E — or CURVE L/R R=250 ARC=130.9)",
       c.type==="line"?_deedAzToBearingStr(_deedBearingToAz(c.bearing)):
-      c.type==="curve"?("CURVE "+c.dir+(c.radius?" R="+c.radius:"")+(c.arc?" ARC="+c.arc:"")+(c.chordD?" CH="+c.chordD:"")):"");
+      c.type==="curve"?("CURVE "+c.dir+(c.radius?" R="+c.radius:"")+(c.arc?" ARC="+c.arc:"")+(c.chordD?" CH="+c.chordD:"")):
+      c.type==="spiral"?("SPIRAL "+c.dir+" "+(c.transition||"AUTO").toUpperCase()+(c.length?" L="+c.length:"")+(c.radius?" R="+c.radius:"")):"");
     const dIn=fld("Distance ("+units+", or e.g. '12 chains')",
       c.type==="line"?(c.rawVal!=null?c.rawVal+" "+(c.unit||""):c.dist):"");
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     mk("Save call","ok",()=>{
       const bt=_deedNormalize(bIn.value), dt=_deedNormalize(dIn.value);
-      if(/^CURVE/.test(bt)){
+      if(/^SPIRAL/.test(bt)){
+        const dir=/\bL\b|LEFT/.test(bt)?"L":"R";
+        const lm=bt.match(/\bL(?:ENGTH)?\s*=?\s*([\d.]+)/), rm=bt.match(/\bR(?:ADIUS)?\s*=?\s*([\d.]+)/);
+        const tr=/\bOUT\b/.test(bt)?"out":(/\bIN\b/.test(bt)?"in":null);
+        calls[i]={type:"spiral",dir,length:lm?parseFloat(lm[1]):null,radius:rm?parseFloat(rm[1]):null,
+                  transition:tr,startBearing:null,chordB:null,chordD:null,raw:c.raw||""};
+      }else if(/^CURVE/.test(bt)){
         const dir=/\bL\b|LEFT/.test(bt)?"L":"R";
         const r=bt.match(/R\s*=?\s*([\d.]+)/),a=bt.match(/ARC\s*=?\s*([\d.]+)/),ch=bt.match(/CH(?:ORD)?\s*=?\s*([\d.]+)/);
         calls[i]={type:"curve",dir,radius:r?parseFloat(r[1]):null,arc:a?parseFloat(a[1]):null,
@@ -10021,7 +10237,7 @@ function deedPlotterMenu(){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>"+(_deedRecordIds().length>1?("Records: <b style=\'color:var(--accent)\'>"+_deedRecordIds().length+"</b><br>"):"")+
       (_deedPlot.figures.length>1?_deedPlot.figures.map(f=>f.name+
-        (f.computed&&f.kind!=="easement"?" ("+(_deedArea(f.computed)/43560).toFixed(3)+" ac"+(f.computed.arcs&&f.computed.arcs.length?", arc-true":"")+")":"")+
+        (f.computed&&f.kind!=="easement"?" ("+(_deedArea(f.computed)/43560).toFixed(3)+" ac"+((f.computed.arcs&&f.computed.arcs.length)||(f.computed.spirals&&f.computed.spirals.length)?", curved":"")+")":"")+
         (_deedExceptOutside(f)?" ⚠outside parent":"")).join(" · ")+"<br>":"")+
       (g?("Boundary closure: <b style='color:var(--accent)'>"+g.closeDist.toFixed(2)+" "+units+"</b>"+
       (g.precision?" (1:"+g.precision+")":"")+"<br>"):"")+
@@ -10981,7 +11197,13 @@ function _drawGpsStakeHud(ctx,w,h,T,fixJob){
 /* — Shift every stored coordinate (points, arc centers, polylines, labels) — */
 function _shiftAllCoords(dE,dN){
   points.forEach(p=>{p.Easting+=dE;p.Northing+=dN;});
-  plotConnections.forEach(c=>{if(c.type==="arc"){c.centerE+=dE;c.centerN+=dN;}});
+  plotConnections.forEach(c=>{
+    if(c.type==="arc"){c.centerE+=dE;c.centerN+=dN;}
+    else if(c.type==="spiral"){
+      c.startE+=dE;c.startN+=dN;c.endE+=dE;c.endN+=dN;
+      (c.samples||[]).forEach(q=>{q.E+=dE;q.N+=dN;});
+    }
+  });
   (typeof _polylines!=="undefined"?_polylines:[]).forEach(pl=>{
     (pl.verts||[]).forEach(v=>{v.E+=dE;v.N+=dN;});
     (pl.segs||[]).forEach(sg=>{if(sg&&sg.type==="arc"){sg.centerE+=dE;sg.centerN+=dN;}});
@@ -11530,6 +11752,25 @@ function plotPoints(extCtx,extW,extH){
   // Connections with azimuth + distance labels, and true arc rendering
   plotConnections.forEach(conn=>{
 
+    // ── Spiral / clothoid connection ───────────────────────────────
+    if(conn.type==="spiral"){
+      const sp=(conn.samples&&conn.samples.length>1)?conn.samples:
+        ((_spiralSolve(conn.startE,conn.startN,conn.startAz,conn.L,conn.R,conn.dir,conn.transition)||{}).samples||[]);
+      if(sp.length>1){
+        ctx.save();ctx.strokeStyle="#e8b030";ctx.lineWidth=2;ctx.setLineDash([]);
+        ctx.beginPath();sp.forEach((q,i)=>{const x=X(q.E),y=Y(q.N);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
+        if(showLabels){
+          const q=sp[Math.floor(sp.length/2)],lbl="SP L:"+Number(conn.L||0).toFixed(2)+" R:"+Number(conn.R||0).toFixed(2);
+          ctx.font="bold 10px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="middle";
+          const lw=ctx.measureText(lbl).width,x=X(q.E),y=Y(q.N);
+          ctx.fillStyle=lightMode?"rgba(255,255,255,.92)":"rgba(8,11,20,.78)";ctx.fillRect(x-lw/2-3,y-9,lw+6,14);
+          ctx.fillStyle=lightMode?"#000000":"#e8b030";ctx.fillText(lbl,x,y);
+        }
+        ctx.restore();
+      }
+      return;
+    }
+
     // ── Arc connection (draw-only type) ──────────────────────────────
     if(conn.type==="arc"){
       const scx=X(conn.centerE), scy=Y(conn.centerN);
@@ -11692,6 +11933,14 @@ function plotPoints(extCtx,extW,extH){
       ctx.lineWidth=1.5;ctx.setLineDash([8,5]);
       ctx.beginPath();ctx.moveTo(X(g.E),Y(g.N));ctx.lineTo(X(ex),Y(en));ctx.stroke();
       ctx.setLineDash([]);
+    } else if(g.type==="polyline"){
+      const ps=g.pts||[];
+      if(ps.length>1){
+        ctx.strokeStyle=g.color||"rgba(255,255,255,.35)";
+        ctx.lineWidth=2;ctx.setLineDash([6,4]);ctx.beginPath();
+        ps.forEach((q,i)=>{const x=X(q.E),y=Y(q.N);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+        ctx.stroke();ctx.setLineDash([]);
+      }
     } else if(g.type==="segment"){
       ctx.strokeStyle=g.color||"rgba(255,255,255,.35)";
       ctx.lineWidth=1.5;ctx.setLineDash([6,4]);
@@ -11955,13 +12204,19 @@ function plotPoints(extCtx,extW,extH){
       const arcSeg=(v1,v2)=>g.arcs.some(a=>
         Math.abs(a.sE-v1.E)<0.01&&Math.abs(a.sN-v1.N)<0.01&&
         Math.abs(a.eE-v2.E)<0.01&&Math.abs(a.eN-v2.N)<0.01);
+      const spiralSeg=(v1,v2)=>(g.spirals||[]).some(a=>
+        Math.abs(a.sE-v1.E)<0.01&&Math.abs(a.sN-v1.N)<0.01&&
+        Math.abs(a.eE-v2.E)<0.01&&Math.abs(a.eN-v2.N)<0.01);
       ctx.beginPath();
       g.verts.forEach((v,i)=>{
         const sx=X(v.E),sy=Y(v.N);
         if(i===0){ctx.moveTo(sx,sy);return;}
-        arcSeg(g.verts[i-1],v)?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);
+        (arcSeg(g.verts[i-1],v)||spiralSeg(g.verts[i-1],v))?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);
       });
       ctx.stroke();
+      (g.spirals||[]).forEach(sp=>{
+        ctx.beginPath();sp.samples.forEach((q,i)=>{const sx=X(q.E),sy=Y(q.N);i?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);});ctx.stroke();
+      });
       g.arcs.forEach(a=>{
         ctx.beginPath();
         // Canvas Y is flipped vs world, so a world-CW (curve RIGHT) sweep is
@@ -12017,7 +12272,7 @@ function plotPoints(extCtx,extW,extH){
         g.verts.forEach((v,i)=>{
           if(i===0)return;
           const u=g.verts[i-1];
-          if(arcSeg(u,v))return;
+          if(arcSeg(u,v)||spiralSeg(u,v))return;
           const sx1=X(u.E),sy1=Y(u.N),sx2=X(v.E),sy2=Y(v.N);
           const dx=sx2-sx1,dy=sy2-sy1,slen=Math.hypot(dx,dy);
           if(slen<64)return;
@@ -12043,6 +12298,16 @@ function plotPoints(extCtx,extW,extH){
           ctx.fillStyle=st.col;
           const afs=fsFor(Math.hypot(sx2-sx1,sy2-sy1));
           txt("R="+a.r.toFixed(2)+"  L="+L.toFixed(2),(sx1+sx2)/2,(sy1+sy2)/2-(afs+1),afs);
+          ctx.restore();
+        });
+        (g.spirals||[]).forEach(sp=>{
+          if(!sp.samples||sp.samples.length<2)return;
+          const q=sp.samples[Math.floor(sp.samples.length/2)];
+          const sx1=X(sp.sE),sy1=Y(sp.sN),sx2=X(sp.eE),sy2=Y(sp.eN);
+          if(Math.hypot(sx2-sx1,sy2-sy1)<64)return;
+          ctx.save();ctx.fillStyle=st.col;
+          const afs=fsFor(Math.hypot(sx2-sx1,sy2-sy1));
+          txt("SP L="+sp.L.toFixed(2)+"  R="+sp.R.toFixed(2),X(q.E),Y(q.N)-(afs+1),afs);
           ctx.restore();
         });
         if(tieVerts&&tieVerts.length>1){
@@ -14190,7 +14455,7 @@ window.addEventListener("keydown",e=>{
 
 
 
-/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.5.7 ════════════════ */
+/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.6.0 ════════════════ */
 let _drawerTab="overview";
 let _activeWorkspace="field";
 function _esc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
