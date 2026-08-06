@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.5.4">
+<meta name="application-name" content="ChainLink-v4.5.6">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.5.4</title>
+<title>ChainLink Survey v4.5.6</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -775,7 +775,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 
 
 
-/* ══ CHAINLINK WORKSPACE SHELL v4.5.4 ═══════════════════════════ */
+/* ══ CHAINLINK WORKSPACE SHELL v4.5.6 ═══════════════════════════ */
 #drawerToggle{
   width:38px;height:38px;border-radius:10px;border:1px solid var(--border2);
   background:var(--surface2);color:var(--accent);display:flex;align-items:center;
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.5.4";
+const APP_VERSION = "4.5.6";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7906,6 +7906,34 @@ const _DEED_UNIT_FT={
   M:3.280833333, METER:3.280833333, METERS:3.280833333, METRE:3.280833333, METRES:3.280833333
 };
 
+/* ── COURSE TABLES (Line/Bearing/Distance) ──────────────────────────────
+   Modern descriptions often say "as shown in the table below" and carry
+   the courses as columns. Rows are converted to thence-prose IN PLACE so
+   surrounding commence/tie prose survives, and conversion happens ONLY
+   when the text is table-dominant (3+ course rows, fewer than 2 THENCEs
+   outside them) — a plat label table riding along with a full prose
+   description is still ignored, preserving the old double-count safety. */
+function _deedTableToProse(txt){
+  const lines=String(txt||"").split(/\r?\n/);
+  const rowRe=/^\s*(?:(?:LINE|COURSE)?\s*[L]?-?\d+[.):]?\s+)?([NS])\s*\.?\s*(\d{1,2})\s*(?:[°*\-\s])\s*(\d{1,2})?\s*(?:['\u2032\u0060\-\s])?\s*(\d{1,2}(?:\.\d+)?)?\s*(?:["\u2033])?\s*([EW])\s*(?:\t+|\s{2,})\s*([\d,]+(?:\.\d+)?)\s*(?:FEET|FT|')?\s*$/i;
+  const hdrRe=/^\s*(?:LINE|COURSE|NO\.?)\s*(?:\t+|\s{2,})\s*BEARING/i;
+  const curveRe=/^\s*C-?\d+\b/i;
+  let rows=0, curves=0;
+  const conv=lines.map(l=>{
+    if(hdrRe.test(l)) return {t:"",row:false};
+    if(curveRe.test(l)){curves++;return {t:l,row:false};}
+    const m=l.match(rowRe);
+    if(!m) return {t:l,row:false};
+    rows++;
+    const dms=m[2]+"°"+(m[3]||"00")+"'"+(m[4]||"00")+'"';
+    return {t:" THENCE "+m[1].toUpperCase()+" "+dms+" "+m[5].toUpperCase()+" "+m[6].replace(/,/g,"")+" FEET; ",row:true};
+  });
+  if(rows<3) return txt;
+  const outside=conv.filter(x=>!x.row).map(x=>x.t).join("\n");
+  const thences=(outside.match(/\bTHENCE\b/gi)||[]).length;
+  if(thences>=2) return txt;   // prose-dominant: the table is decoration
+  return conv.map(x=>x.t).join("\n");
+}
 function _deedNormalize(t){
   return (t||"")
     // invisible characters PDF copy loves to smuggle in
@@ -7923,6 +7951,11 @@ function _deedNormalize(t){
     .replace(/[\u2018\u2019\u2032\u02B9\u02BC\u00B4\u0060]/g,"'")
     .replace(/[\u201C\u201D\u2033\u02BA]/g,'"')
     .replace(/[\u00BA\u00B0\u02DA\u309C\u1D52]/g,"°")
+    // fax/typewriter degree sign: an asterisk wedged between the degree
+    // digits and the minutes ("N 45* 30' E", "S 12*15' W"). Digit-adjacency
+    // required so footnote/wildcard asterisks are never touched.
+    .replace(/(\d)\s*\*(?=\s*\d{1,2}\s*['\u2032\u0060]?)/g,"$1°")
+    .replace(/(\d)\s*\*(?=\s*(?:E|W|EAST|WEST)\b)/gi,"$1°")
     // degree lost entirely by OCR/copy: "N 45 00'00\"" still has ' and " anchors
     .replace(/\u00BD/g," 1/2").replace(/\u00BC/g," 1/4").replace(/\u00BE/g," 3/4")
     .replace(/\s+/g," ")
@@ -8100,7 +8133,7 @@ function _deedParseAngle(seg,label){
 
 /* Split description into course segments and classify each */
 function parseDeedText(txt){
-  const t=_deedNormalize(txt);
+  const t=_deedNormalize(_deedTableToProse(txt));
   // segment on THENCE / RUNNING THENCE / numbered courses / semicolons
   // ", AND NORTH…" chains two courses in one clause ("the following 2
   // courses and distances") — it starts a new segment. The comma guard keeps
@@ -9049,7 +9082,7 @@ function parseDeedFigures(txt){
     .replace(/([.;]\s+)(?=(?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b\s*:?)/gim,"$1 [[FIG_BOUNDARY]] ")
     .replace(/(^|\r?\n)\s*(?=(?:[L1I|]ESS|SAVE)\s+AND\s+EXCEPT\b|EXCEPTING\s+THEREFROM\b|EXCEPT\s+THE\s+FOLLOWING\b)/gim,"$1 [[FIG_EXCEPT]] ")
     .replace(/(^|\r?\n)\s*(?=(?:TOGETHER\s+WITH|SUBJECT\s+TO)\s+AN?\b[^\r\n]{0,60}\bEASEMENT\b)/gim,"$1 [[FIG_EASEMENT]] ");
-  const t=_deedNormalize(prepared);
+  const t=_deedNormalize(_deedTableToProse(prepared));
   const KEY=/(\[\[FIG_BOUNDARY\]\]|\[\[FIG_EXCEPT\]\]|\[\[FIG_EASEMENT\]\]|(?:[L1I|]ESS|SAVE) AND EXCEPT|EXCEPTING THEREFROM|EXCEPT THE FOLLOWING|(?:ALSO )?[A-Z]{0,6}\s?EXCEPT (?:ALSO )?THE [A-Z]+ (?:LOT|PARCEL|TRACT|LANDS?|ACRES?)|RESERVING UNTO|RESERVING TO|(?:TOGETHER )?WITH A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT|SUBJECT TO A[N]? (?:\d+ FOOT )?[A-Z ]{0,24}EASEMENT)/g;
   const parts=[];let last=0,m,firstKind="boundary",kw="";
   while((m=KEY.exec(t))){
@@ -13669,7 +13702,7 @@ const HELP_TOPICS = [
 <p>Shoot page by page, <em>in order</em> — each photo or PDF <strong>appends</strong> to the text box. Overlap between shots is fine: the app finds the seam and stitches it, and tells you when it did ("✂ stitched at the overlap"). If you're photographing, a little deliberate overlap between shots actually helps.</p>
 <h3>The Review List Is the Job</h3>
 <p>After reading, every call appears as a row: check each one against the paper. Junk from headers and margins shows as <strong>⚠ rows — just delete them</strong>. A misread bearing or distance: tap the row and retype it. The app repairs dozens of common scanning errors automatically (mangled degree signs, "I" read as "1", old typewriter habits), but the review list is your safety net, and thirty seconds there beats a bad boundary.</p>
-<div class="tip">Old units read automatically: chains, links, rods, poles, perches, varas, and meters all convert. "4 chains and 50 links" comes in as 297.00 ft.</div>`},
+<div class="tip">Old units read automatically: chains, links, rods, poles, perches, varas, and meters all convert. "4 chains and 50 links" comes in as 297.00 ft. Course tables read too: a Line / Bearing / Distance table (one course per row) converts row by row — surrounding commence and tie prose is kept, and curve rows are left for manual entry.</div>`},
 
   { id:"deed-figures", section:"Deed Plotter", title:"Figures: Boundary, Carve-Outs & Easements",
     preview:"One deed, several shapes — ties, placement, and the ⚠ warnings",
@@ -14113,7 +14146,7 @@ window.addEventListener("keydown",e=>{
 
 
 
-/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.5.4 ════════════════ */
+/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.5.6 ════════════════ */
 let _drawerTab="overview";
 let _activeWorkspace="field";
 function _esc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
