@@ -268,7 +268,7 @@ body{
 
 /* ── BOTTOM TOOLBAR ──────────────────────────────────── */
 #toolbar{
-  flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);
+  flex:0 0 auto;display:grid;grid-template-columns:repeat(6,1fr);
   gap:1px;background:var(--border);
   border-top:1px solid var(--border2);
 }
@@ -773,6 +773,76 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 }
 .toggle-btn.on{border-color:var(--ok);color:var(--ok);background:var(--ok-lo);box-shadow:var(--glow-blue)}
 
+
+
+/* ══ CHAINLINK WORKSPACE SHELL v4.4.34 ═══════════════════════════ */
+#drawerToggle{
+  width:38px;height:38px;border-radius:10px;border:1px solid var(--border2);
+  background:var(--surface2);color:var(--accent);display:flex;align-items:center;
+  justify-content:center;cursor:pointer;flex:0 0 auto;margin-right:9px;
+  box-shadow:0 6px 18px rgba(0,0,0,.28)
+}
+#drawerToggle svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+#appHeader{padding-left:8px}
+#headerLeft{flex:1;min-width:0}
+#headerLeft h1{white-space:nowrap}
+
+#drawerShade{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:8200;opacity:0;pointer-events:none;transition:opacity .2s ease}
+#drawerShade.open{opacity:1;pointer-events:auto}
+#projectDrawer{position:fixed;left:0;top:0;bottom:0;width:min(88vw,390px);z-index:8300;
+  transform:translateX(-104%);transition:transform .25s cubic-bezier(.2,.8,.2,1);
+  background:linear-gradient(180deg,rgba(24,22,17,.98),rgba(10,10,8,.99));
+  border-right:1px solid var(--border2);box-shadow:24px 0 80px rgba(0,0,0,.65);
+  display:flex;flex-direction:column;overflow:hidden;backdrop-filter:blur(18px)}
+#projectDrawer.open{transform:translateX(0)}
+.drawer-head{padding:18px 16px 13px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+.drawer-brand{flex:1;min-width:0}.drawer-brand strong{display:block;font-family:var(--font-ui);font-size:.92em;letter-spacing:.15em;color:var(--accent)}
+.drawer-brand small{display:block;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.drawer-close{width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:1.25em}
+.drawer-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.drawer-stat{background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:10px;padding:9px 8px;text-align:center}
+.drawer-stat b{display:block;font-family:var(--font-data);color:var(--text);font-size:1.02em}.drawer-stat span{font-family:var(--font-ui);font-size:.63em;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.drawer-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:8px;background:rgba(0,0,0,.18);border-bottom:1px solid var(--border)}
+.drawer-tabs button{border:0;border-radius:8px;padding:8px 3px;background:transparent;color:var(--muted);font-family:var(--font-ui);font-weight:700;font-size:.68em;letter-spacing:.06em;text-transform:uppercase}
+.drawer-tabs button.active{background:var(--accent-lo);color:var(--accent)}
+#drawerBody{overflow:auto;padding:10px 12px 22px;flex:1}
+.drawer-section-title{font-family:var(--font-ui);font-size:.64em;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);padding:10px 4px 5px}
+.drawer-item{width:100%;display:flex;align-items:center;gap:10px;text-align:left;border:1px solid transparent;background:transparent;color:var(--text2);padding:10px 9px;border-radius:10px;font-family:var(--font-ui);cursor:pointer}
+.drawer-item:active,.drawer-item:hover{background:var(--surface2);border-color:var(--border)}
+.drawer-item .di{width:27px;height:27px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent);font-family:var(--font-data);font-size:.74em;flex:0 0 auto}
+.drawer-item .copy{flex:1;min-width:0}.drawer-item strong{display:block;color:var(--text);font-size:.86em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.drawer-item small{display:block;color:var(--muted);font-size:.72em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.drawer-item .chev{color:var(--dim)}
+.drawer-toggle{width:42px;height:24px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);position:relative;flex:0 0 auto}
+.drawer-toggle:before{content:"";position:absolute;width:17px;height:17px;border-radius:50%;top:2.5px;left:3px;background:var(--muted);transition:.15s}
+.drawer-toggle.on{background:var(--ok-lo);border-color:var(--ok)}.drawer-toggle.on:before{left:20px;background:var(--ok)}
+
+#workspaceShade{position:fixed;inset:0;z-index:7000;background:rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:opacity .18s}
+#workspaceShade.open{opacity:1;pointer-events:auto}
+#workspacePanel{position:fixed;left:8px;right:8px;bottom:76px;z-index:7100;max-height:min(74vh,680px);
+  transform:translateY(calc(100% + 100px));transition:transform .25s cubic-bezier(.2,.85,.2,1);
+  background:linear-gradient(180deg,rgba(34,31,23,.98),rgba(18,17,13,.99));border:1px solid var(--border2);border-radius:18px;
+  box-shadow:0 24px 70px rgba(0,0,0,.65);display:flex;flex-direction:column;overflow:hidden;backdrop-filter:blur(18px)}
+#workspacePanel.open{transform:translateY(0)}
+.workspace-head{display:flex;align-items:center;gap:12px;padding:13px 14px;border-bottom:1px solid var(--border)}
+.workspace-head-icon{width:38px;height:38px;border-radius:11px;background:var(--accent-lo);border:1px solid rgba(240,160,32,.28);display:flex;align-items:center;justify-content:center;color:var(--accent);font-family:var(--font-ui);font-weight:800}
+.workspace-head-copy{flex:1}.workspace-head-copy strong{display:block;font-family:var(--font-ui);font-size:1em;letter-spacing:.13em;text-transform:uppercase;color:var(--text)}.workspace-head-copy small{color:var(--muted);font-size:.74em}
+.workspace-close{width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:1.2em}
+#workspaceBody{padding:11px;overflow:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.ws-group{grid-column:1/-1;font-family:var(--font-ui);font-size:.63em;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);padding:8px 4px 0}
+.ws-card{min-height:72px;border:1px solid var(--border);border-radius:12px;background:linear-gradient(180deg,var(--surface2),var(--surface));color:var(--text);padding:11px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:6px;font-family:var(--font-ui);box-shadow:0 6px 15px rgba(0,0,0,.18)}
+.ws-card:active{border-color:var(--accent);background:var(--surface3)}.ws-card.primary{border-color:rgba(104,168,74,.55);background:linear-gradient(180deg,rgba(104,168,74,.2),rgba(104,168,74,.08))}.ws-card.accent{border-color:rgba(240,160,32,.55);background:linear-gradient(180deg,rgba(240,160,32,.18),rgba(240,160,32,.06))}.ws-card.blue{border-color:rgba(74,158,255,.4)}
+.ws-card strong{font-size:.88em;letter-spacing:.03em}.ws-card small{color:var(--muted);font-size:.7em;line-height:1.25}.ws-card .ws-badge{align-self:flex-start;font-family:var(--font-data);font-size:.62em;color:var(--accent);padding:2px 6px;border:1px solid var(--border2);border-radius:999px}
+
+#contextDock{position:fixed;left:8px;right:8px;bottom:78px;z-index:6900;background:rgba(22,20,15,.96);border:1px solid var(--border2);border-radius:15px;padding:8px;box-shadow:0 16px 50px rgba(0,0,0,.55);display:none;gap:6px;backdrop-filter:blur(14px)}
+#contextDock.open{display:flex}.context-title{min-width:78px;max-width:110px;padding:7px 8px;border-right:1px solid var(--border);font-family:var(--font-ui)}.context-title strong{display:block;color:var(--accent);font-size:.75em;text-transform:uppercase;letter-spacing:.08em}.context-title small{display:block;color:var(--muted);font-size:.65em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.context-actions{display:flex;gap:5px;overflow-x:auto;flex:1}.context-actions button{min-width:68px;border:1px solid var(--border);border-radius:9px;background:var(--surface2);color:var(--text2);padding:7px 8px;font-family:var(--font-ui);font-size:.69em;font-weight:700}.context-actions button.primary{color:var(--ok);border-color:rgba(104,168,74,.5)}.context-actions button.danger{color:var(--danger)}
+
+#toolbar{grid-template-columns:repeat(6,1fr)}
+#toolbar button{padding:8px 1px 6px;font-size:.62em;min-width:0}
+#toolbar button .ico{font-size:1.15em}
+#toolbar button .ico svg{width:20px;height:20px}
+@media(max-width:520px){#workspaceBody{grid-template-columns:repeat(2,minmax(0,1fr))}.ws-card{min-height:68px;padding:10px 9px}#toolbar .tab-label{font-size:.9em;letter-spacing:.01em}}
+@media(min-width:800px){#workspacePanel{left:auto;right:18px;width:520px;bottom:84px}#projectDrawer{width:410px}}
+
 </style>
 
 <style id="chainlink-field-ui-v6">
@@ -871,7 +941,12 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 
 /* Bottom dock */
 #toolbar{min-height:78px;padding:7px 8px max(7px,env(safe-area-inset-bottom));gap:7px;background:linear-gradient(180deg,rgba(9,15,17,.88),rgba(6,10,12,.98));border-top:1px solid var(--border2);box-shadow:0 -16px 44px rgba(0,0,0,.28);backdrop-filter:blur(20px);z-index:130}
-#toolbar button{min-height:62px;padding:7px 3px;border:1px solid transparent;border-radius:17px;background:transparent;color:var(--muted);font-size:.61rem;font-weight:800;letter-spacing:.11em;gap:5px}
+#toolbar button{min-height:62px;padding:7px 2px;border:1px solid transparent;border-radius:15px;background:transparent;color:var(--muted);font-size:.53rem;font-weight:800;letter-spacing:.075em;gap:4px;min-width:0}
+#toolbar button .tab-label{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.workspace-section{margin:12px 2px 5px;font-family:var(--font-ui);font-size:.58rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.workspace-record-card{display:block;width:100%;padding:11px 13px;margin:6px 0;border-radius:14px;border:1px solid var(--border2);background:linear-gradient(145deg,rgba(25,39,44,.92),rgba(13,21,24,.92));color:var(--text);text-align:left;font-family:var(--font-ui);cursor:pointer}
+.workspace-record-card strong{display:block;color:var(--accent-bright);font-size:.84rem;margin-bottom:2px}
+.workspace-record-card small{display:block;color:var(--muted);font-family:var(--font-data);font-size:.64rem}
 #toolbar button .ico{width:27px;height:27px;display:grid;place-items:center;font-size:0}
 #toolbar button .ico svg{width:25px;height:25px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 #toolbar button:active,.tbar-active{background:linear-gradient(145deg,rgba(230,183,95,.15),rgba(230,183,95,.05));border-color:rgba(230,183,95,.25);color:var(--accent-bright);box-shadow:inset 0 1px rgba(255,255,255,.035)}
@@ -923,8 +998,8 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 .toggle-btn{border-radius:999px;min-width:68px;background:rgba(4,9,11,.55);border-color:var(--border2)}
 .toggle-btn.on{background:var(--ok-lo);border-color:rgba(129,212,151,.45);color:var(--ok);box-shadow:none}
 
-@media(max-width:420px){#appHeader{padding-left:9px;padding-right:9px}#headerLeft{max-width:38%}#jobBadge{font-size:.82rem}#statusBar{font-size:.58rem}.modal{padding-left:11px;padding-right:11px}.sf-val{font-size:.96rem}#plotControls{grid-template-columns:repeat(2,44px)}#plotControls button{width:44px;height:44px}}
-@media(min-width:700px){#appHeader{padding-left:18px;padding-right:18px}.modal{margin-bottom:10px}.modal-overlay{padding-bottom:88px}#toolbar{grid-template-columns:repeat(4,minmax(140px,1fr));padding-left:max(10px,calc((100vw - 760px)/2));padding-right:max(10px,calc((100vw - 760px)/2))}}
+@media(max-width:420px){#appHeader{padding-left:9px;padding-right:9px}#headerLeft{max-width:38%}#jobBadge{font-size:.82rem}#statusBar{font-size:.58rem}.modal{padding-left:11px;padding-right:11px}.sf-val{font-size:.96rem}#plotControls{grid-template-columns:repeat(2,44px)}#plotControls button{width:44px;height:44px}#toolbar{gap:2px;padding-left:3px;padding-right:3px}#toolbar button{font-size:.46rem;letter-spacing:.035em;border-radius:12px;padding-left:0;padding-right:0}#toolbar button .ico{width:22px;height:22px}#toolbar button .ico svg{width:21px;height:21px}}
+@media(min-width:700px){#appHeader{padding-left:18px;padding-right:18px}.modal{margin-bottom:10px}.modal-overlay{padding-bottom:88px}#toolbar{grid-template-columns:repeat(6,minmax(100px,1fr));padding-left:max(10px,calc((100vw - 920px)/2));padding-right:max(10px,calc((100vw - 920px)/2))}#toolbar button{font-size:.58rem}}
 @media(pointer:fine){#plotControls button:nth-child(5),#plotControls button:nth-child(6),#plotControls button:nth-child(7),#plotControls button:nth-child(8){display:flex}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
 </style>
@@ -1001,6 +1076,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 </div>
 <!-- ══ APP ═══════════════════════════════════════════════ -->
 <div id="appHeader">
+  <button id="drawerToggle" onclick="openProjectDrawer()" aria-label="Open project explorer"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
   <div id="headerLeft">
     <h1>CHAINLINK FIELD</h1>
     <div id="jobBadge">No job</div>
@@ -1014,6 +1090,20 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
   </div>
   <div id="statusBar">—</div>
 </div>
+
+<div id="drawerShade" onclick="closeProjectDrawer()"></div>
+<aside id="projectDrawer" aria-label="Project explorer">
+  <div class="drawer-head"><div class="drawer-brand"><strong>PROJECT EXPLORER</strong><small id="drawerJobName">No job</small></div><button class="drawer-close" onclick="closeProjectDrawer()">×</button></div>
+  <div class="drawer-summary"><div class="drawer-stat"><b id="drawerPts">0</b><span>Points</span></div><div class="drawer-stat"><b id="drawerRecords">0</b><span>Records</span></div><div class="drawer-stat"><b id="drawerOcc">—</b><span>Occupied</span></div></div>
+  <div class="drawer-tabs"><button data-dtab="overview" onclick="renderDrawerTab('overview')">Project</button><button data-dtab="records" onclick="renderDrawerTab('records')">Records</button><button data-dtab="points" onclick="renderDrawerTab('points')">Points</button><button data-dtab="layers" onclick="renderDrawerTab('layers')">Layers</button></div>
+  <div id="drawerBody"></div>
+</aside>
+<div id="workspaceShade" onclick="closeWorkspacePanel()"></div>
+<section id="workspacePanel" aria-label="Workspace">
+  <div class="workspace-head"><div class="workspace-head-icon" id="workspaceIcon">F</div><div class="workspace-head-copy"><strong id="workspaceTitle">Field</strong><small id="workspaceSub">Field operations</small></div><button class="workspace-close" onclick="closeWorkspacePanel()">×</button></div>
+  <div id="workspaceBody"></div>
+</section>
+<div id="contextDock"><div class="context-title"><strong id="contextKind">Object</strong><small id="contextName">Selected</small></div><div class="context-actions" id="contextActions"></div></div>
 
 <div id="canvasWrap">
   <canvas id="plotCanvas"></canvas>
@@ -1048,10 +1138,12 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 </div>
 
 <div id="toolbar">
-  <button onclick="enterShots()" aria-label="Shots"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span>Shots</button>
-  <button onclick="cogoMenu()" aria-label="COGO"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20 12 4l8 16Z"/><path d="M8 16h8M10 12h4"/></svg></span>COGO</button>
-  <button onclick="stakeoutMenu()" aria-label="Stakeout"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg></span>Stakeout</button>
-  <button onclick="moreMenu()" aria-label="More"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span>More</button>
+  <button data-workspace="field" onclick="openWorkspace('field')" aria-label="Field"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span><span class="tab-label">Field</span></button>
+  <button data-workspace="records" onclick="openWorkspace('records')" aria-label="Records"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v5h5M8 12h8M8 16h8"/></svg></span><span class="tab-label">Records</span></button>
+  <button data-workspace="cogo" onclick="openWorkspace('cogo')" aria-label="COGO"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20 12 4l8 16Z"/><path d="M8 16h8M10 12h4"/></svg></span><span class="tab-label">COGO</span></button>
+  <button data-workspace="stake" onclick="openWorkspace('stake')" aria-label="Stake"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg></span><span class="tab-label">Stake</span></button>
+  <button data-workspace="map" onclick="openWorkspace('map')" aria-label="Map"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 6 5-3 8 3 5-3v15l-5 3-8-3-5 3z"/><path d="M8 3v15M16 6v15"/></svg></span><span class="tab-label">Map</span></button>
+  <button data-workspace="project" onclick="openWorkspace('project')" aria-label="Project"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v12H4z"/><path d="M8 12h8M8 16h5"/></svg></span><span class="tab-label">Project</span></button>
 </div>
 
 <script>
@@ -1060,7 +1152,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.32";
+const APP_VERSION = "4.4.34";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -4354,6 +4446,7 @@ function deletePoint(){
 
 /* ── 10. STAKEOUT ──────────────────────────────────────────────── */
 function stakeoutMenu(){
+  _setWorkspaceActive("stake");
   openModal((modal,close)=>{
     _helpContext="stakeout";
     modal.innerHTML=`<h2>📍 Stakeout</h2><p class="info">Occupying: <b style="color:var(--accent)">#${currentPoint?currentPoint.Point:"—"}</b></p>`;
@@ -5441,10 +5534,115 @@ function settingsMenu(){
   });
 }
 
+
+/* ── WORKSPACE NAVIGATION ─────────────────────────────────────── */
+function _setWorkspaceActive(name){
+  document.querySelectorAll("#toolbar button[data-workspace]").forEach(b=>b.classList.toggle("tbar-active",b.dataset.workspace===name));
+}
+function _wsSection(modal,text){const d=document.createElement("div");d.className="workspace-section";d.textContent=text;modal.appendChild(d);}
+function _wsButton(modal,text,cls,fn){const b=document.createElement("button");b.className="btn "+(cls||"");b.textContent=text;b.onclick=fn;modal.appendChild(b);return b;}
+function fieldWorkspaceMenu(){
+  _setWorkspaceActive("field");
+  openModal((modal,close)=>{
+    _helpContext="shot-2d";
+    modal.innerHTML="<h2>Field</h2><p class='info'>Collect observations, manage occupations, and review field points.</p>";
+    _wsSection(modal,"Observation");
+    _wsButton(modal,"Take Shot","ok",()=>{close();takeShot()});
+    _wsButton(modal,"Occupy Point","blue",()=>{close();occupyPoint()});
+    _wsButton(modal,"Set Station Coordinates","blue",()=>{close();setKnownStation()});
+    _wsButton(modal,"Check Shot to Known Point","",()=>{close();checkShot()});
+    _wsButton(modal,"Two-Face Shot","",()=>{close();twoFaceShot()});
+    _wsSection(modal,"Field Data");
+    _wsButton(modal,"Point List / Edit","",()=>{close();pointListMenu()});
+    _wsButton(modal,"Atmospheric PPM",_ppmEnabled?"ok":"",()=>{close();atmosphericSetup()});
+    _wsButton(modal,"Shift All Elevations","blue",()=>{close();elevationShift()});
+    _wsButton(modal,"Flag a Point","",()=>{close();flagPoint()});
+    _wsButton(modal,"Done","",close);
+  });
+}
+function recordsWorkspaceMenu(){
+  _setWorkspaceActive("records");
+  openModal((modal,close)=>{
+    const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
+    modal.innerHTML="<h2>Records</h2><p class='info'>Import, assemble, move, and compare deed records in the current job.</p>";
+    _wsSection(modal,"Deed Records");
+    _wsButton(modal,ids.length?"Open Deed Plotter":"Import First Deed",ids.length?"blue":"accent",()=>{close();deedPlotterMenu()});
+    if(ids.length){
+      _wsButton(modal,"Import Another Deed","accent",()=>{close();_deedImportAnother()});
+      if(ids.length>1)_wsButton(modal,"Move / Snap a Deed Record","ok",()=>{close();_deedRecordPicker()});
+      _wsButton(modal,"Move an Individual Figure","",()=>{close();_deedMovePicker()});
+      _wsButton(modal,"Fit Record to Two Measured Points","ok",()=>{close();_deedFitTwoPoint()});
+      _wsSection(modal,"Current Records");
+      ids.forEach(id=>{
+        const figs=_deedRecordFigures(id), boundary=figs.find(f=>f.kind==="boundary")||figs[0];
+        const card=document.createElement("button");card.className="workspace-record-card";
+        const ac=boundary&&boundary.computed&&boundary.kind!=="easement"?(_deedArea(boundary.computed)/43560).toFixed(3)+" ac":"";
+        card.innerHTML="<strong>"+_deedRecordLabel(id)+"</strong><small>"+figs.length+" figure"+(figs.length===1?"":"s")+(ac?" · "+ac:"")+"</small>";
+        card.onclick=()=>{close();_deedAdjustRecordId=id;_deedAdjustScope=null;_deedAdjustStart();};modal.appendChild(card);
+      });
+    }
+    _wsButton(modal,"Done","",close);
+  });
+}
+function mapWorkspaceMenu(){
+  _setWorkspaceActive("map");
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Map</h2><p class='info'>Control imagery, GPS context, labels, elevation display, and plot view.</p>";
+    _wsSection(modal,"Basemap & Position");
+    _wsButton(modal,"Satellite Imagery / GPS","accent",()=>{close();satelliteMenu()});
+    _wsButton(modal,"Toggle Satellite + GPS",satOn?"ok":"",()=>{toggleSatAndGps();close();});
+    _wsButton(modal,"Zoom to Occupied Point","blue",()=>{zoomToOccupied();close();});
+    _wsButton(modal,"Fit All Geometry","",()=>{resetPlot();close();});
+    _wsSection(modal,"Display");
+    _wsButton(modal,(showLabels?"Hide":"Show")+" Point and Line Labels","",()=>{toggleLabels();close();});
+    _wsButton(modal,(showElevations?"Hide":"Show")+" Elevations","",()=>{toggleElevations();close();});
+    _wsButton(modal,"Done","",close);
+  });
+}
+function projectExportMenu(){
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Export</h2>";
+    const go=(t,fn,cls="blue")=>_wsButton(modal,t,cls,()=>{close();fn();});
+    go("CSV"+(typeof window.showDirectoryPicker==="function"?" to Folder":""),saveToFile,"ok");
+    go("DXF",exportDXF);go("LandXML",exportLandXML);go("PDF Plot",exportPlotPDF);go("Fieldbook",exportFieldbook);go("SVG",exportSVG);go("GeoJSON",exportGeoJSON);
+    if(geoAnchor)go("KML / Google Earth",exportKML);
+    _wsButton(modal,"Back","",()=>{close();projectWorkspaceMenu();});
+  });
+}
+function projectImportMenu(){
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Import</h2>";
+    _wsButton(modal,"Load ChainLink CSV","ok",()=>{close();loadFromFile()});
+    _wsButton(modal,"Import DXF","blue",()=>{close();importDXF()});
+    _wsButton(modal,"Import LandXML","blue",()=>{close();importLandXML()});
+    _wsButton(modal,"Import Deed Record","accent",()=>{close();if(_deedPlot)_deedImportAnother();else deedPlotterMenu();});
+    _wsButton(modal,"Back","",()=>{close();projectWorkspaceMenu();});
+  });
+}
+function projectWorkspaceMenu(){
+  _setWorkspaceActive("project");
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Project</h2><p class='info'>Manage the job, exchange files, and configure ChainLink.</p>";
+    _wsSection(modal,"Job");
+    _wsButton(modal,"Job Manager","accent",()=>{closeAllModals();_showJobScreen();});
+    _wsButton(modal,"Rename Job","blue",()=>{close();alphaInput("Job Name:",jobName,jn=>{if(jn){jobName=jn;saveData()}})});
+    _wsButton(modal,"Point List / Edit","",()=>{close();pointListMenu()});
+    _wsSection(modal,"Files");
+    _wsButton(modal,"Export…","ok",()=>{close();projectExportMenu()});
+    _wsButton(modal,"Import…","blue",()=>{close();projectImportMenu()});
+    _wsButton(modal,"Change Save Folder","",()=>{close();_dirHandle=null;saveToFile()});
+    _wsSection(modal,"Application");
+    _wsButton(modal,"Settings","",()=>{close();settingsMenu()});
+    _wsButton(modal,"Help","",()=>{close();openHelp()});
+    _wsButton(modal,"Clear All Data","danger",()=>{close();clearAllData()});
+    _wsButton(modal,"Done","",close);
+  });
+}
+
 /* ── 13. MORE MENU ─────────────────────────────────────────────── */
 function moreMenu(){
   openModal((modal,close)=>{
-    modal.innerHTML="<h2>☰ More</h2>";
+    modal.innerHTML="<h2>Legacy Tools</h2>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className=`btn ${cls}`;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     mk("⚙ Settings","",()=>{close();settingsMenu()});
     mk("📋 Point List / Edit","",()=>{close();pointListMenu()});
@@ -5478,13 +5676,13 @@ function moreMenu(){
 
 /* ── 14. COGO ──────────────────────────────────────────────────── */
 function cogoMenu(){
+  _setWorkspaceActive("cogo");
   openModal((modal,close)=>{
     modal.classList.add("modal-cogo");
     _helpContext="cogo-intro";
     modal.innerHTML="<h2>📐 COGO</h2>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className=`btn ${cls}`;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     mk("Inverse (Dist & Bearing)","ok",   ()=>{close();cogoInverse()});
-    mk("📜 Deed Plotter","accent",          ()=>{close();deedPlotterMenu()});
     mk("Intersection Tools","blue",         ()=>{close();cogoIntersection()});
     mk("Bearing & Distance","",             ()=>{close();cogoRadiation()});
     mk("Offset to Line","",                 ()=>{close();cogoOffsetPoint()});
@@ -12362,7 +12560,7 @@ function zoomToOccupied(){
               close();
               selectedPoint=(selectedPoint&&selectedPoint.Point===p.Point)?null:p;
               selectedConn=null; plotPoints();
-              if(selectedPoint) _pointContextMenu(p);
+              if(selectedPoint) _showPointQuickActions(p);
             });
           });
           mk2("Cancel","",close);
@@ -12372,7 +12570,7 @@ function zoomToOccupied(){
       selectedPoint=(selectedPoint&&selectedPoint.Point===hitPt.Point)?null:hitPt;
       selectedConn=null;
       plotPoints();
-      if(selectedPoint) _pointContextMenu(hitPt);
+      if(selectedPoint) _showPointQuickActions(hitPt);
       return;
     }
 
@@ -12383,8 +12581,8 @@ function zoomToOccupied(){
       plotPoints();
       if(selectedConn>=0){
         const conn=plotConnections[hitConnIdx];
-        if(conn.type==="arc") _arcContextMenu(conn,hitConnIdx);
-        else                  _lineContextMenu(conn,hitConnIdx);
+        if(conn.type==="arc") _showArcQuickActions(conn,hitConnIdx);
+        else                  _showLineQuickActions(conn,hitConnIdx);
       }
       return;
     }
@@ -13808,6 +14006,114 @@ window.addEventListener("keydown",e=>{
   function tickChain(){offset-=0.5;drawSplashChain();requestAnimationFrame(tickChain);}
   tickChain();
 })();
+
+
+
+/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.4.34 ════════════════ */
+let _drawerTab="overview";
+let _activeWorkspace="field";
+function _esc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function openProjectDrawer(tab){
+  closeWorkspacePanel();_hideContextDock();
+  document.getElementById("drawerShade").classList.add("open");
+  document.getElementById("projectDrawer").classList.add("open");
+  renderDrawerTab(tab||_drawerTab);
+}
+function closeProjectDrawer(){document.getElementById("drawerShade").classList.remove("open");document.getElementById("projectDrawer").classList.remove("open");}
+function _drawerHeaderSync(){
+  const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
+  document.getElementById("drawerJobName").textContent=jobName||"Untitled job";
+  document.getElementById("drawerPts").textContent=points.length;
+  document.getElementById("drawerRecords").textContent=ids.length;
+  document.getElementById("drawerOcc").textContent=currentPoint?currentPoint.Point:"—";
+}
+function _drawerSection(body,title){const h=document.createElement("div");h.className="drawer-section-title";h.textContent=title;body.appendChild(h);}
+function _drawerItem(body,icon,title,sub,fn,tail){const b=document.createElement("button");b.className="drawer-item";b.innerHTML='<span class="di">'+_esc(icon)+'</span><span class="copy"><strong>'+_esc(title)+'</strong><small>'+_esc(sub||"")+'</small></span>'+(tail||'<span class="chev">›</span>');b.onclick=fn;body.appendChild(b);return b;}
+function renderDrawerTab(tab){
+  _drawerTab=tab||"overview";_drawerHeaderSync();
+  document.querySelectorAll(".drawer-tabs button").forEach(b=>b.classList.toggle("active",b.dataset.dtab===_drawerTab));
+  const body=document.getElementById("drawerBody");body.innerHTML="";
+  if(_drawerTab==="overview"){
+    _drawerSection(body,"Current job");
+    _drawerItem(body,"F","Field workspace","Shots, occupations and field data",()=>{closeProjectDrawer();openWorkspace("field")});
+    _drawerItem(body,"R","Records workspace","Deeds, parcels and record assembly",()=>{closeProjectDrawer();openWorkspace("records")});
+    _drawerItem(body,"M","Map workspace","Imagery, GPS and display layers",()=>{closeProjectDrawer();openWorkspace("map")});
+    _drawerSection(body,"Quick actions");
+    _drawerItem(body,"+","Take shot",currentPoint?"Occupied #"+currentPoint.Point:"No occupied point",()=>{closeProjectDrawer();takeShot()});
+    _drawerItem(body,"◎","Fit all geometry","Reset plot extent",()=>{closeProjectDrawer();resetPlot()});
+    _drawerItem(body,"⇩","Export project","CSV, DXF, LandXML, PDF and more",()=>{closeProjectDrawer();projectExportMenu()});
+  } else if(_drawerTab==="records"){
+    const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
+    _drawerSection(body,"Imported records");
+    if(!ids.length)_drawerItem(body,"+","Import first deed","Paste text, photo or PDF",()=>{closeProjectDrawer();deedPlotterMenu()});
+    ids.forEach(id=>{
+      const figs=_deedRecordFigures(id),boundary=figs.find(f=>f.kind==="boundary")||figs[0];
+      const ac=boundary&&boundary.computed&&boundary.kind!=="easement"?(_deedArea(boundary.computed)/43560).toFixed(3)+" ac":"";
+      _drawerItem(body,String(id),_deedRecordLabel(id),figs.length+" figure"+(figs.length===1?"":"s")+(ac?" · "+ac:""),()=>{closeProjectDrawer();_deedAdjustRecordId=id;_deedAdjustScope=null;_deedAdjustStart()});
+    });
+    _drawerSection(body,"Record tools");
+    _drawerItem(body,"+","Import another deed",ids.length?"Add an independent record":"Start a deed record",()=>{closeProjectDrawer();ids.length?_deedImportAnother():deedPlotterMenu()});
+    if(ids.length)_drawerItem(body,"↔","Move / snap record","Rigid placement against points or courses",()=>{closeProjectDrawer();_deedRecordPicker()});
+    if(ids.length)_drawerItem(body,"2","Two-point fit","Fit record to measured control",()=>{closeProjectDrawer();_deedFitTwoPoint()});
+  } else if(_drawerTab==="points"){
+    _drawerSection(body,"Points");
+    const arr=points.slice().sort((a,b)=>Number(a.Point)-Number(b.Point)).slice(0,150);
+    arr.forEach(p=>_drawerItem(body,String(p.Point),"Point "+p.Point,p.Description||p.Type||"Stored point",()=>{closeProjectDrawer();selectedPoint=p;plotPoints();_showPointQuickActions(p)}));
+    if(points.length>150){const m=document.createElement("div");m.className="drawer-section-title";m.textContent="Showing first 150 points";body.appendChild(m)}
+    _drawerItem(body,"…","Open full point list",points.length+" stored points",()=>{closeProjectDrawer();pointListMenu()});
+  } else if(_drawerTab==="layers"){
+    _drawerSection(body,"Display layers");
+    const togg=(icon,title,sub,on,fn)=>_drawerItem(body,icon,title,sub,()=>{fn();renderDrawerTab("layers")},'<span class="drawer-toggle '+(on?'on':'')+'"></span>');
+    togg("L","Labels","Point, line and deed labels",showLabels,()=>toggleLabels());
+    togg("Z","Elevations","Point elevation annotations",showElevations,()=>toggleElevations());
+    togg("S","Satellite","Imagery and live GPS backdrop",satOn,()=>toggleSatAndGps());
+    _drawerSection(body,"View");
+    _drawerItem(body,"◎","Fit all","Show all current geometry",()=>{closeProjectDrawer();resetPlot()});
+    _drawerItem(body,"O","Occupied point","Center view on current setup",()=>{closeProjectDrawer();zoomToOccupied()});
+    _drawerItem(body,"⚙","Map settings","Basemap, opacity and GPS options",()=>{closeProjectDrawer();satelliteMenu()});
+  }
+}
+
+function closeWorkspacePanel(){document.getElementById("workspaceShade").classList.remove("open");document.getElementById("workspacePanel").classList.remove("open");}
+function _wsCard2(body,title,sub,cls,fn,badge){const b=document.createElement("button");b.className="ws-card "+(cls||"");b.innerHTML='<strong>'+_esc(title)+'</strong><small>'+_esc(sub||"")+'</small>'+(badge?'<span class="ws-badge">'+_esc(badge)+'</span>':'');b.onclick=()=>{closeWorkspacePanel();fn()};body.appendChild(b);return b;}
+function _wsGroup2(body,title){const d=document.createElement("div");d.className="ws-group";d.textContent=title;body.appendChild(d)}
+function openWorkspace(name){
+  _activeWorkspace=name;_setWorkspaceActive(name);_hideContextDock();closeProjectDrawer();
+  const meta={field:["F","Field","Collect observations and manage the occupied setup"],records:["R","Records","Import, assemble and fit deeds and record geometry"],cogo:["C","COGO","Coordinate geometry and computational tools"],stake:["S","Stake","Guide layout to points, lines and curves"],map:["M","Map","Imagery, GPS context and plot display"],project:["P","Project","Jobs, files, settings and help"]}[name];
+  document.getElementById("workspaceIcon").textContent=meta[0];document.getElementById("workspaceTitle").textContent=meta[1];document.getElementById("workspaceSub").textContent=meta[2];
+  const body=document.getElementById("workspaceBody");body.innerHTML="";
+  const add=(t,s,c,f,b)=>_wsCard2(body,t,s,c,f,b);
+  if(name==="field"){
+    _wsGroup2(body,"Observation");add("Take Shot","Store a 2D or 3D observation","primary",takeShot,currentPoint?"OCC "+currentPoint.Point:null);add("Occupy Point","Move the instrument setup","blue",occupyPoint);add("Set Station","Enter known station coordinates","",setKnownStation);add("Check Shot","Compare against a known point","",checkShot);add("Two-Face Shot","Reduce Face 1 and Face 2","",twoFaceShot);add("Atmospheric PPM","Temperature and pressure correction",_ppmEnabled?"primary":"",atmosphericSetup,_ppmEnabled?"ON":null);
+    _wsGroup2(body,"Field data");add("Point List","Review and edit stored points","",pointListMenu,points.length+" PTS");add("Shift Elevations","Tie assumed elevations to a benchmark","",elevationShift);add("Flag Point","Mark control or questionable shots","",flagPoint);
+  } else if(name==="records"){
+    const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
+    _wsGroup2(body,"Import and assemble");add(ids.length?"Open Deed Plotter":"Import First Deed","Paste legal text, photo or PDF","accent",deedPlotterMenu,ids.length?ids.length+" RECORDS":null);add("Import Another Deed","Keep existing record geometry","accent",()=>ids.length?_deedImportAnother():deedPlotterMenu());if(ids.length)add("Move / Snap Record","Rigid corner and course fitting","primary",_deedRecordPicker);if(ids.length)add("Two-Point Fit","Fit one record to two measured points","",_deedFitTwoPoint);if(ids.length)add("Move One Figure","Adjust an exception or easement","",_deedMovePicker);
+    if(ids.length){_wsGroup2(body,"Current records");ids.forEach(id=>{const figs=_deedRecordFigures(id);add(_deedRecordLabel(id),figs.length+" figure"+(figs.length===1?"":"s"),"",()=>{_deedAdjustRecordId=id;_deedAdjustScope=null;_deedAdjustStart()},"RECORD "+id)})}
+  } else if(name==="cogo"){
+    _wsGroup2(body,"Coordinate geometry");add("Open COGO Tools","Inverse, projection, intersections and area","accent",cogoMenu);add("Inverse","Distance and direction between points","",cogoInverse);add("Area / Perimeter","Compute selected boundary area","",cogoArea);add("Rotate / Align","Transform stored job geometry","",cogoRotateAlign);add("Draw Connection","Connect stored points","",drawConnection);
+  } else if(name==="stake"){
+    _wsGroup2(body,"Layout");add("Stake Stored Point","Select a point from the plot","primary",stakeStoredPoint);add("Stake Coordinates","Enter target N, E and elevation","",stakeEnteredCoords);add("Stake Line / Arc","Select existing geometry","accent",stakeToLine);add("GPS Navigate","Walk to a point using phone GPS","",stakeoutMenu);add("All Stake Tools","Open the complete stakeout menu","",stakeoutMenu);
+  } else if(name==="map"){
+    _wsGroup2(body,"Basemap and position");add("Imagery / GPS","Basemap, anchor, opacity and live marker","accent",satelliteMenu,satOn?"ON":null);add("Toggle Satellite","Switch imagery and GPS together",satOn?"primary":"",toggleSatAndGps);add("Fit All","Show every point and record","",resetPlot);add("Locate Occupied","Center on the occupied point","",zoomToOccupied);
+    _wsGroup2(body,"Display");add(showLabels?"Hide Labels":"Show Labels","Point, line and record labels","",toggleLabels);add(showElevations?"Hide Elevations":"Show Elevations","Elevation annotations","",toggleElevations);add("Project Explorer","Records, points and layers","",()=>openProjectDrawer("layers"));
+  } else if(name==="project"){
+    _wsGroup2(body,"Job");add("Project Explorer","Browse records, points and layers","accent",openProjectDrawer);add("Job Manager","New, continue or load a job","",()=>{closeAllModals();_showJobScreen()});add("Rename Job","Change the current project name","",()=>alphaInput("Job Name:",jobName,jn=>{if(jn){jobName=jn;saveData()}}));add("Point List","Review project coordinates","",pointListMenu);
+    _wsGroup2(body,"Files and application");add("Export","CSV, DXF, LandXML, PDF and more","primary",projectExportMenu);add("Import","CSV, DXF, LandXML or deed record","",projectImportMenu);add("Settings","Units, instrument and display","",settingsMenu);add("Help","Search the built-in field guide","",openHelp);add("Clear All Data","Erase the current project","",clearAllData);
+  }
+  document.getElementById("workspaceShade").classList.add("open");document.getElementById("workspacePanel").classList.add("open");
+}
+
+function _hideContextDock(){const d=document.getElementById("contextDock");if(d)d.classList.remove("open")}
+function _contextDock(kind,name,actions){const d=document.getElementById("contextDock"),a=document.getElementById("contextActions");document.getElementById("contextKind").textContent=kind;document.getElementById("contextName").textContent=name;a.innerHTML="";actions.forEach(x=>{const b=document.createElement("button");b.textContent=x[0];b.className=x[2]||"";b.onclick=()=>{_hideContextDock();x[1]()};a.appendChild(b)});const c=document.createElement("button");c.textContent="Close";c.onclick=_hideContextDock;a.appendChild(c);d.classList.add("open")}
+function _showPointQuickActions(p){selectedPoint=p;plotPoints();_contextDock("Point","#"+p.Point+(p.Description?" · "+p.Description:""),[["Details",()=>_pointContextMenu(p)],["Occupy",()=>{_takeSnapshot("Occupy Point");currentPoint=p;saveData();updateStatus();plotPoints()},"primary"],["Stake",()=>{if(!currentPoint){alert("Occupy a point first.");return}_doStakeout(p,"#"+p.Point,_lastTHValue||0)},"primary"],["Flag",()=>flagPoint_pt(p)]]);}
+function _showLineQuickActions(conn,idx){selectedConn=idx;plotPoints();_contextDock("Line","#"+conn.from+" → #"+conn.to,[["Details",()=>_lineContextMenu(conn,idx)],["Stake",()=>{window._stlActive=true;_stlMeasure({kind:"line",conn})},"primary"],["Offset",()=>_lineContextMenu(conn,idx)],["Delete",()=>{_takeSnapshot("Delete Line");plotConnections.splice(idx,1);saveData()},"danger"]]);}
+function _showArcQuickActions(conn,idx){selectedConn=idx;plotPoints();_contextDock("Arc","R "+Number(conn.R||0).toFixed(2),[["Details",()=>_arcContextMenu(conn,idx)],["Stake",()=>{window._stlActive=true;_stlMeasure({kind:"arc",conn})},"primary"],["Tools",()=>_arcContextMenu(conn,idx)],["Delete",()=>{_takeSnapshot("Delete Arc");plotConnections.splice(idx,1);saveData()},"danger"]]);}
+
+// Keep the explorer counters current whenever the app status refreshes.
+const _updateStatusWorkspaceBase=updateStatus;
+updateStatus=function(){_updateStatusWorkspaceBase();if(document.getElementById("projectDrawer")?.classList.contains("open"))_drawerHeaderSync();};
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeProjectDrawer();closeWorkspacePanel();_hideContextDock();}});
 
 </script>
 <!-- ══ HELP PANEL ═════════════════════════════════════════ -->
