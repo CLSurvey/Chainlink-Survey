@@ -1060,7 +1060,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.27";
+const APP_VERSION = "4.4.28";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -8438,19 +8438,21 @@ function _deedInPoly(E,N,verts){
 }
 function _deedExceptOutside(f){
   if(f.kind!=="except"||!f.computed)return false;
-  const b=_deedPlot&&_deedPlot.figures.find(x=>x.kind==="boundary");
-  if(!b||!b.computed)return false;
-  // Nested carve-outs legitimately share edges with the parent (a west-half
-  // cut lies ON the west line), and ray-casting is unstable for points
-  // exactly on an edge. Test each vertex nudged a hair toward the except's
-  // own centroid: on-edge vertices move strictly inside; a genuinely
-  // outside figure stays outside.
+  let parents=[];
+  const key=f.ownerKey||f.parentRef;
+  if(_deedPlot&&key)parents=_deedPlot.figures.filter(x=>x.kind==="boundary"&&x.parcelKey===key&&x.computed);
+  if(!parents.length&&_deedPlot){const b=_deedPlot.figures.find(x=>x.kind==="boundary"&&x.computed);if(b)parents=[b];}
+  if(!parents.length)return false;
+  // A named parcel may comprise an aliquot component plus an additional
+  // metes-and-bounds component. The exception is valid when each vertex is
+  // inside at least one component of that parent union.
   const vs=f.computed.verts;
   let cE=0,cN=0;vs.forEach(v=>{cE+=v.E;cN+=v.N;});cE/=vs.length;cN/=vs.length;
   const eps=0.05;
   return vs.some(v=>{
     const dE=cE-v.E,dN=cN-v.N,L=Math.hypot(dE,dN)||1;
-    return !_deedInPoly(v.E+dE/L*eps,v.N+dN/L*eps,b.computed.verts);
+    const E=v.E+dE/L*eps,N=v.N+dN/L*eps;
+    return !parents.some(p=>_deedInPoly(E,N,p.computed.verts));
   });
 }
 function _deedNetAcres(){
@@ -8699,6 +8701,25 @@ function _deedParentRef(txt,ownKey){
   while((m=re.exec(u))){const k=_deedParcelKey(m[1]);if(k&&k!==ownKey)return k;}
   return null;
 }
+function _deedExplicitOwnerRef(txt,ownKey){
+  const u=String(txt||"").toUpperCase();
+  const patterns=[
+    /\b(?:EXCEPTED|EXCLUDED|CARVED)\s+FROM\s+(?:THE\s+)?((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|[A-Z]))\b/,
+    /\b(?:OUT\s+OF|WITHIN|LYING\s+IN)\s+(?:THE\s+)?((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|[A-Z]))\b/,
+    /\b(?:PORTION|PART)\s+OF\s+(?:THE\s+)?((?:PARCEL|TRACT)\s+(?:NO\.?\s*)?(?:\d+(?:-\d+)?|[IVXL]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|[A-Z]))\b/
+  ];
+  for(const re of patterns){const m=u.match(re);if(m){const k=_deedParcelKey(m[1]);if(k&&k!==ownKey)return k;}}
+  return null;
+}
+function _deedSemanticKind(kind,txt){
+  if(kind!=="boundary")return kind;
+  const u=String(txt||"").toUpperCase();
+  // Some deeds title every component PARCEL even when the body expressly
+  // describes a centerline strip or easement. Geometry controls the type.
+  if((/\bEASEMENT\b/.test(u)||/\bSTRIP\s+OF\s+LAND\b/.test(u)||/\bRIGHT[- ]OF[- ]WAY\b/.test(u))&&
+     (/\bCENTERLINE\b/.test(u)||/\bON\s+EACH\s+SIDE\b/.test(u)||/\bWIDTH\b/.test(u)))return "easement";
+  return kind;
+}
 function _deedSectionNo(txt){const m=String(txt||"").match(/\bSECTION\s+(\d{1,2})\b/i);return m?parseInt(m[1],10):null;}
 function _deedFigureVerts(f){
   if(!f||f.pobE==null)return [];
@@ -8742,24 +8763,26 @@ function parseDeedFigures(txt){
     if(hi){activeParcelKey=hi.key;activeParcelLabel=hi.label;}
     const ownKey=hi?hi.key:activeParcelKey;
     const ownLabel=hi?hi.label:activeParcelLabel;
+    const semanticKind=_deedSemanticKind(p.kind,p.text);
+    const explicitOwner=_deedExplicitOwnerRef(p.text,ownKey);
     // A parcel heading may contain BOTH an aliquot grant and a separately
     // described additional tract. Keep both instead of letting THENCE cause
     // the aliquot portion to disappear.
     const alq=_deedAliquot(p.text)||(p.kind==="boundary"?_deedAliquotClause(p.text):null);
     if(alq){
-      figs.push({kind:p.kind,calls:alq.calls,pobE:null,pobN:null,ptNums:[],aliquot:true,aliquotSpec:alq.spec,
-        parcelKey:ownKey,parcelLabel:ownLabel,ownerKey:p.kind!=="boundary"?activeParcelKey:null,sectionNo:_deedSectionNo(alq.source||p.text),
-        name:(p.kind==="boundary"?"Aliquot":p.kind==="except"?"Except aliquot":"Easement aliquot")
+      figs.push({kind:semanticKind,calls:alq.calls,pobE:null,pobN:null,ptNums:[],aliquot:true,aliquotSpec:alq.spec,
+        parcelKey:ownKey,parcelLabel:ownLabel,ownerKey:semanticKind!=="boundary"?(explicitOwner||activeParcelKey):null,sectionNo:_deedSectionNo(alq.source||p.text),
+        name:(semanticKind==="boundary"?"Aliquot":semanticKind==="except"?"Except aliquot":"Easement aliquot")
              +" "+alq.w+" \u00d7 "+alq.h+" ft (nominal)"});
     }
     const hasMetes=/\b(?:THENCE|COMMENC\w*|POINT OF BEGINNING|TRUE POINT OF BEGINNING|CURVE)\b/i.test(p.text);
     if(alq&&!hasMetes)return;
     const calls=parseDeedText(p.text);
     if(!calls.length)return;
-    const fig={kind:p.kind,calls,pobE:null,pobN:null,ptNums:[],
-      parcelKey:ownKey,parcelLabel:ownLabel,ownerKey:p.kind!=="boundary"?activeParcelKey:null,
+    const fig={kind:semanticKind,calls,pobE:null,pobN:null,ptNums:[],
+      parcelKey:ownKey,parcelLabel:ownLabel,ownerKey:semanticKind!=="boundary"?(explicitOwner||activeParcelKey):null,
       parentRef:_deedParentRef(p.text,ownKey),startRef:_deedNamedCornerRef(p.text),sectionNo:_deedSectionNo(p.text),
-      name:p.kind==="boundary"?"Boundary":(p.kind==="except"?"Except parcel":"Easement")};
+      name:semanticKind==="boundary"?"Boundary":(semanticKind==="except"?"Except parcel":"Easement")};
     // "BEGINNING AT THE NORTHWEST CORNER OF SAID SECTION 17" — a PLSS
     // corner reference lets later parcels place themselves off the first
     // Accepts both plain section corners and aliquot-qualified corners
@@ -8773,7 +8796,7 @@ function parseDeedFigures(txt){
         .replace(/\s+/g," ").trim();
       fig.cornerRef={c:cr[1],sec:parseInt(cr[3],10),q};
     }
-    if(p.kind==="easement"){
+    if(semanticKind==="easement"){
       // width from the keyword ("a 30 foot utility easement") or the body
       // ("lying 15 feet on each side")
       const scan=(p.kw||"")+" "+p.text.slice(0,160);
