@@ -1060,7 +1060,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.30";
+const APP_VERSION = "4.4.31";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9109,35 +9109,89 @@ function _deedMovingPointSet(){
 function _deedSegments(figs){
   const out=[];figs.forEach(f=>{if(!f.computed)return;const v=f.computed.verts||[];for(let i=0;i<v.length-1;i++)out.push({a:v[i],b:v[i+1],f});});return out;
 }
-function _deedSnapMoving(){
+function _deedFindSnapCandidate(){
   if(!_deedPlot)return null;
   const c=document.getElementById("plotCanvas"),T=_viewTransform(c.clientWidth,c.clientHeight);if(!T)return null;
-  const tol=38/T.scale;
+  // Screen-space thresholds: consistent at every zoom level.
+  const pointTol=34/T.scale, lineTol=42/T.scale;
   const figs=_deedMovingFigures(), movingNums=_deedMovingPointSet();
-  const verts=[];figs.forEach(f=>{if(f.computed)(f.computed.verts||[]).forEach(v=>verts.push(v));});
-  const targets=points.filter(p=>!movingNums.has(p.Point)&&p.Type!=="Deed");
-  let best=null;
-  verts.forEach(v=>targets.forEach(p=>{const d=Math.hypot(v.E-p.Easting,v.N-p.Northing);if(d<=tol&&(!best||d<best.d))best={d,v,p};}));
-  if(best){_deedTranslate(best.p.Easting-best.v.E,best.p.Northing-best.v.N);return "corner snapped to Pt #"+best.p.Point;}
-  // Line snap: nearest deed course to an existing measured connection.
+  const movingSet=new Set(figs);
+  const verts=[];
+  figs.forEach(f=>{if(f.computed)(f.computed.verts||[]).slice(0,-1).forEach((v,i)=>verts.push({v,f,i}));});
+
+  // Point targets include ordinary job points AND corners of every other deed record.
+  const pointTargets=[];
+  points.filter(p=>!movingNums.has(p.Point)&&p.Type!=="Deed").forEach(p=>
+    pointTargets.push({E:p.Easting,N:p.Northing,label:"Pt #"+p.Point,kind:"job-point"}));
+  (_deedPlot.figures||[]).forEach(f=>{
+    if(movingSet.has(f)||!f.computed)return;
+    (f.computed.verts||[]).slice(0,-1).forEach((v,i)=>
+      pointTargets.push({E:v.E,N:v.N,label:(f.recordName||f.name||"deed")+" corner "+(i+1),kind:"deed-corner"}));
+  });
+  let bp=null;
+  verts.forEach(x=>pointTargets.forEach(t=>{
+    const d=Math.hypot(x.v.E-t.E,x.v.N-t.N);
+    if(d<=pointTol&&(!bp||d<bp.d))bp={type:"point",d,source:x,target:t};
+  }));
+
+  // Course targets include measured connections AND all courses from other deed records.
   const ds=_deedSegments(figs), ts=[];
-  (plotConnections||[]).forEach(l=>{const a=points.find(p=>p.Point===l.a),b=points.find(p=>p.Point===l.b);if(a&&b&&!movingNums.has(a.Point)&&!movingNums.has(b.Point))ts.push({a:{E:a.Easting,N:a.Northing},b:{E:b.Easting,N:b.Northing},label:"Pts "+a.Point+"-"+b.Point});});
-  let hit=null;
+  (plotConnections||[]).forEach(l=>{
+    const a=points.find(p=>p.Point===l.a),b=points.find(p=>p.Point===l.b);
+    if(a&&b&&!movingNums.has(a.Point)&&!movingNums.has(b.Point))
+      ts.push({a:{E:a.Easting,N:a.Northing},b:{E:b.Easting,N:b.Northing},label:"Pts "+a.Point+"-"+b.Point,kind:"job-line"});
+  });
+  (_deedPlot.figures||[]).forEach(f=>{
+    if(movingSet.has(f)||!f.computed)return;
+    _deedSegments([f]).forEach((sg,i)=>ts.push({a:sg.a,b:sg.b,label:(f.recordName||f.name||"deed")+" course "+(i+1),kind:"deed-line"}));
+  });
   const az=(a,b)=>Math.atan2(b.E-a.E,b.N-a.N)*180/Math.PI;
   const ad=(x,y)=>{let d=Math.abs(((x-y+180)%360+360)%360-180);return Math.min(d,Math.abs(180-d));};
-  ds.forEach(sg=>ts.forEach(tg=>{const sm={E:(sg.a.E+sg.b.E)/2,N:(sg.a.N+sg.b.N)/2},tm={E:(tg.a.E+tg.b.E)/2,N:(tg.a.N+tg.b.N)/2};const d=Math.hypot(sm.E-tm.E,sm.N-tm.N),da=ad(az(sg.a,sg.b),az(tg.a,tg.b));if(d<=tol*2&&da<=12&&(!hit||d<hit.d))hit={d,da,sg,tg};}));
-  if(hit&&_deedAdjustScope==null){
-    const a1=az(hit.sg.a,hit.sg.b),a2=az(hit.tg.a,hit.tg.b);let dr=((a2-a1+180)%360+360)%360-180;if(Math.abs(dr)>90)dr+=dr>0?-180:180;
-    _deedRotateAbout(hit.sg.a.E,hit.sg.a.N,dr);
-    const sg2=_deedSegments(_deedMovingFigures()).find(x=>x.f===hit.sg.f)||hit.sg;
-    const vx=hit.tg.b.E-hit.tg.a.E,vy=hit.tg.b.N-hit.tg.a.N,L2=vx*vx+vy*vy||1;
-    const u=((sg2.a.E-hit.tg.a.E)*vx+(sg2.a.N-hit.tg.a.N)*vy)/L2;
-    const q={E:hit.tg.a.E+u*vx,N:hit.tg.a.N+u*vy};
-    _deedTranslate(q.E-sg2.a.E,q.N-sg2.a.N);
-    return "course aligned to line "+hit.tg.label;
+  const ptSeg=(p,a,b)=>{const vx=b.E-a.E,vy=b.N-a.N,L2=vx*vx+vy*vy||1;const u=Math.max(0,Math.min(1,((p.E-a.E)*vx+(p.N-a.N)*vy)/L2));const q={E:a.E+u*vx,N:a.N+u*vy};return {d:Math.hypot(p.E-q.E,p.N-q.N),q,u};};
+  let bl=null;
+  ds.forEach(sg=>ts.forEach(tg=>{
+    const sm={E:(sg.a.E+sg.b.E)/2,N:(sg.a.N+sg.b.N)/2};
+    const near=ptSeg(sm,tg.a,tg.b), da=ad(az(sg.a,sg.b),az(tg.a,tg.b));
+    const sl=Math.hypot(sg.b.E-sg.a.E,sg.b.N-sg.a.N),tl=Math.hypot(tg.b.E-tg.a.E,tg.b.N-tg.a.N);
+    if(near.d<=lineTol&&da<=15&&Math.min(sl,tl)>0.01){
+      // Favor line alignment over point snap once a meaningful shared course is nearby.
+      const score=near.d+da*(lineTol/12);
+      if(!bl||score<bl.score)bl={type:"line",score,d:near.d,da,source:sg,target:tg,near};
+    }
+  }));
+  // A nearby line is the preferred deed-joining operation. A very close corner still wins.
+  if(bp&&bp.d<=pointTol*.38)return bp;
+  return bl||bp;
+}
+function _deedApplySnapCandidate(hit){
+  if(!hit)return null;
+  if(hit.type==="point"){
+    _deedTranslate(hit.target.E-hit.source.v.E,hit.target.N-hit.source.v.N);
+    return "corner snapped to "+hit.target.label;
+  }
+  if(hit.type==="line"&&_deedAdjustScope==null){
+    const az=(a,b)=>Math.atan2(b.E-a.E,b.N-a.N)*180/Math.PI;
+    const a1=az(hit.source.a,hit.source.b),a2=az(hit.target.a,hit.target.b);
+    let dr=((a2-a1+180)%360+360)%360-180;
+    if(Math.abs(dr)>90)dr+=dr>0?-180:180;
+    const pivot={E:(hit.source.a.E+hit.source.b.E)/2,N:(hit.source.a.N+hit.source.b.N)/2};
+    _deedRotateAbout(pivot.E,pivot.N,dr);
+    // Re-find the moving segment nearest the target after rotation.
+    const segs=_deedSegments(_deedMovingFigures());
+    let sg2=null,best=Infinity;
+    segs.forEach(s=>{const m={E:(s.a.E+s.b.E)/2,N:(s.a.N+s.b.N)/2};const tm={E:(hit.target.a.E+hit.target.b.E)/2,N:(hit.target.a.N+hit.target.b.N)/2};const d=Math.hypot(m.E-tm.E,m.N-tm.N);if(d<best){best=d;sg2=s;}});
+    sg2=sg2||hit.source;
+    const sm={E:(sg2.a.E+sg2.b.E)/2,N:(sg2.a.N+sg2.b.N)/2};
+    const vx=hit.target.b.E-hit.target.a.E,vy=hit.target.b.N-hit.target.a.N,L2=vx*vx+vy*vy||1;
+    const u=((sm.E-hit.target.a.E)*vx+(sm.N-hit.target.a.N)*vy)/L2;
+    const q={E:hit.target.a.E+u*vx,N:hit.target.a.N+u*vy};
+    _deedTranslate(q.E-sm.E,q.N-sm.N);
+    return "course snapped to "+hit.target.label+"; rotated "+dr.toFixed(3)+"°";
   }
   return null;
 }
+function _deedSnapMoving(){return _deedApplySnapCandidate(_deedFindSnapCandidate());}
+
 function _deedResolveFigures(figs,E,N){
   let stacked=0;
   const placed=new Set();
@@ -9192,13 +9246,21 @@ function _deedResolveFigures(figs,E,N){
   }
   figs.forEach(f=>{if(placed.has(f))return;f.pobE=E;f.pobN=N;f.autoStacked=true;f.placementReason="unresolved reference";_deedSetComputed(f);stacked++;});
   const recName=window._deedPendingRecordName||("Deed "+(_deedRecordIds().length+1));
-  if(!figs.every(f=>f.recordId))_deedAssignRecord(figs,recName);
+  const newRecordId=!figs.every(f=>f.recordId)?_deedAssignRecord(figs,recName):(figs[0]&&figs[0].recordId);
   window._deedPendingRecordName=null;
-  if(_deedAppendMode&&_deedPlot){_deedPlot.figures.push(...figs);_deedAppendMode=false;}
+  const wasAppend=!!(_deedAppendMode&&_deedPlot);
+  if(wasAppend){_deedPlot.figures.push(...figs);_deedAppendMode=false;}
   else {_deedPlot=_mkDeed(figs,0);_deedAppendMode=false;}
   _deedRecompute();saveData();
   const b=figs.find(f=>f.kind==="boundary")||figs[0],net=_deedNetAcres();
   if(window._deferredJobSetup){window._pendingSetup=window._deferredJobSetup;window._deferredJobSetup=null;}
+  if(wasAppend&&newRecordId){
+    closeAllModals();
+    _deedAdjustRecordId=newRecordId;
+    _deedAdjustScope=null;
+    _deedAdjustStart();
+    return;
+  }
   showResult("📜 Deed Plotted — "+figs.length+" figures",[
     {lbl:"Figures:",val:_deedPlot.figures.map(f=>f.name).join(", ")},
     ...(b&&b.computed?[{lbl:"Boundary closure:",val:b.computed.closeDist.toFixed(2)+" "+units+(b.computed.precision?" (1:"+b.computed.precision+")":"")}]:[]),
@@ -9499,10 +9561,11 @@ function _deedPasteModal(prefill){
      like sliding a mylar on a light table. One finger drags, two fingers
      rotate about the touch midpoint. Cyan points sync live. — */
 let _deedAdjust=false,_deedAdjSnap=null,_deedAdjustScope=null; // scope: whole set, one figure, or _deedAdjustRecordId
+let _deedSnapPreview=null;
 function _deedAdjustStart(){
   if(!_deedPlot)return;
   _deedAdjSnap={rot:_deedPlot.rot||0,pobs:_deedPlot.figures.map(f=>({E:f.pobE,N:f.pobN,recordRot:f.recordRot||0}))};
-  _deedAdjust=true;_updateUndoBtn();plotPoints();
+  _deedAdjust=true;_deedSnapPreview=null;_updateUndoBtn();plotPoints();
 }
 function _deedAdjustEnd(lock){
   if(!lock&&_deedAdjSnap){
@@ -9511,9 +9574,9 @@ function _deedAdjustEnd(lock){
     _deedRecompute();
   }
   let snapMsg=null;
-  if(lock)snapMsg=_deedSnapMoving();
+  if(lock)snapMsg=_deedApplySnapCandidate(_deedSnapPreview||_deedFindSnapCandidate());
   if(lock&&_deedAdjustScope!=null){const f=_deedPlot.figures[_deedAdjustScope];if(f)f.autoStacked=false;}
-  _deedAdjust=false;_deedAdjSnap=null;_deedAdjustScope=null;_deedAdjustRecordId=null;_updateUndoBtn();
+  _deedAdjust=false;_deedAdjSnap=null;_deedSnapPreview=null;_deedAdjustScope=null;_deedAdjustRecordId=null;_updateUndoBtn();
   if(lock){saveData();if(snapMsg&&navigator.vibrate)navigator.vibrate([25,35,25]);} else plotPoints();
   window._deedLastSnap=snapMsg;
 }
@@ -9524,7 +9587,9 @@ function _deedTranslate(dE,dN){
     if(!_deedAdjustRecordId&&_deedAdjustScope!=null&&i!==_deedAdjustScope)return;
     f.pobE+=dE;f.pobN+=dN;
   });
-  _deedRecompute();plotPoints();
+  _deedRecompute();
+  if(_deedAdjust&&_deedAdjustRecordId)_deedSnapPreview=_deedFindSnapCandidate();
+  plotPoints();
 }
 function _deedRotateAbout(pivotE,pivotN,dAdeg){
   if(_deedAdjustScope!=null&&!_deedAdjustRecordId)return; // individual figure remains translate-only
@@ -9538,7 +9603,9 @@ function _deedRotateAbout(pivotE,pivotN,dAdeg){
     if(_deedAdjustRecordId)f.recordRot=(f.recordRot||0)+dAdeg;
   });
   if(!_deedAdjustRecordId)_deedPlot.rot=(_deedPlot.rot||0)+dAdeg;
-  _deedRecompute();plotPoints();
+  _deedRecompute();
+  if(_deedAdjust&&_deedAdjustRecordId)_deedSnapPreview=_deedFindSnapCandidate();
+  plotPoints();
 }
 function _screenToWorld(sx,sy){
   const c=document.getElementById("plotCanvas");
@@ -11648,7 +11715,7 @@ function plotPoints(extCtx,extW,extH){
     ctx.save();
     ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="middle";
     const hint=_deedAdjustRecordId
-      ?("🧲 moving: "+_deedRecordLabel(_deedAdjustRecordId)+" — drag near point/line to snap")
+      ?("🧲 moving: "+_deedRecordLabel(_deedAdjustRecordId)+" — drag its corner or course near another deed to snap")
       :_deedAdjustScope!=null
       ?("🖐 moving: "+((_deedPlot.figures[_deedAdjustScope]||{}).name||"figure")+" — drag to position")
       :((window.matchMedia&&matchMedia("(pointer:fine)").matches)
@@ -11656,6 +11723,15 @@ function plotPoints(extCtx,extW,extH){
     const hw=ctx.measureText(hint).width;
     ctx.fillStyle="rgba(10,90,100,.85)";ctx.fillRect(w/2-hw/2-12,10,hw+24,24);
     ctx.fillStyle="#bff3fa";ctx.fillText(hint,w/2,22);
+    if(_deedSnapPreview){
+      const ps=_deedSnapPreview.type==="line"
+        ?("SNAP COURSE → "+_deedSnapPreview.target.label+"  Δ "+_deedSnapPreview.da.toFixed(2)+"°")
+        :( "SNAP CORNER → "+_deedSnapPreview.target.label );
+      ctx.font="bold 11px 'Courier New',monospace";
+      const pw=ctx.measureText(ps).width;
+      ctx.fillStyle="rgba(25,110,45,.92)";ctx.fillRect(w/2-pw/2-10,39,pw+20,22);
+      ctx.fillStyle="#c6ffd8";ctx.fillText(ps,w/2,50);
+    }
     // LOCK + CANCEL buttons
     const bw=130,bh=40,gap=14;
     const lx=w/2-bw-gap/2, cx2=w/2+gap/2, by=h-bh-16;
