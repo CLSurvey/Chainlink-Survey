@@ -1060,7 +1060,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.26";
+const APP_VERSION = "4.4.27";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1197,6 +1197,16 @@ function _snapState(label){
     polylines: (typeof _polylines!=="undefined")?JSON.parse(JSON.stringify(_polylines)):[],
     pointCounter,
     units, prismConstant, // so undoing a unit conversion restores both
+    deedPlot: (typeof _deedPlot!=="undefined" && _deedPlot) ? {
+      v:2, rot:_deedPlot.rot||0,
+      figures:_deedPlot.figures.map(f=>({
+        kind:f.kind,name:f.name,calls:JSON.parse(JSON.stringify(f.calls||[])),
+        pobE:f.pobE,pobN:f.pobN,ptNums:[...(f.ptNums||[])],
+        tiePtNums:[...(f.tiePtNums||[])],width:f.width||null,
+        aliquot:!!f.aliquot,aliquotSpec:f.aliquotSpec||null,
+        aliquotCal:f.aliquotCal?JSON.parse(JSON.stringify(f.aliquotCal)):null
+      }))
+    } : null,
   };
 }
 function _restoreSnap(snap){
@@ -1206,6 +1216,10 @@ function _restoreSnap(snap){
   if(typeof _selPolyline!=="undefined") _selPolyline=-1;
   pointCounter=snap.pointCounter;
   if(snap.units!==undefined){ units=snap.units; prismConstant=snap.prismConstant; }
+  if(typeof _deedPlot!=="undefined") {
+    _deedPlot = snap.deedPlot ? _mkDeed(JSON.parse(JSON.stringify(snap.deedPlot.figures)), snap.deedPlot.rot||0) : null;
+    if(_deedPlot) _deedRecompute();
+  }
   if(currentPoint){
     currentPoint=points.find(p=>p.Point===currentPoint.Point)||points[0]||null;
   }
@@ -7321,6 +7335,40 @@ function _cutFillPlane(){
   });
 }
 
+function _deedPointNumberSet(){
+  return new Set((typeof _deedAllPtNums==="function")?_deedAllPtNums():[]);
+}
+function _rotateEN(E,N,px,py,cosT,sinT){
+  const rx=E-px, ry=N-py;
+  return {E:px+rx*cosT+ry*sinT,N:py-rx*sinT+ry*cosT};
+}
+function _rotateDeedModel(px,py,rot,cosT,sinT){
+  if(typeof _deedPlot==="undefined"||!_deedPlot)return;
+  _deedPlot.figures.forEach(f=>{
+    if(f.pobE==null)return;
+    const q=_rotateEN(f.pobE,f.pobN,px,py,cosT,sinT);
+    f.pobE=q.E;f.pobN=q.N;
+  });
+  _deedPlot.rot=(((_deedPlot.rot||0)+rot)%360+360)%360;
+  _deedRecompute();
+}
+function _translateDeedModel(dE,dN){
+  if(typeof _deedPlot==="undefined"||!_deedPlot)return;
+  _deedPlot.figures.forEach(f=>{if(f.pobE!=null){f.pobE+=dE;f.pobN+=dN;}});
+  _deedRecompute();
+}
+function _scaleDeedModel(px,py,factor){
+  if(typeof _deedPlot==="undefined"||!_deedPlot)return;
+  _deedPlot.figures.forEach(f=>{
+    if(f.pobE!=null){f.pobE=(f.pobE-px)*factor+px;f.pobN=(f.pobN-py)*factor+py;}
+    (f.calls||[]).forEach(c=>{
+      ["dist","radius","arc","chordD"].forEach(k=>{if(typeof c[k]==="number")c[k]*=factor;});
+    });
+    if(typeof f.width==="number")f.width*=factor;
+  });
+  _deedRecompute();
+}
+
 function cogoRotateAlign(){
   _helpContext="cogo-rotate";
   calculatorInput("Pivot point # (stays fixed):","",a=>{if(!a)return;
@@ -7337,9 +7385,14 @@ function cogoRotateAlign(){
         const cosT=Math.cos(rot*Math.PI/180),sinT=Math.sin(rot*Math.PI/180);
         const px=p1.Easting,py=p1.Northing;
         _takeSnapshot("Rotate");
-        const newPts=points.map(p=>{const rx=p.Easting-px,ry=p.Northing-py;
-          return{...p,Easting:px+rx*cosT+ry*sinT,Northing:py-rx*sinT+ry*cosT}});
+        const deedNums=_deedPointNumberSet();
+        const newPts=points.map(p=>{
+          if(deedNums.has(p.Point))return p;
+          const q=_rotateEN(p.Easting,p.Northing,px,py,cosT,sinT);
+          return{...p,Easting:q.E,Northing:q.N};
+        });
         points.splice(0,points.length,...newPts);
+        _rotateDeedModel(px,py,rot,cosT,sinT);
 
         // Rotate arc connections — center point and start/end angles
         const rotRad=rot*Math.PI/180;
@@ -7372,7 +7425,12 @@ function cogoTranslate(){
       calculatorInput("Delta Elevation:","0.000",dz=>{if(dz===null)return;
         _takeSnapshot("Translate");
         const dN_=parseFloat(dn)||0, dE_=parseFloat(de)||0, dZ_=parseFloat(dz)||0;
-        points.forEach(p=>{p.Northing+=dN_;p.Easting+=dE_;p.Elevation+=dZ_});
+        const deedNums=_deedPointNumberSet();
+        points.forEach(p=>{
+          if(!deedNums.has(p.Point)){p.Northing+=dN_;p.Easting+=dE_;}
+          p.Elevation+=dZ_;
+        });
+        _translateDeedModel(dE_,dN_);
         // Translate arc connection centers too
         plotConnections.forEach(conn=>{
           if(conn.type!=="arc") return;
@@ -7394,7 +7452,9 @@ function cogoScale(){
       confirmDialog(`Scale all points by ${factor}?`,yes=>{
         if(!yes)return;
         _takeSnapshot("Scale x"+factor);
-        points.forEach(p=>{p.Easting=(p.Easting-pivot.Easting)*factor+pivot.Easting;p.Northing=(p.Northing-pivot.Northing)*factor+pivot.Northing});
+        const deedNums=_deedPointNumberSet();
+        points.forEach(p=>{if(!deedNums.has(p.Point)){p.Easting=(p.Easting-pivot.Easting)*factor+pivot.Easting;p.Northing=(p.Northing-pivot.Northing)*factor+pivot.Northing;}});
+        _scaleDeedModel(pivot.Easting,pivot.Northing,factor);
         // Scale arc centers and radii
         plotConnections.forEach(conn=>{
           if(conn.type!=="arc") return;
