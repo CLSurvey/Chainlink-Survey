@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.5.2">
+<meta name="application-name" content="ChainLink-v4.5.4">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.5.2</title>
+<title>ChainLink Survey v4.5.4</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -775,7 +775,7 @@ table.data-tbl tr.pt-control td{color:var(--accent2)}
 
 
 
-/* ══ CHAINLINK WORKSPACE SHELL v4.5.2 ═══════════════════════════ */
+/* ══ CHAINLINK WORKSPACE SHELL v4.5.4 ═══════════════════════════ */
 #drawerToggle{
   width:38px;height:38px;border-radius:10px;border:1px solid var(--border2);
   background:var(--surface2);color:var(--accent);display:flex;align-items:center;
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.5.2";
+const APP_VERSION = "4.5.4";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -2382,7 +2382,7 @@ function exportSVG(){
 /* ── GEOJSON EXPORT (GIS interchange — local grid coords) ─────── */
 function exportKML(){
   if(!requirePro("KML export")) return;
-  if(!geoAnchor){alert("KML needs a georeferenced job — anchor it first via the 🛰 menu.");return;}
+  if(!geoAnchor){alert("KML needs a georeferenced job — anchor it first via Map → Imagery / GPS.");return;}
   const esc=_xmlEsc;
   const co=(E,N)=>{const ll=_jobToLL(E,N);return ll.lon.toFixed(8)+","+ll.lat.toFixed(8)+",0";};
   let k='<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>';
@@ -13146,24 +13146,24 @@ const HELP_TOPICS = [
   { id:"jobs", section:"Getting Started", title:"Managing Multiple Jobs",
     preview:"Job Manager, switching jobs, renaming",
     body:`<h3>Job Manager</h3>
-<p>ChainLink stores multiple jobs on your phone. The Job Manager appears on launch, or any time via <strong>More → Job Manager</strong>.</p>
+<p>ChainLink stores multiple jobs on your phone. The Job Manager appears on launch, or any time via <strong>Project → Job Manager</strong>.</p>
 <p>Each job card shows its point count, connections, and units. Tapping a card swaps the active job — the current job is saved automatically first.</p>
 <h3>Renaming a Job</h3>
-<p>Tap <strong>More → Rename Job</strong>. The CSV filename used by Save CSV follows the job name.</p>
+<p>Tap <strong>Project → Rename Job</strong>. The CSV filename used by Save CSV follows the job name.</p>
 <div class="tip">Switching jobs never deletes data — every job keeps its own points, connections, polylines, and settings.</div>`},
 
   { id:"units", section:"Getting Started", title:"Units, Survey Mode & Instrument Profile",
     preview:"Feet/meters, 2D/3D, bearing display, light/dark, SD/HD, prism constant",
     body:`<h3>Units</h3>
-<p>Set feet or meters in <strong>More → Settings</strong>. Switching offers a choice: <strong>convert</strong> every stored value (coordinates, elevations, distances, radii, HI/TH, prism constant) using either the International foot (0.3048 m) or US Survey foot (1200/3937 m), or <strong>relabel only</strong>, keeping the numbers as-is. Conversions are undoable.</p>
+<p>Set feet or meters in <strong>Project → Settings</strong>. Switching offers a choice: <strong>convert</strong> every stored value (coordinates, elevations, distances, radii, HI/TH, prism constant) using either the International foot (0.3048 m) or US Survey foot (1200/3937 m), or <strong>relabel only</strong>, keeping the numbers as-is. Conversions are undoable.</p>
 <h3>2D vs 3D Mode</h3>
 <p>Toggle at the top of the screen. In 2D mode shots use azimuth + horizontal distance only. In 3D mode you also enter a vertical angle and the app computes elevation.</p>
 <h3>Bearing Display</h3>
-<p><strong>More → Settings → Bearing Display</strong> toggles between Azimuth (0–360°) and Quadrant bearings (N 45°30'00" E). Affects all results and plot annotations. Input is always azimuth in DDD.MMSS.</p>
+<p><strong>Project → Settings → Bearing Display</strong> toggles between Azimuth (0–360°) and Quadrant bearings (N 45°30'00" E). Affects all results and plot annotations. Input is always azimuth in DDD.MMSS.</p>
 <h3>Display Mode</h3>
-<p><strong>More → Settings → Display Mode</strong> switches between Dark (night/low-light) and Light (bright sun readability).</p>
+<p><strong>Project → Settings → Display Mode</strong> switches between Dark (night/low-light) and Light (bright sun readability).</p>
 <h3>Instrument Profile (3D only)</h3>
-<p>In <strong>More → Settings → Instrument Profile</strong>:</p>
+<p>In <strong>Project → Settings → Instrument Profile</strong>:</p>
 <ul>
 <li><strong>Distance Input: SD / HD</strong> — toggle whether you enter slope distance or horizontal distance. In HD mode the app back-computes slope distance from HD and zenith angle for storage.</li>
 <li><strong>Prism Constant</strong> — a fixed offset added to every measured distance. Enter negative for a standard prism (e.g. −0.098 for a −30mm prism). Defaults to 0.</li>
@@ -13176,25 +13176,25 @@ const HELP_TOPICS = [
     body:`<h3>Auto-Save</h3>
 <p>ChainLink saves to your phone's local storage after every action. You won't lose data if the app closes — and saved jobs survive app updates to new versions.</p>
 <h3>CSV Backup</h3>
-<p>Tap <strong>More → Save CSV to Folder</strong>. The CSV includes all points plus an embedded metadata line that restores connections, settings, flags, and raw observation data (instrument readings, slope distances, zenith angles, HI/TH) when loaded back. Descriptions containing commas are quoted properly.</p>
+<p>Tap <strong>Project → Export → Save CSV to Folder</strong>. The CSV includes all points plus an embedded metadata line that restores connections, settings, flags, and raw observation data (instrument readings, slope distances, zenith angles, HI/TH) when loaded back. Descriptions containing commas are quoted properly.</p>
 <h3>DXF Export</h3>
-<p>Tap <strong>More → Export DXF</strong>. Points on POINTS layer, labels on LABELS, solid lines on LINES, dashed on DASHED. Readable by AutoCAD, Civil 3D, and most CAD software.</p>
+<p>Tap <strong>Project → Export → DXF</strong>. On the installed app your phone's <strong>share sheet</strong> opens — send it to Drive, Files, or email; in a desktop browser it downloads directly. Points on POINTS layer, labels on LABELS, solid lines on LINES, dashed on DASHED. Readable by AutoCAD, Civil 3D, and most CAD software.</p>
 <h3>LandXML Export</h3>
-<p>Tap <strong>More → Export LandXML</strong>. LandXML 1.2 format with N/E/Z and descriptions. Compatible with Carlson, Trimble, and Leica office software.</p>
+<p>Tap <strong>Project → Export → LandXML</strong> (delivered by share sheet on the installed app). LandXML 1.2 format with N/E/Z and descriptions. Compatible with Carlson, Trimble, and Leica office software.</p>
 <h3>PDF Plot, SVG, GeoJSON</h3>
 <p><strong>Export PDF Plot (A4)</strong> prints the entire job with all labels fitted to an A4 sheet with a title block and north arrow. <strong>Export SVG</strong> gives vector linework in world units. <strong>Export GeoJSON</strong> gives points and linework for GIS tools (local grid coordinates, not lon/lat).</p>
 <h3>Fieldbook & Importing</h3>
 <p><strong>Export Fieldbook</strong> writes a chronological observation log grouped by station — raw readings, azimuths, distances, zenith angles, IH/TH and reduced coordinates — as PDF or CSV. <strong>Import DXF</strong> and <strong>Import LandXML</strong> merge points and linework from office software into the current job, de-duplicating coincident points.</p>
 <div class="tip">CSV is your primary backup. The other formats are for sharing with office software.</div>`},
 
-  // ── SHOTS ───────────────────────────────────────────────────
+  // ── FIELD ───────────────────────────────────────────────────
   { id:"shot-setup", section:"Shots", title:"Setting Up a Station",
     preview:"Occupy a point, set coords, understand orientation",
     body:`<h3>Setting Up at a Station</h3>
-<p>Before taking shots, tell ChainLink where your instrument is. Tap <strong>SHOTS → Occupy Point</strong> and enter the point number. In 3D mode you'll be prompted for your instrument height (HI).</p>
+<p>Before taking shots, tell ChainLink where your instrument is. Tap <strong>Field → Occupy Point</strong> and enter the point number. In 3D mode you'll be prompted for your instrument height (HI).</p>
 <p>The header shows <strong>Occ: #</strong> to confirm which point you're on.</p>
 <h3>Set Known Station Coords</h3>
-<p>If your station isn't stored yet, tap <strong>SHOTS → Set Station Coords</strong> to enter its N, E, Z directly.</p>
+<p>If your station isn't stored yet, tap <strong>Field → Set Station</strong> to enter its N, E, Z directly.</p>
 <h3>Understanding Orientation in ChainLink</h3>
 <p>ChainLink does not apply an orientation offset — <strong>you enter true azimuths directly</strong>. This means your total station must be set to display true (grid) azimuths before you start shooting.</p>
 <h3>How to Orient Your Total Station</h3>
@@ -13207,7 +13207,7 @@ const HELP_TOPICS = [
   { id:"shot-2d", section:"Shots", title:"Taking a 2D Shot",
     preview:"Point number, description, azimuth, horizontal distance",
     body:`<h3>2D Shot Entry</h3>
-<p>Tap <strong>SHOTS → Take Shot</strong>. Enter:</p>
+<p>Tap <strong>Field → Take Shot</strong>. Enter:</p>
 <ul>
 <li><strong>Point #</strong> — auto-increments, change if needed</li>
 <li><strong>Description</strong> — prefilled from last shot, first keypress clears it</li>
@@ -13224,7 +13224,7 @@ const HELP_TOPICS = [
 <p>Switch to 3D mode first. Additional fields appear based on your instrument profile:</p>
 <ul>
 <li><strong>HI</strong> — instrument height, shown in header. Tap to change. Persists for the whole occupation.</li>
-<li><strong>Slope Dist or Horiz Dist</strong> — depending on your profile setting (More → Settings → Instrument Profile)</li>
+<li><strong>Slope Dist or Horiz Dist</strong> — depending on your profile setting (Project → Settings → Instrument Profile)</li>
 <li><strong>Vert Angle</strong> — in DDD.MMSS. <strong>90.0000 = level</strong>, less than 90 = uphill, greater than 90 = downhill. Enter as a zenith angle (from vertical), which is what most modern total stations display.</li>
 <li><strong>Target Height (TH)</strong> — prism height above the ground point</li>
 </ul>
@@ -13246,7 +13246,7 @@ const HELP_TOPICS = [
   { id:"checkshot", section:"Shots", title:"Check Shot",
     preview:"Verify your position against a known point after setup",
     body:`<h3>Check Shot</h3>
-<p>Tap <strong>SHOTS → Check Shot (Known Pt)</strong> after setting up at a new station.</p>
+<p>Tap <strong>Field → Check Shot</strong> after setting up at a new station.</p>
 <p>Enter the known point number, your instrument reading to it, and the measured horizontal distance. Results show:</p>
 <ul>
 <li>Expected vs measured azimuth and angular error</li>
@@ -13258,7 +13258,7 @@ const HELP_TOPICS = [
   { id:"twoface", section:"Shots", title:"Two-Face Shot",
     preview:"Average Face 1 and Face 2 to cancel instrument errors",
     body:`<h3>Two-Face Shot</h3>
-<p>Tap <strong>SHOTS → Two-Face Shot</strong>. Take Face 1 (direct), then plunge the scope 180° on both axes, re-sight the target, and take Face 2 (reverse). ChainLink averages the two observations to cancel collimation and (in 3D) vertical index error.</p>
+<p>Tap <strong>Field → Two-Face Shot</strong>. Take Face 1 (direct), then plunge the scope 180° on both axes, re-sight the target, and take Face 2 (reverse). ChainLink averages the two observations to cancel collimation and (in 3D) vertical index error.</p>
 <h3>What You Enter</h3>
 <ul>
 <li><strong>2D:</strong> azimuth + horizontal distance for each face</li>
@@ -13272,7 +13272,7 @@ const HELP_TOPICS = [
   { id:"ppm", section:"Shots", title:"Atmospheric PPM Correction",
     preview:"Correct distances for temperature and pressure",
     body:`<h3>Atmospheric PPM</h3>
-<p>EDM distances assume standard atmosphere. Tap <strong>SHOTS → Atmospheric PPM</strong>, enter temperature (°F or °C) and pressure (inHg or hPa), and ChainLink computes the parts-per-million correction and applies it to every shot distance you enter.</p>
+<p>EDM distances assume standard atmosphere. Tap <strong>Field → Atmospheric PPM</strong>, enter temperature (°F or °C) and pressure (inHg or hPa), and ChainLink computes the parts-per-million correction and applies it to every shot distance you enter.</p>
 <h3>Status</h3>
 <p>When enabled, the mode hint shows <strong>PPM:</strong> with the current value. Disable any time from the same menu.</p>
 <div class="tip">Only enable this if your total station is NOT already applying its own atmospheric correction — applying it twice doubles the error. At 70°F and sea level the correction is near zero; it matters most in heat, cold, or at elevation on long shots.</div>
@@ -13438,10 +13438,10 @@ const HELP_TOPICS = [
   { id:"cogo-polyline", section:"COGO", title:"Polylines: Build, Offset, Manage",
     preview:"Chain points, lines, and arcs into a named polyline",
     body:`<h3>Build Polyline</h3>
-<p>Tap <strong>COGO → Build Polyline</strong>, name it, then tap points in order on the plot. If an existing arc already connects two consecutive points, the segment follows the arc automatically; otherwise it's straight.</p>
+<p>Tap <strong>COGO → Open COGO Tools → Build Polyline</strong>, name it, then tap points in order on the plot. If an existing arc already connects two consecutive points, the segment follows the arc automatically; otherwise it's straight.</p>
 <p>Tap a curved segment's arc to straighten it, or tap a different arc over the same span to switch. <strong>Undo Last</strong> removes the last vertex. Tap <strong>Done</strong> to store.</p>
 <h3>Polyline Manager</h3>
-<p>Tap <strong>COGO → Polyline Manager</strong> to list stored polylines. From there you can <strong>Offset Polyline</strong> (parallel copy left or right of travel, arcs offset by adjusting radius) or <strong>Delete</strong>.</p>
+<p>Tap <strong>COGO → Open COGO Tools → Polyline Manager</strong> to list stored polylines. From there you can <strong>Offset Polyline</strong> (parallel copy left or right of travel, arcs offset by adjusting radius) or <strong>Delete</strong>.</p>
 <p>You can also tap any line or arc that belongs to a polyline — a polyline action button appears in its context menu.</p>
 <p>Polylines are saved with the job and restore from CSV backups.</p>
 <div class="tip">Classic use: building a road centerline of tangents and curves, then offsetting it to get edge-of-pavement or right-of-way lines.</div>`},
@@ -13449,7 +13449,7 @@ const HELP_TOPICS = [
   { id:"cogo-deflection", section:"COGO", title:"Angle at Point",
     preview:"Interior, exterior, and deflection angle at a vertex from three tapped points",
     body:`<h3>Angle at Point</h3>
-<p>Tap <strong>COGO → Angle at Point</strong>, then tap three points on the plot. The middle point is the vertex; the first and third are the two legs.</p>
+<p>Tap <strong>COGO → Open COGO Tools → Angle at Point</strong>, then tap three points on the plot. The middle point is the vertex; the first and third are the two legs.</p>
 <h3>Results</h3>
 <ul>
 <li><strong>Interior Angle</strong> — the smaller angle between the two legs at the vertex</li>
@@ -13498,11 +13498,11 @@ const HELP_TOPICS = [
     preview:"Scale all points about a pivot point",
     body:`<h3>Scale</h3><p>Scales all coordinates about a pivot point by a given factor. Arc centers and radii are also scaled.</p>`},
 
-  // ── STAKEOUT ────────────────────────────────────────────────
+  // ── STAKE ────────────────────────────────────────────────
   { id:"stakeout", section:"Stakeout", title:"Stakeout",
     preview:"Navigate to a stored point or entered coordinates",
     body:`<h3>Stakeout</h3>
-<p>Tap <strong>STAKEOUT → Stake to Stored Point</strong> or <strong>Stake to Entered Coords</strong>.</p>
+<p>Tap <strong>Stake → Stake Stored Point</strong> or <strong>Stake to Entered Coords</strong>.</p>
 <p>Result shows: horizontal distance, true azimuth, instrument setting, and in 3D mode: ΔZ, target elevation, rod height (TH), and cut/fill.</p>
 <h3>Change Rod Height</h3>
 <p>Tap <strong>Change Rod Height</strong> in the stakeout result to update TH and instantly recalculate cut/fill without re-entering the point.</p>
@@ -13511,7 +13511,7 @@ const HELP_TOPICS = [
   { id:"stake-to-line", section:"Stakeout", title:"Stake to Line or Arc",
     preview:"Guide a rodman onto a baseline or curve using instrument readings",
     body:`<h3>Stake to Line or Arc</h3>
-<p>Tap <strong>STAKEOUT → Stake to Line</strong>, then <strong>tap any drawn line or arc</strong> on the plot to select it — no need to pick endpoints. The chosen geometry highlights in blue.</p>
+<p>Tap <strong>Stake → Stake Line / Arc</strong>, then <strong>tap any drawn line or arc</strong> on the plot to select it — no need to pick endpoints. The chosen geometry highlights in blue.</p>
 <h3>Take a Shot</h3>
 <p>Shoot the rodman, then enter the instrument reading (azimuth) and horizontal distance. The corrections are reported from the instrument operator's perspective.</p>
 <h3>Line Results</h3>
@@ -13533,7 +13533,7 @@ const HELP_TOPICS = [
   { id:"pointlist", section:"Points & Data", title:"Point List & Detail View",
     preview:"View, sort, edit, and access raw data for every point",
     body:`<h3>Point List</h3>
-<p>Access from <strong>More → Point List / Edit</strong>. Tap any column header to sort. Points with raw observation data show a <strong>*</strong> after the description.</p>
+<p>Access from <strong>Project → Point List</strong>. Tap any column header to sort. Points with raw observation data show a <strong>*</strong> after the description.</p>
 <h3>Tap a Row → Detail View</h3>
 <p>Opens a full detail screen showing:</p>
 <ul>
@@ -13563,7 +13563,7 @@ const HELP_TOPICS = [
   { id:"flag", section:"Points & Data", title:"Flagging Points",
     preview:"Mark control points and questionable shots",
     body:`<h3>Flag a Point</h3>
-<p>Tap a point on the plot → <strong>🚩 Flag / Mark</strong>, or use <strong>SHOTS → Flag a Point</strong> by number. Choose:</p>
+<p>Tap a point on the plot → <strong>🚩 Flag / Mark</strong>, or use <strong>Field → Flag Point</strong> by number. Choose:</p>
 <ul>
 <li><strong>★ Control</strong> — drawn as a blue triangle on the plot</li>
 <li><strong>⚑ Questionable</strong> — drawn as an amber diamond</li>
@@ -13587,7 +13587,7 @@ const HELP_TOPICS = [
   { id:"elev-shift", section:"Points & Data", title:"Shift All Elevations",
     preview:"Correct assumed elevations to match a known benchmark",
     body:`<h3>Shift All Elevations</h3>
-<p>Tap <strong>More → Shift All Elevations</strong>. Workflow:</p>
+<p>Tap <strong>Field → Shift Elevations</strong>. Workflow:</p>
 <ol>
 <li>Enter the point number you just shot on a known elevation</li>
 <li>Enter the true elevation of that point</li>
@@ -13605,7 +13605,7 @@ const HELP_TOPICS = [
 <h3>Easiest Way — GPS Start</h3>
 <p>When you create a new job, choose <strong>📡 GPS Start</strong>. Stand at your starting point, let the phone get a fix, and the app does the rest: it works out where you are, picks the right coordinate grid for your state, fills in the ground elevation from government survey maps, and switches the aerial photo on.</p>
 <h3>Anchoring a Job You Already Have</h3>
-<p>Open <strong>More → 🛰 Satellite Imagery</strong>. Stand at any point you've already recorded, tap <strong>Use Phone GPS</strong>, and the app offers two choices:</p>
+<p>Open <strong>Map → Imagery / GPS</strong>. Stand at any point you've already recorded, tap <strong>Use Phone GPS</strong>, and the app offers two choices:</p>
 <p><strong>Shift whole job to grid coords</strong> — renumbers all your coordinates onto the official state grid (recommended; nothing about the shape of your work changes, only the labels on the numbers).</p>
 <p><strong>Keep local coords</strong> — your numbers stay exactly as they are; the photo just lines up behind them.</p>
 <h3>What's a "State Plane zone"?</h3>
@@ -13613,9 +13613,9 @@ const HELP_TOPICS = [
 <h3>The 🛰 Button</h3>
 <p>The 🛰 button on the right side of the plot turns the photo (and the blue GPS dot) on and off with one tap. Bright = on, dim = off.</p>
 <h3>Aerial vs Topo</h3>
-<p>In the 🛰 menu, <strong>Basemap</strong> switches between the aerial photo and a <strong>USGS topographic map</strong> — the classic government map style with contour lines, roads, and section lines.</p>
+<p>In Map → Imagery / GPS, <strong>Basemap</strong> switches between the aerial photo and a <strong>USGS topographic map</strong> — the classic government map style with contour lines, roads, and section lines.</p>
 <div class="warn">The photo is a visual reference only. Phone GPS is accurate to roughly 10–30 ft, and aerial photos have their own small alignment errors. Never measure or set anything off the photo — your instrument measurements are the truth; the photo is just context.</div>
-<div class="tip">If the photo looks slightly rotated against your linework, the <strong>Rotation nudge</strong> slider in the 🛰 menu lets you true it up by eye.</div>`},
+<div class="tip">If the photo looks slightly rotated against your linework, the <strong>Rotation nudge</strong> slider in Map → Imagery / GPS lets you true it up by eye.</div>`},
 
   { id:"sat-livegps", section:"Satellite & GPS", title:"The Blue Dot — Live GPS Position",
     preview:"See where you're standing on the plot",
@@ -13627,7 +13627,7 @@ const HELP_TOPICS = [
 <p>A <strong>blue arrow at the screen edge</strong> means you're off-screen in that direction — pan or zoom out to find yourself.</p>
 <p>A <strong>dimmed dot</strong> means the fix is stale (no update for 15+ seconds).</p>
 <h3>Turning It Off</h3>
-<p>GPS uses battery. The 🛰 button toggles it together with the photo, or use <strong>📍 Live GPS marker</strong> in the 🛰 menu to control it separately.</p>
+<p>GPS uses battery. The 🛰 button toggles it together with the photo, or use <strong>📍 Live GPS marker</strong> in Map → Imagery / GPS to control it separately.</p>
 <div class="tip">The dot is a "which part of the property am I in" tool, good to a couple of car-lengths — not a precise position.</div>`},
 
   { id:"sat-navigate", section:"Satellite & GPS", title:"GPS Navigate — Walk to a Point",
@@ -13643,7 +13643,7 @@ const HELP_TOPICS = [
   { id:"sat-gpspoint", section:"Satellite & GPS", title:"Store a Point Where You Stand",
     preview:"Drop a pin at your GPS position",
     body:`<h3>Marking Things As You Walk</h3>
-<p>Found an iron pin, a gate, a culvert, or anything worth remembering? <strong>🛰 menu → 📌 Store Point at GPS position</strong> drops a numbered point right where you're standing and asks for a description.</p>
+<p>Found an iron pin, a gate, a culvert, or anything worth remembering? <strong>Map → Imagery / GPS → 📌 Store Point at GPS position</strong> drops a numbered point right where you're standing and asks for a description.</p>
 <h3>How It's Labeled</h3>
 <p>The point gets tagged like <strong>[GPS ±15ft]</strong> so that later — in the point list or an export — nobody mistakes a rough walked-to position for a precise instrument measurement. They're different animals, and the tag keeps them honest.</p>
 <div class="tip">Perfect for scouting a property before the real work: walk it once, pin everything you find, then decide where to set up.</div>`},
@@ -13653,7 +13653,7 @@ const HELP_TOPICS = [
     body:`<h3>The Problem</h3>
 <p>The aerial photo streams from the internet, and job sites often have no signal. The fix: load the photo <em>before</em> you go.</p>
 <h3>How</h3>
-<p>While you're on WiFi, open the job, position the view over the property, and tap <strong>🛰 menu → ⬇ Cache visible area for offline</strong>. The app downloads and saves the photo tiles for that view at several zoom levels. Zoom out and repeat to cover a wider area.</p>
+<p>While you're on WiFi, open the job, position the view over the property, and tap <strong>Map → Imagery / GPS → ⬇ Cache visible area for offline</strong>. The app downloads and saves the photo tiles for that view at several zoom levels. Zoom out and repeat to cover a wider area.</p>
 <h3>Also Automatic</h3>
 <p>Any part of the photo you've simply <em>looked at</em> gets saved too. The deliberate button just makes sure the whole site is covered instead of only where you happened to scroll.</p>
 <div class="tip">Everything else in ChainLink already works offline — measurements, calculations, saving. Only fresh photo areas and the elevation lookup need a connection.</div>`},
@@ -13662,7 +13662,7 @@ const HELP_TOPICS = [
   { id:"deed-read", section:"Deed Plotter", title:"Reading a Deed In",
     preview:"Paste, photograph, or open a PDF — and how to get clean text",
     body:`<h3>Three Ways In</h3>
-<p>Open <strong>COGO → 📜 Deed Plotter</strong>. You can <strong>paste</strong> the legal description text, <strong>📷 photograph</strong> the page, or <strong>📄 open a PDF</strong> of the deed. Recorded PDFs with real text read perfectly — the app takes the text straight from the file.</p>
+<p>Open <strong>Records → Open Deed Plotter</strong>. You can <strong>paste</strong> the legal description text, <strong>📷 photograph</strong> the page, or <strong>📄 open a PDF</strong> of the deed. Recorded PDFs with real text read perfectly — the app takes the text straight from the file.</p>
 <h3>Getting Clean Text From Paper</h3>
 <p>The built-in 📷 camera works with no signal, but its text reading is rough. <strong>Google Lens reads deeds far better</strong>: snap the page with Lens, Select all → Copy, and paste it into the box. A scanner app that makes searchable PDFs (Adobe Scan, Microsoft Lens) is even better for multi-page deeds — then use 📄.</p>
 <h3>Multi-Page Deeds</h3>
@@ -13748,14 +13748,45 @@ const HELP_TOPICS = [
   { id:"data-mgmt", section:"Tools", title:"Data Management Utilities",
     preview:"Delete connections, clear data, save folder, force reload",
     body:`<h3>Delete Connection</h3>
-<p><strong>More → Delete Connection</strong> removes a drawn line — or just tap the line on the plot and choose Delete.</p>
+<p><strong>COGO → Draw Connection (long-press a line to delete)</strong> removes a drawn line — or just tap the line on the plot and choose Delete.</p>
 <h3>Clear All Data</h3>
-<p><strong>More → Clear All Data</strong> wipes the current job's points and connections after confirmation. This also resets the undo history.</p>
+<p><strong>Project → Clear All Data</strong> wipes the current job's points and connections after confirmation. This also resets the undo history.</p>
 <h3>Change Save Folder</h3>
-<p><strong>More → Change Save Folder</strong> re-prompts the folder picker so the next CSV save goes where you want it.</p>
+<p><strong>Project → Export → Change Save Folder</strong> re-prompts the folder picker so the next CSV save goes where you want it.</p>
 <h3>Force Reload App</h3>
-<p><strong>More → Force Reload App</strong> reloads from the server to pick up a new version. Auto-saved data is kept, but anything mid-entry is lost.</p>
+<p><strong>Project → Settings → Force Reload App</strong> reloads from the server to pick up a new version. Auto-saved data is kept, but anything mid-entry is lost.</p>
 <div class="warn">Save a CSV before Clear All Data — it cannot be undone once the undo history resets.</div>`},
+
+  { id:"ws-overview", section:"Getting Started", title:"The Six Workspaces",
+    preview:"Where everything lives now — Field, Records, COGO, Stake, Map, Project",
+    body:`<h3>One Bar, Six Rooms</h3>
+<p>Every tool now lives in one of six workspaces on the bottom bar. <strong>Field</strong> is observations — setup, occupy, shots, corrections. <strong>Records</strong> is deed work — import, review, assemble, and fit record geometry. <strong>COGO</strong> is the calculations. <strong>Stake</strong> guides layout to points, lines, and curves. <strong>Map</strong> is imagery, basemaps, GPS context, and display. <strong>Project</strong> is jobs, import/export, settings, and this help.</p>
+<h3>The Project Drawer</h3>
+<p>The panel that slides from the left shows the project at a glance — records, points, and layers with counts. Tap through it to jump; it's a map of the job, not another menu to memorize.</p>
+<h3>Quick Actions</h3>
+<p>Tap a point, line, or arc on the plot and a small set of actions for <em>that object</em> appears — inverse from it, stake to it, edit it — without hunting through a workspace first.</p>`},
+
+  { id:"sat-ngs", section:"Satellite & GPS", title:"NGS Survey Monuments",
+    preview:"Government benchmarks appear on your imagery — with their published coordinates",
+    body:`<h3>They Just Appear</h3>
+<p>Open any anchored job with a data signal and the official NGS survey marks near it show up on the imagery as small triangles — <strong>green</strong> for recovered in good shape recently, <strong>amber</strong> for poor condition or long-unvisited, and confirmed-destroyed marks stay hidden. One small fetch per area, cached with the job: after that, <strong>dead zones don't matter</strong>.</p>
+<h3>Tap a Triangle</h3>
+<p>The card shows what the disk is, what's stamped on it, what it's set in, its condition and last-recovery date, its elevation — and its <strong>published NAD 83(2011) State Plane coordinate, already converted to your job's grid</strong>. On a grid job that published value <em>is</em> the mark's job coordinate: the exact number an RTK rover would stake, untouched by phone GPS.</p>
+<h3>Use It</h3>
+<p><strong>📌 Create point &amp; navigate</strong> stores the mark as a point carrying the published coordinate — export it, stake to it, tie your traverse to it — and lights the GPS line to walk you there. <strong>📄 Fetch walking directions</strong> pulls the government's own to-reach text, written by whoever set or last found the disk.</p>
+<h3>Ahead of a Trip</h3>
+<p>In the Map workspace, <strong>Fetch all details</strong> pulls status and directions for every mark in the area in one pass — a few megabytes, fine on mobile data — so the whole set works offline in the field.</p>
+<div class="tip">A benchmark half a mile from the job is free, permanent control. Occupy or shoot one and your work is tied to the National Spatial Reference System.</div>`},
+
+  { id:"deed-multi", section:"Deed Plotter", title:"Multiple Deeds: Import & Snap",
+    preview:"Plot the neighbors too — then snap shared lines and corners together",
+    body:`<h3>More Than One Deed on the Map</h3>
+<p>In <strong>Records</strong>, <strong>Import Another Deed</strong> reads a second (third, tenth) legal description into the same job as its own named record — "Deed 2", "Deed 3" — each keeping its own figures, rotation, and identity through saves and undo. This is how you build the neighborhood: your subject plus the adjoiners, assembled like the deeds describe.</p>
+<h3>Move / Snap a Deed Record</h3>
+<p><strong>Move / Snap a Deed Record</strong> lists the records; pick one and drag <em>just that deed</em> — everything else holds still. As it nears something snappable, the app finds it: your <strong>measured points</strong>, other deeds' <strong>corners</strong>, and other deeds' <strong>courses</strong>.</p>
+<h3>What LOCK IN Does</h3>
+<p>Corner near a point: the deed translates so the corner sits exactly on it. Course near a course: the deed <strong>rotates to match the line's bearing</strong> and seats on it — the classic shared-boundary fit between adjoining descriptions. Corner <em>and</em> course: the corner snaps and the deed swings rigid about it. A wrong lock is one <strong>↩ Undo</strong> from reversal, and a cancelled move leaves your undo history exactly as it was.</p>
+<div class="warn">Snapping is record-to-record assembly — it makes deeds agree with <em>each other</em>. Making the record agree with the <em>ground</em> is still the fit-to-measured-points step, and where the two disagree, the ground and the monuments win. That call is retracement judgment — a licensed surveyor's territory when it matters.</div>`},
 ];
 
 
@@ -14082,7 +14113,7 @@ window.addEventListener("keydown",e=>{
 
 
 
-/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.5.2 ════════════════ */
+/* ══ WORKSPACE SHELL / PROJECT EXPLORER v4.5.4 ════════════════ */
 let _drawerTab="overview";
 let _activeWorkspace="field";
 function _esc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
