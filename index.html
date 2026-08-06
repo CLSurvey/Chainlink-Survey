@@ -1060,7 +1060,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.4.31";
+const APP_VERSION = "4.4.32";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -9126,7 +9126,7 @@ function _deedFindSnapCandidate(){
   (_deedPlot.figures||[]).forEach(f=>{
     if(movingSet.has(f)||!f.computed)return;
     (f.computed.verts||[]).slice(0,-1).forEach((v,i)=>
-      pointTargets.push({E:v.E,N:v.N,label:(f.recordName||f.name||"deed")+" corner "+(i+1),kind:"deed-corner"}));
+      pointTargets.push({E:v.E,N:v.N,label:(f.recordName||f.name||"deed")+" corner "+(i+1),kind:"deed-corner",f,i}));
   });
   let bp=null;
   verts.forEach(x=>pointTargets.forEach(t=>{
@@ -9159,12 +9159,39 @@ function _deedFindSnapCandidate(){
       if(!bl||score<bl.score)bl={type:"line",score,d:near.d,da,source:sg,target:tg,near};
     }
   }));
-  // A nearby line is the preferred deed-joining operation. A very close corner still wins.
-  if(bp&&bp.d<=pointTol*.38)return bp;
+  // If a close deed corner and matching incident courses are both available,
+  // solve them together as a rigid two-condition fit: corner coincidence + line direction.
+  // This prevents a corner-only translation from leaving the shared boundary rotated.
+  let br=null;
+  if(bp&&bp.target.kind==="deed-corner"){
+    const same=(a,b)=>Math.hypot(a.E-b.E,a.N-b.N)<1e-5;
+    const srcIncident=ds.filter(sg=>same(sg.a,bp.source.v)||same(sg.b,bp.source.v));
+    const tgtIncident=ts.filter(tg=>tg.kind==="deed-line"&&(same(tg.a,bp.target)||same(tg.b,bp.target)));
+    srcIncident.forEach(sg=>tgtIncident.forEach(tg=>{
+      const so=same(sg.a,bp.source.v)?sg.b:sg.a;
+      const to=same(tg.a,bp.target)?tg.b:tg.a;
+      const saz=az(bp.source.v,so),taz=az(bp.target,to);
+      let dr=((taz-saz+180)%360+360)%360-180;
+      const da=Math.abs(dr);
+      if(da<=15){
+        const score=bp.d+da*(lineTol/12);
+        if(!br||score<br.score)br={type:"rigid",score,d:bp.d,da,dr,sourcePoint:bp.source.v,targetPoint:bp.target,sourceSeg:sg,targetSeg:tg};
+      }
+    }));
+  }
+  if(br)return br;
+  // Otherwise prefer a course fit; use a corner-only snap only when no usable course pair exists.
   return bl||bp;
 }
 function _deedApplySnapCandidate(hit){
   if(!hit)return null;
+  if(hit.type==="rigid"&&_deedAdjustScope==null){
+    // Rotate about the moving shared corner, then translate that corner exactly
+    // onto the target corner. Distances and internal geometry remain unchanged.
+    _deedRotateAbout(hit.sourcePoint.E,hit.sourcePoint.N,hit.dr);
+    _deedTranslate(hit.targetPoint.E-hit.sourcePoint.E,hit.targetPoint.N-hit.sourcePoint.N);
+    return "corner + course snapped to "+hit.targetPoint.label+"; rotated "+hit.dr.toFixed(3)+"°";
+  }
   if(hit.type==="point"){
     _deedTranslate(hit.target.E-hit.source.v.E,hit.target.N-hit.source.v.N);
     return "corner snapped to "+hit.target.label;
@@ -11724,9 +11751,11 @@ function plotPoints(extCtx,extW,extH){
     ctx.fillStyle="rgba(10,90,100,.85)";ctx.fillRect(w/2-hw/2-12,10,hw+24,24);
     ctx.fillStyle="#bff3fa";ctx.fillText(hint,w/2,22);
     if(_deedSnapPreview){
-      const ps=_deedSnapPreview.type==="line"
-        ?("SNAP COURSE → "+_deedSnapPreview.target.label+"  Δ "+_deedSnapPreview.da.toFixed(2)+"°")
-        :( "SNAP CORNER → "+_deedSnapPreview.target.label );
+      const ps=_deedSnapPreview.type==="rigid"
+        ?("SNAP CORNER + COURSE → "+_deedSnapPreview.targetPoint.label+"  Δ "+_deedSnapPreview.dr.toFixed(2)+"°")
+        :_deedSnapPreview.type==="line"
+          ?("SNAP COURSE → "+_deedSnapPreview.target.label+"  Δ "+_deedSnapPreview.da.toFixed(2)+"°")
+          :( "SNAP CORNER → "+_deedSnapPreview.target.label );
       ctx.font="bold 11px 'Courier New',monospace";
       const pw=ctx.measureText(ps).width;
       ctx.fillStyle="rgba(25,110,45,.92)";ctx.fillRect(w/2-pw/2-10,39,pw+20,22);
