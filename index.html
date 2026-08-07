@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.6.1">
+<meta name="application-name" content="ChainLink-v4.6.2">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.6.1</title>
+<title>ChainLink Survey v4.6.2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.6.1";
+const APP_VERSION = "4.6.2";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1301,6 +1301,7 @@ function _snapState(label){
   };
 }
 function _restoreSnap(snap){
+  _clearTransientMapSelections(false);
   points=snap.points;
   plotConnections=snap.plotConnections;
   if(typeof _polylines!=="undefined" && snap.polylines) _polylines=snap.polylines;
@@ -1334,6 +1335,9 @@ function _deedFigSerialize(f){
     sectionNo:f.sectionNo||null};
 }
 function _takeSnapshot(label){
+  // A picker is transient UI, not part of survey state.  End it before the
+  // snapshot so undo/redo can never resurrect references to superseded points.
+  _clearTransientMapSelections(false);
   // Deep-copy current state before a destructive action
   _snapshots.push(_snapState(label));
   if(_snapshots.length>MAX_SNAPSHOTS) _snapshots.shift();
@@ -1457,6 +1461,7 @@ function jobNew(){
   },100);
 }
 function _startNewJob(jn,N,E,Z,deferSetup,noStart){
+  _clearTransientMapSelections(false);
   _resetViewState();
   _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
   // noStart: deed-first job — no point dropped where the user happens to be
@@ -1491,6 +1496,7 @@ function jobSettings(){ _hideJobScreen(); loadData(); setTimeout(settingsMenu,30
 
 /* ── 3. PERSIST ────────────────────────────────────────────────── */
 function loadData() {
+  if(typeof _clearTransientMapSelections==="function") _clearTransientMapSelections(false);
   _resetViewState();
   viewScale=1;viewOffsetX=0;viewOffsetY=0; // a loaded job starts at its fitted view
   try { const s=_lsGet("cl_points"); if(s){ points=JSON.parse(s); pointCounter=points.length?points.reduce((m,p)=>p.Point>m?p.Point:m,0)+1:1; currentPoint=points[0]||null; orientationChosen=true; } else _defaultState(); } catch(e){ _defaultState(); }
@@ -4414,6 +4420,7 @@ function _updateUndoBtn(){
   }
 }
 function undoFromCanvas(){
+  _clearTransientMapSelections(false);
   if(_snapshots.length>0){
     const snap=_snapshots.pop();
     // Save the state we're leaving so it can be redone
@@ -4435,6 +4442,7 @@ function undoFromCanvas(){
 }
 function undo(){ undoFromCanvas(); }
 function redoFromCanvas(){
+  _clearTransientMapSelections(false);
   if(!_redoStack.length){alert("Nothing to redo.");return}
   const snap=_redoStack.pop();
   // Save the state we're leaving so the redo itself can be undone —
@@ -6157,20 +6165,51 @@ let _areaPoly = [];
 let _areaArcs = [];   // arcs the user explicitly tapped for this selection
 let _areaMode = false;
 
-function _areaCancel(){
+/* v4.6.2 — transient selection lifecycle.  Area selection is UI state, not
+   survey data, so it must never survive an undo/redo, point/deed deletion,
+   job load/reset, or another geometry-changing action.  Keep the cleanup in
+   one place and make plot rendering depend on _areaMode as a second guard. */
+function _areaCancel(redraw=true){
+  const hadAreaState = _areaMode || !!window._areaClickActive || _areaPoly.length>0 || _areaArcs.length>0;
   _areaMode = false;
   window._areaClickActive = false;
   window._areaClickHandler = null;
-  window._connClickCancelCb = null;
   _areaPoly = [];
   _areaArcs = [];
-  tempGeom = [];
+  // Area preview owns tempGeom only while area selection exists.  Do not wipe
+  // another tool's preview when this helper is used as a general lifecycle guard.
+  if(hadAreaState) tempGeom = [];
   const banner = document.getElementById("intersectBanner");
   if(banner){
     banner.classList.remove("visible");
     banner.textContent = "⊕ TAP SECOND LINE OR ARC — or tap empty space to cancel";
   }
-  plotPoints();
+  if(redraw) plotPoints();
+}
+
+function _clearTransientMapSelections(redraw=false){
+  // Area picker (including its ring overlay and preview geometry).
+  _areaCancel(false);
+
+  // Universal point/connection pickers.  Their callbacks refer to the old
+  // point objects, so retaining them across a state replacement is unsafe.
+  window._connClickActive=false;
+  window._connClickHandler=null;
+  window._connClickCancelCb=null;
+  if(typeof _pickedPts!=="undefined") _pickedPts=[];
+  tempGeom=(tempGeom||[]).filter(g=>!g._pick && !g._tv);
+  tempIntersections=[];
+
+  // A pending stake-to-line geometry pick is likewise invalid after a
+  // destructive state change.  Do not leave the canvas intercepting taps.
+  window._stlPickActive=false;
+
+  const banner=document.getElementById("intersectBanner");
+  if(banner){
+    banner.classList.remove("visible");
+    banner.textContent="⊕ TAP SECOND LINE OR ARC — or tap empty space to cancel";
+  }
+  if(redraw) plotPoints();
 }
 
 function _areaUpdateDisplay(){
@@ -6529,6 +6568,7 @@ function cogoArea(){
 
 function _cogoAreaByType(){
   _helpContext="cogo-area";
+  _clearTransientMapSelections(false);
   alphaInput("Point #s in order (space or comma separated):","",ptList=>{
     if(!ptList)return;
     const ids=ptList.replace(/,/g," ").split(/\s+/).map(Number).filter(Boolean);
@@ -6543,6 +6583,7 @@ function _cogoAreaByType(){
 
 function _cogoAreaByTap(){
   _helpContext="cogo-area";
+  _clearTransientMapSelections(false);
   _areaPoly=[];
   _areaArcs=[];
   _areaMode=true;
@@ -7917,6 +7958,7 @@ function deleteConnection(){
 function clearAllData(){
   confirmDialog("Clear ALL points, connections, and cache?",yes=>{
     if(!yes)return;
+    _clearTransientMapSelections(false);
     ["cl_points","cl_connections","cl_polylines","cl_orientOffset","cl_surveyMode","cl_jobName","cl_units","cl_showLabels","cl_areaLabels","cl_geoAnchor","cl_satOn","cl_satRot","cl_deedPlot"]
       .forEach(k=>_lsRemove(k));
     _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
@@ -9567,6 +9609,7 @@ function _deedDeleteRecord(id){
   const label=_deedRecordLabel(id);
   confirmDialog("Delete "+label+" and all of its figures from this job? Measured/job points and other deed records will be kept.",yes=>{
     if(!yes)return;
+    _clearTransientMapSelections(false);
     _takeSnapshot("Delete deed record");
     const candidate=new Set();
     figs.forEach(f=>{(f.ptNums||[]).forEach(n=>candidate.add(n));(f.tiePtNums||[]).forEach(n=>candidate.add(n));});
@@ -11652,6 +11695,7 @@ function _zoomToGround(unitsAcross){
   setTimeout(()=>{ if(viewScale===setAt) apply(); },350);
 }
 function _stageNewJob(){
+  _clearTransientMapSelections(false);
   points=[];plotConnections=[];_polylines=[];_areaLabels=[];
   tempGeom=[];tempIntersections=[];recentShots=[];
   selectedPoint=null;currentPoint=null;
@@ -12113,7 +12157,7 @@ function plotPoints(extCtx,extW,extH){
   });
 
   // Area selection rings — drawn every frame so they survive pan/zoom
-  if(_areaPoly && _areaPoly.length>0){
+  if(_areaMode && _areaPoly && _areaPoly.length>0){
     _areaPoly.forEach((pt,i)=>{
       const sx=X(pt.Easting), sy=Y(pt.Northing);
       // Ring
@@ -12971,12 +13015,8 @@ function zoomToOccupied(){
         _areaTapConn(plotConnections[hitConnIdx]);
         return;
       }
-      // Tap empty space — cancel area selection
-      window._areaClickActive=false; window._areaClickHandler=null;
-      document.getElementById("intersectBanner").classList.remove("visible");
-      document.getElementById("intersectBanner").textContent=
-        "⊕ TAP SECOND LINE OR ARC — or tap empty space to cancel";
-      tempGeom=[]; plotPoints();
+      // Tap empty space — cancel the ENTIRE area selection state.
+      _areaCancel();
       return;
     }
 
