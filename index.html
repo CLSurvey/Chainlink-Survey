@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.6.3">
+<meta name="application-name" content="ChainLink-v4.6.4">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.6.3</title>
+<title>ChainLink Survey v4.6.4</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.6.3";
+const APP_VERSION = "4.6.5";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -6239,12 +6239,15 @@ function _areaUpdateDisplay(){
   tempGeom = [];
   const n=_areaPoly.length;
   if(n>=2){
-    const edges=_resolvePolyEdges(_areaPoly,_areaArcs.concat(_deedAreaArcs()));
+    const edges=_resolvePolyEdges(_areaPoly,_areaArcs.concat(_deedAreaArcs(),_deedAreaSpirals()));
     const BRIGHT="rgba(240,160,32,.85)", FAINT="rgba(240,160,32,.35)";
     const push=(i,color)=>{
       const p1=_areaPoly[i], p2=_areaPoly[(i+1)%n];
       const ea=edges[i];
-      if(ea){
+      if(ea&&ea.kind==="spiral"){
+        const z=_spiralEdgeIntegral(ea.conn,ea.sA,ea.sB);
+        tempGeom.push({type:"polyline",pts:z.path.map(q=>({E:q.E,N:q.N})),color});
+      } else if(ea){
         tempGeom.push({type:"bndarc",cx:ea.cx,cy:ea.cy,R:ea.R,
                        tA:ea.tA,tB:ea.tB,dt:ea.dt,color});
       } else {
@@ -6263,18 +6266,19 @@ function _areaUpdateDisplay(){
 }
 
 function _areaFinish(){
-  // 2 points are enough when an explicitly tapped arc spans them — arc +
-  // closing chord encloses a circular segment. Otherwise 3+ points required.
+  // 2 points are enough when an explicitly selected curve spans them — the
+  // curve plus its closing chord encloses a segment. Otherwise 3+ points required.
+  const declaredCurves=_areaArcs.slice().concat(_deedAreaArcs(),_deedAreaSpirals());
   if(_areaPoly.length<3){
-    const segOK=_areaPoly.length===2 && _arcForEdge(_areaPoly[0],_areaPoly[1],_areaArcs.concat(_deedAreaArcs()));
-    if(!segOK){ alert("Need at least 3 points (or 2 spanned by a tapped arc)."); _areaCancel(); return; }
+    const segOK=_areaPoly.length===2 && _curveForEdge(_areaPoly[0],_areaPoly[1],declaredCurves);
+    if(!segOK){ alert("Need at least 3 points (or 2 spanned by a tapped curve)."); _areaCancel(); return; }
   }
   const poly=_areaPoly.slice();
-  const arcs=_areaArcs.slice().concat(_deedAreaArcs());
+  const curves=declaredCurves;
   _areaCancel();
 
-  const {area, perimeter, arcUsed} = _computePolyArea(poly,arcs);
-  const _edges=_resolvePolyEdges(poly,arcs);
+  const {area, perimeter, arcUsed, spiralUsed} = _computePolyArea(poly,curves);
+  const _edges=_resolvePolyEdges(poly,curves);
   const nCurved=_edges.filter(Boolean).length;
   const perim = perimeter;
 
@@ -6283,18 +6287,18 @@ function _areaFinish(){
   const rows=[
     {lbl:"Points:",val:ids.join("→")},
     {lbl:"Perimeter:",val:perim.toFixed(3)+" "+u},
-    {lbl:"Curves:",val:nCurved>0?(nCurved+" curved edge"+(nCurved>1?"s":"")+" followed ✓"):(arcUsed?"arc points fitted ✓":"none — straight lines between all points")},
+    {lbl:"Curves:",val:nCurved>0?(nCurved+" curved edge"+(nCurved>1?"s":"")+" followed ✓"):(arcUsed?"arc points fitted ✓":(spiralUsed?"spiral followed ✓":"none — straight lines between all points"))},
   ];
   if(u==="ft"){
-    rows.push({lbl:"Area (sq ft):",val:area.toFixed(2)+(arcUsed?" ✓ arc corrected":"")});
+    rows.push({lbl:"Area (sq ft):",val:area.toFixed(2)+((arcUsed||spiralUsed)?" ✓ curve corrected":"")});
     rows.push({lbl:"Acres:",val:(area/43560).toFixed(4)});
     rows.push({lbl:"Sq Yd:",val:(area/9).toFixed(2)});
   } else {
-    rows.push({lbl:"Area (m²):",val:area.toFixed(2)+(arcUsed?" ✓ arc corrected":"")});
+    rows.push({lbl:"Area (m²):",val:area.toFixed(2)+((arcUsed||spiralUsed)?" ✓ curve corrected":"")});
     rows.push({lbl:"Hectares:",val:(area/10000).toFixed(4)});
   }
   // Draw area label at polygon centroid on the canvas
-  _drawAreaLabel(poly, area, u, arcs.map(c=>({cx:c.centerE,cy:c.centerN,R:c.R})));
+  _drawAreaLabel(poly, area, u, curves.map(_areaCurveSignature).filter(Boolean));
   showResult("Area & Perimeter",rows);
 }
 
@@ -6309,11 +6313,11 @@ function _areaFinish(){
 //    tapped that arc (explicitArcs); otherwise it is a straight chord.
 //  • A full-arc edge is demoted to a chord if other edges trace parts of the
 //    same arc, or an earlier edge already took the full arc.
-function _resolvePolyEdges(poly,explicitArcs){
+function _resolvePolyEdges(poly,explicitCurves){
   const n=poly.length;
   const cand=new Array(n).fill(null);
-  for(let i=0;i<n;i++) cand[i]=_arcForEdge(poly[i],poly[(i+1)%n],explicitArcs);
-  const edgeArc=new Array(n).fill(null);
+  for(let i=0;i<n;i++) cand[i]=_curveForEdge(poly[i],poly[(i+1)%n],explicitCurves);
+  const edgeCurve=new Array(n).fill(null);
   const fullTaken=new Set();
   for(let i=0;i<n;i++){
     const a=cand[i];
@@ -6323,22 +6327,26 @@ function _resolvePolyEdges(poly,explicitArcs){
       if(cand.some((b,k)=>k!==i&&b&&!b.full&&b.conn===a.conn)) continue;
       fullTaken.add(a.conn);
     }
-    edgeArc[i]={cx:a.conn.centerE,cy:a.conn.centerN,R:a.conn.R,tA:a.tA,tB:a.tB,dt:a.dt};
+    if(a.kind==="spiral"){
+      edgeCurve[i]={kind:"spiral",conn:a.conn,sA:a.sA,sB:a.sB,full:a.full};
+    }else{
+      edgeCurve[i]={kind:"arc",conn:a.conn,cx:a.conn.centerE,cy:a.conn.centerN,R:a.conn.R,tA:a.tA,tB:a.tB,dt:a.dt,full:a.full};
+    }
   }
-  return edgeArc;
+  return edgeCurve;
 }
 
-// ── Polygon area with arc correction (Green's theorem) ──────────────────────
+// ── Polygon area with true circular + clothoid curve correction ──────────────
 // Exact area for perimeters mixing straight edges, draw-only arcs, and runs of
 // generated arc points. All contributions go into one signed accumulator S
 // (∮ x dy − y dx), so convex/concave arcs and CW/CCW traversal all resolve
 // correctly; area = |S|/2 at the end.
-function _computePolyArea(poly,explicitArcs){
+function _computePolyArea(poly,explicitCurves){
   const n=poly.length;
-  let S=0, perim=0, arcUsed=false;
+  let S=0, perim=0, arcUsed=false, spiralUsed=false;
 
-  // 1) Draw-only arcs — via the shared resolver
-  const edgeArc=_resolvePolyEdges(poly,explicitArcs||[]);
+  // 1) Declared arcs/spirals — via the shared resolver
+  const edgeArc=_resolvePolyEdges(poly,explicitCurves||[]);
 
   // 2) Runs of generated arc points (consecutive dashed connections).
   //    Fit a circumcircle to the run and verify every run point lies on it
@@ -6392,7 +6400,11 @@ function _computePolyArea(poly,explicitArcs){
   for(let k=0;k<n;k++){
     const p1=poly[k], p2=poly[(k+1)%n];
     const ea=edgeArc[k];
-    if(ea){
+    if(ea&&ea.kind==="spiral"){
+      spiralUsed=true;
+      const z=_spiralEdgeIntegral(ea.conn,ea.sA,ea.sB);
+      S+=z.S; perim+=z.length;
+    } else if(ea){
       arcUsed=true;
       // ∫(x dy − y dx) along arc, t: tA → tA+dt
       S += ea.R*ea.cx*(Math.sin(ea.tB)-Math.sin(ea.tA))
@@ -6404,7 +6416,7 @@ function _computePolyArea(poly,explicitArcs){
       perim += Math.hypot(p2.Easting-p1.Easting, p2.Northing-p1.Northing);
     }
   }
-  return {area:Math.abs(S)/2, perimeter:perim, arcUsed};
+  return {area:Math.abs(S)/2, perimeter:perim, arcUsed, spiralUsed};
 }
 
 // Match a polygon edge to a draw-only arc connection. Both edge endpoints
@@ -6413,6 +6425,82 @@ function _computePolyArea(poly,explicitArcs){
 // for arcs in explicitArcs — the user must have tapped the arc itself,
 // otherwise an edge between an arc's two endpoints is just a chord.
 // Returns {conn,tA,tB,dt,full} or null.
+/* v4.6.4 — clothoid support for COGO Area.  A spiral is integrated as its
+   actual changing-curvature path, never as its endpoint chord. */
+function _spiralDensePath(c,maxStep){
+  const L=Number(c.L),R=Number(c.R),az0=Number(c.startAz);
+  if(!isFinite(L)||!isFinite(R)||!isFinite(az0)||L<=0||R<=0)return [];
+  const dir=String(c.dir||"R").toUpperCase().startsWith("L")?"L":"R";
+  const tr=String(c.transition||"in").toLowerCase()==="out"?"out":"in";
+  const sg=dir==="R"?1:-1, kCirc=sg/R;
+  const k0=tr==="out"?kCirc:0, k1=tr==="out"?0:kCirc, a=(k1-k0)/L;
+  const step=Math.max(0.02,Number(maxStep)||0.25);
+  const n=Math.max(64,Math.min(40000,Math.ceil(L/step))),ds=L/n,rad=Math.PI/180;
+  let E=Number(c.startE),N=Number(c.startN);
+  if(!isFinite(E)||!isFinite(N))return [];
+  const out=[{E,N,s:0}];
+  for(let i=0;i<n;i++){
+    const sm=(i+0.5)*ds;
+    const th=az0*rad+k0*sm+0.5*a*sm*sm;
+    E+=ds*Math.sin(th);N+=ds*Math.cos(th);
+    out.push({E,N,s:(i+1)*ds});
+  }
+  return out;
+}
+function _spiralPointOnDense(path,s){
+  if(!path.length)return null;
+  s=Math.max(0,Math.min(path[path.length-1].s,s));
+  let lo=0,hi=path.length-1;
+  while(hi-lo>1){const m=(lo+hi)>>1;if(path[m].s<s)lo=m;else hi=m;}
+  const a=path[lo],b=path[hi],d=b.s-a.s,t=d>1e-12?(s-a.s)/d:0;
+  return {E:a.E+(b.E-a.E)*t,N:a.N+(b.N-a.N)*t,s};
+}
+function _spiralStationForPoint(c,p,tol){
+  const path=_spiralDensePath(c,0.5);if(path.length<2)return null;
+  let best=null,bestD=Infinity;
+  for(let i=0;i<path.length-1;i++){
+    const a=path[i],b=path[i+1],dx=b.E-a.E,dy=b.N-a.N,dd=dx*dx+dy*dy;
+    const t=dd?Math.max(0,Math.min(1,((p.Easting-a.E)*dx+(p.Northing-a.N)*dy)/dd)):0;
+    const E=a.E+t*dx,N=a.N+t*dy,d=Math.hypot(p.Easting-E,p.Northing-N);
+    if(d<bestD){bestD=d;best=a.s+t*(b.s-a.s);}
+  }
+  return bestD<=tol?best:null;
+}
+function _spiralForEdge(p1,p2,explicitCurves){
+  const tol=0.08,exp=explicitCurves||[];
+  const all=[...plotConnections.filter(c=>c.type==="spiral"),...exp.filter(c=>c&&c.type==="spiral"&&c._deed)];
+  for(const c of all){
+    const s1=_spiralStationForPoint(c,p1,tol),s2=_spiralStationForPoint(c,p2,tol);
+    if(s1===null||s2===null||Math.abs(s1-s2)<tol)continue;
+    const L=Number(c.L)||0,full=Math.min(s1,s2)<tol&&Math.max(s1,s2)>L-tol;
+    if(full&&!exp.includes(c))continue;
+    return {kind:"spiral",conn:c,sA:s1,sB:s2,full};
+  }
+  return null;
+}
+function _curveForEdge(p1,p2,explicitCurves){
+  return _spiralForEdge(p1,p2,explicitCurves)||_arcForEdge(p1,p2,explicitCurves);
+}
+function _spiralEdgePath(c,sA,sB){
+  const path=_spiralDensePath(c,0.20);if(path.length<2)return [];
+  const lo=Math.min(sA,sB),hi=Math.max(sA,sB),out=[_spiralPointOnDense(path,lo)];
+  for(const q of path)if(q.s>lo+1e-9&&q.s<hi-1e-9)out.push(q);
+  out.push(_spiralPointOnDense(path,hi));
+  if(sB<sA)out.reverse();
+  return out;
+}
+function _spiralEdgeIntegral(c,sA,sB){
+  const path=_spiralEdgePath(c,sA,sB);let S=0;
+  for(let i=0;i<path.length-1;i++)S+=path[i].E*path[i+1].N-path[i+1].E*path[i].N;
+  return {S,length:Math.abs(sB-sA),path};
+}
+function _areaCurveSignature(c){
+  if(!c)return null;
+  if(c.type==="spiral")return {type:"spiral",startE:c.startE,startN:c.startN,startAz:c.startAz,L:c.L,R:c.R,dir:c.dir,transition:c.transition};
+  if(c.type==="arc")return {type:"arc",cx:c.centerE,cy:c.centerN,R:c.R};
+  return null;
+}
+
 /* Offset a polyline by a signed perpendicular distance (mitered joins) —
    used to draw easement right-of-way edges from a centerline. */
 function _offsetPath(verts,off){
@@ -6450,6 +6538,16 @@ function _deedAreaArcs(){
       else{sweep=((a.a1-a.a2)%(2*Math.PI)+2*Math.PI)%(2*Math.PI);
         out.push({type:"arc",centerE:a.cE,centerN:a.cN,R:a.r,startAngle:a.a1,endAngle:a.a1-sweep,_deed:true});}
     });
+  });
+  return out;
+}
+function _deedAreaSpirals(){
+  const out=[];
+  if(typeof _deedPlot==="undefined"||!_deedPlot)return out;
+  _deedPlot.figures.forEach(f=>{
+    if(!f.computed)return;
+    (f.computed.spirals||[]).forEach(sp=>out.push({type:"spiral",startE:sp.startE,startN:sp.startN,startAz:sp.startAz,
+      L:sp.L,R:sp.R,dir:sp.dir,transition:sp.transition,endE:sp.endE,endN:sp.endN,_deed:true}));
   });
   return out;
 }
@@ -6527,13 +6625,15 @@ function _recomputeAreaLabels(){
     if(!lbl.ptNums) return false;
     const poly = lbl.ptNums.map(n=>points.find(p=>p.Point===n)).filter(Boolean);
     if(poly.length < 3) return false;
-    // Re-resolve explicitly selected arcs by signature
-    const arcs=(lbl.arcSigs||[]).map(s=>
-      plotConnections.find(c=>c.type==="arc" &&
-        Math.abs(c.centerE-s.cx)<0.01 && Math.abs(c.centerN-s.cy)<0.01 &&
-        Math.abs(c.R-s.R)<0.01)
-    ).filter(Boolean);
-    const {area} = _computePolyArea(poly,arcs);
+    // Re-resolve explicitly selected curved edges by signature.  Deed-declared
+    // curves are included automatically so labels stay curve-true after reload.
+    const curves=(lbl.arcSigs||[]).map(s=>{
+      if(s.type==="spiral")return plotConnections.find(c=>c.type==="spiral" &&
+        Math.hypot(c.startE-s.startE,c.startN-s.startN)<0.02 && Math.abs(c.L-s.L)<0.02 && Math.abs(c.R-s.R)<0.02);
+      return plotConnections.find(c=>c.type==="arc" &&
+        Math.abs(c.centerE-s.cx)<0.01 && Math.abs(c.centerN-s.cy)<0.01 && Math.abs(c.R-s.R)<0.01);
+    }).filter(Boolean).concat(_deedAreaArcs(),_deedAreaSpirals());
+    const {area} = _computePolyArea(poly,curves);
     const cE = poly.reduce((s,p)=>s+p.Easting, 0)/poly.length;
     const cN = poly.reduce((s,p)=>s+p.Northing,0)/poly.length;
     const u = lbl.u||units;
@@ -6611,7 +6711,7 @@ function _cogoAreaByTap(){
   window._areaClickHandler=function(pt){
     if(pt.Point===(_areaPoly[0]||{}).Point &&
        (_areaPoly.length>=3 ||
-        (_areaPoly.length===2 && _arcForEdge(_areaPoly[0],_areaPoly[1],_areaArcs)))){
+        (_areaPoly.length===2 && _curveForEdge(_areaPoly[0],_areaPoly[1],_areaArcs.concat(_deedAreaArcs(),_deedAreaSpirals()))))){
       // Clear active immediately so no further clicks are processed
       window._areaClickActive=false;
       window._areaClickHandler=null;
@@ -6656,6 +6756,16 @@ function _areaTapConn(conn){
       return;
     }
     if(!_areaArcs.includes(conn))_areaArcs.push(conn);  // explicit selection
+  } else if(conn.type==="spiral"){
+    const tol=0.08;
+    eA=points.find(p=>Math.hypot(p.Easting-conn.startE,p.Northing-conn.startN)<tol);
+    eB=points.find(p=>Math.hypot(p.Easting-conn.endE,p.Northing-conn.endN)<tol);
+    if(!eA||!eB){
+      const banner=document.getElementById("intersectBanner");
+      if(banner)banner.textContent="⚠ Spiral needs survey points at TS/SC (or CS/ST) — generate/tap endpoint points";
+      return;
+    }
+    if(!_areaArcs.includes(conn))_areaArcs.push(conn);
   } else {
     eA=points.find(p=>p.Point==conn.from);
     eB=points.find(p=>p.Point==conn.to);
@@ -6675,7 +6785,7 @@ function _areaTapConn(conn){
   for(const pt of seq){
     if(_areaPoly.length>=2 && pt.Point===_areaPoly[0].Point &&
        (_areaPoly.length>=3 ||
-        _arcForEdge(_areaPoly[0],_areaPoly[1],_areaArcs) || conn.type==="arc")){
+        _curveForEdge(_areaPoly[0],_areaPoly[1],_areaArcs.concat(_deedAreaArcs(),_deedAreaSpirals())) || conn.type==="arc" || conn.type==="spiral")){
       window._areaClickActive=false;
       window._areaClickHandler=null;
       _areaFinish(); return;
@@ -7153,7 +7263,17 @@ function cogoProrate(fromPt, toPt){
 
 
 function cogoSpiral(){
-  _helpContext="cogo-arc";
+  _helpContext="cogo-spiral";
+  openModal((m,c)=>{
+    m.innerHTML="<h2>Spiral / Transition Curve</h2><p class='info'>Construct a design spiral, or fit a true clothoid to measured field points stored in the job.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b);};
+    mk("Construct from L + R + tangent","ok",()=>{c();_cogoSpiralDesign();});
+    mk("Fit measured points — known tangent","blue",()=>{c();_cogoSpiralFitStart(true);});
+    mk("Fit measured points — solve tangent","accent",()=>{c();_cogoSpiralFitStart(false);});
+    mk("Cancel","",c);
+  });
+}
+function _cogoSpiralDesign(){
   calculatorInput("Spiral start / TS or CS point #:","",pn=>{if(!pn)return;
     const p0=points.find(p=>p.Point==+pn);if(!p0)return alert("Point not found.");
     bearingInput("Incoming tangent azimuth:","",azs=>{if(!azs)return;
@@ -7182,6 +7302,133 @@ function cogoSpiral(){
       });
     });
   });
+}
+
+// ── Fit a standard tangent↔circular clothoid to measured job points ───────
+// Points are selected in station order. Point 1 is the TS (IN) or CS (OUT).
+// The final selected point is treated as the measured opposite endpoint and
+// receives extra weight; intermediate shots are fit by orthogonal residual.
+function _spiralFitStart(knownTangent){
+  calculatorInput("Number of measured points to fit ("+(knownTangent?"2":"4")+"–12):",""+(knownTangent?4:5),ns=>{
+    if(!ns)return;const n=parseInt(ns,10),mn=knownTangent?2:4;
+    if(!isFinite(n)||n<mn||n>12)return alert("Choose "+mn+" to 12 measured points.");
+    _pickPoints(n,(i)=>i===0?"Tap START (TS or CS)":(i===n-1?"Tap END (SC or ST)":"Tap spiral shot "+(i+1)),pts=>{
+      if(!pts)return;
+      const chooseTransition=()=>openModal((m,c)=>{
+        m.innerHTML="<h2>Measured Spiral Type</h2><p class='info'>Selected points must be in station order. First point is the start of the transition.</p>";
+        [["IN — TS → SC","in"],["OUT — CS → ST","out"]].forEach(([lab,tr])=>{const b=document.createElement("button");b.className="btn "+(tr==="in"?"ok":"blue");b.textContent=lab;b.onclick=()=>{c();
+          if(knownTangent){bearingInput("Known tangent azimuth at start:","",v=>{if(!v)return;const az=parseBrg(v);if(isNaN(az))return alert("Bad azimuth.");_spiralFitRun(pts,tr,az,true);});}
+          else _spiralFitRun(pts,tr,null,false);
+        };m.appendChild(b);});
+        const x=document.createElement("button");x.className="btn";x.textContent="Cancel";x.onclick=c;m.appendChild(x);
+      });
+      chooseTransition();
+    });
+  });
+}
+function _spiralBearing(a,b){return ((Math.atan2(b.Easting-a.Easting,b.Northing-a.Northing)*180/Math.PI)%360+360)%360;}
+function _spiralFitPolylineLength(pts){let z=0;for(let i=1;i<pts.length;i++)z+=Math.hypot(pts[i].Easting-pts[i-1].Easting,pts[i].Northing-pts[i-1].Northing);return z;}
+function _spiralFitClosest(sp,p){
+  const a=sp.samples;let best={d:Infinity,E:sp.startE,N:sp.startN,s:0};
+  for(let i=1;i<a.length;i++){
+    const A=a[i-1],B=a[i],dx=B.E-A.E,dy=B.N-A.N,d2=dx*dx+dy*dy;
+    let t=d2>1e-12?((p.Easting-A.E)*dx+(p.Northing-A.N)*dy)/d2:0;t=Math.max(0,Math.min(1,t));
+    const E=A.E+t*dx,N=A.N+t*dy,d=Math.hypot(p.Easting-E,p.Northing-N);
+    if(d<best.d)best={d,E,N,s:A.s+t*(B.s-A.s)};
+  }
+  return best;
+}
+function _spiralFitClamp(x,b){return Math.max(b[0],Math.min(b[1],x));}
+function _spiralFitNM(fn,x0,step,bounds,maxIter){
+  const n=x0.length,cl=x=>x.map((v,i)=>_spiralFitClamp(v,bounds[i]));
+  let S=[cl(x0.slice())];for(let i=0;i<n;i++){const q=x0.slice();q[i]+=step[i];S.push(cl(q));}
+  let V=S.map(x=>fn(x));
+  for(let it=0;it<(maxIter||180);it++){
+    const ord=S.map((x,i)=>({x,v:V[i]})).sort((a,b)=>a.v-b.v);S=ord.map(o=>o.x);V=ord.map(o=>o.v);
+    const cen=new Array(n).fill(0);for(let i=0;i<n;i++)for(let j=0;j<n;j++)cen[j]+=S[i][j]/n;
+    const trial=(fac)=>cl(cen.map((v,j)=>v+fac*(cen[j]-S[n][j])));
+    let xr=trial(1),vr=fn(xr);
+    if(vr<V[0]){const xe=trial(2),ve=fn(xe);if(ve<vr){S[n]=xe;V[n]=ve}else{S[n]=xr;V[n]=vr}}
+    else if(vr<V[n-1]){S[n]=xr;V[n]=vr}
+    else{
+      const xc=trial(-0.5),vc=fn(xc);
+      if(vc<V[n]){S[n]=xc;V[n]=vc}else{
+        for(let i=1;i<=n;i++){S[i]=cl(S[0].map((v,j)=>v+0.5*(S[i][j]-v)));V[i]=fn(S[i]);}
+      }
+    }
+    let spread=0;for(let i=1;i<=n;i++)spread=Math.max(spread,Math.abs(V[i]-V[0]));if(spread<1e-12)break;
+  }
+  const ord=S.map((x,i)=>({x,v:V[i]})).sort((a,b)=>a.v-b.v);return ord[0];
+}
+function _spiralFitEvaluate(pts,tr,dir,az,L,R){
+  const p0=pts[0],sp=_spiralSolve(p0.Easting,p0.Northing,az,L,R,dir,tr);if(!sp)return null;
+  let ss=0,mx=0,prevS=-1e30;const residuals=[];
+  for(let i=1;i<pts.length-1;i++){
+    const q=_spiralFitClosest(sp,pts[i]);residuals.push(q);ss+=q.d*q.d;mx=Math.max(mx,q.d);
+    if(q.s+L*0.002<prevS)ss+=Math.pow(prevS-q.s+L*0.002,2)*25;prevS=Math.max(prevS,q.s);
+  }
+  const last=pts[pts.length-1],ed=Math.hypot(last.Easting-sp.endE,last.Northing-sp.endN);
+  ss+=ed*ed*25;mx=Math.max(mx,ed);residuals.push({d:ed,E:sp.endE,N:sp.endN,s:L});
+  const denom=Math.max(1,pts.length-1),rms=Math.sqrt((residuals.reduce((z,q)=>z+q.d*q.d,0))/denom);
+  return {sp,score:ss/denom,rms,max:mx,endResidual:ed,residuals};
+}
+function _spiralFitSolve(pts,tr,knownAz,knownTangent){
+  const p0=pts[0],polyL=Math.max(_spiralFitPolylineLength(pts),0.01),ch=Math.hypot(pts[pts.length-1].Easting-p0.Easting,pts[pts.length-1].Northing-p0.Northing);
+  const minL=Math.max(ch*0.999,polyL*0.90,0.1),maxL=Math.max(polyL*2.5,ch*3,10);
+  const minR=Math.max(1,minL/12),maxR=Math.max(1e5,maxL*500);
+  const logBounds=[[Math.log(minL),Math.log(maxL)],[Math.log(minR),Math.log(maxR)]];
+  let starts=[];
+  if(knownTangent){starts=[knownAz];}
+  else{
+    const a0=_spiralBearing(pts[0],pts[1]);starts=[a0,a0-10,a0+10,a0-25,a0+25,a0-45,a0+45];
+  }
+  let best=null;
+  ["R","L"].forEach(dir=>starts.forEach(seedAz=>{
+    const turnEst=Math.abs((((_spiralBearing(pts[pts.length-2],pts[pts.length-1])-seedAz+540)%360)-180))*Math.PI/180;
+    const r0=Math.max(minR,Math.min(maxR,turnEst>0.003?polyL/(2*turnEst):polyL*6));
+    const rSeeds=[r0,polyL*2,polyL*5,polyL*12].map(x=>Math.max(minR,Math.min(maxR,x)));
+    rSeeds.forEach(R0=>{
+      if(knownTangent){
+        const fn=x=>{const L=Math.exp(x[0]),R=Math.exp(x[1]);const q=_spiralFitEvaluate(pts,tr,dir,knownAz,L,R);return q?q.score:1e99;};
+        const nm=_spiralFitNM(fn,[Math.log(polyL),Math.log(R0)],[0.05,0.18],logBounds,220);
+        const q=_spiralFitEvaluate(pts,tr,dir,knownAz,Math.exp(nm.x[0]),Math.exp(nm.x[1]));if(q&&(!best||q.score<best.score))best={...q,dir,az:knownAz};
+      }else{
+        const bounds=[[-720,720],...logBounds];
+        const fn=x=>{const az=((x[0]%360)+360)%360,L=Math.exp(x[1]),R=Math.exp(x[2]);const q=_spiralFitEvaluate(pts,tr,dir,az,L,R);return q?q.score:1e99;};
+        const nm=_spiralFitNM(fn,[seedAz,Math.log(polyL),Math.log(R0)],[2.5,0.05,0.18],bounds,260);
+        const az=((nm.x[0]%360)+360)%360,q=_spiralFitEvaluate(pts,tr,dir,az,Math.exp(nm.x[1]),Math.exp(nm.x[2]));if(q&&(!best||q.score<best.score))best={...q,dir,az};
+      }
+    });
+  }));
+  return best;
+}
+function _spiralFitRun(pts,tr,knownAz,knownTangent){
+  const best=_spiralFitSolve(pts,tr,knownAz,knownTangent);
+  if(!best)return alert("Could not fit a spiral to those points.");
+  _spiralFitShow(pts,tr,best,knownTangent);
+}
+function _spiralFitShow(pts,tr,fit,knownTangent){
+  const sp=fit.sp,p0=pts[0];
+  tempGeom=[{type:"polyline",pts:sp.samples.map(q=>({E:q.E,N:q.N})),color:"rgba(255,205,45,.95)"}];
+  fit.residuals.forEach((q,i)=>{const p=pts[i+1];tempGeom.push({type:"extline",E1:p.Easting,N1:p.Northing,E2:q.E,N2:q.N,color:"rgba(255,88,88,.75)",dash:[3,3]});});
+  tempIntersections=[{Easting:sp.endE,Northing:sp.endN}];plotPoints();
+  const quality=fit.rms<0.05?"EXCELLENT":fit.rms<0.20?"GOOD":fit.rms<0.50?"CHECK":"POOR";
+  showResult("Measured Spiral Fit — "+quality,[
+    {lbl:"Points:",val:pts.map(p=>"#"+p.Point).join(", ")},
+    {lbl:"Type:",val:(fit.dir==="R"?"RIGHT ":"LEFT ")+(tr==="in"?"TS → SC":"CS → ST")},
+    {lbl:"Start tangent:",val:fmtBrg(sp.startAz)+(knownTangent?" (held)":" (solved)")},
+    {lbl:"Length L:",val:sp.L.toFixed(4)+" "+units},
+    {lbl:"Radius R:",val:sp.R.toFixed(4)+" "+units},
+    {lbl:"Spiral Δ:",val:toDMS(sp.spiralAngle)},
+    {lbl:"End tangent:",val:fmtBrg(sp.endAz)},
+    {lbl:"RMS residual:",val:fit.rms.toFixed(4)+" "+units},
+    {lbl:"Max residual:",val:fit.max.toFixed(4)+" "+units},
+    {lbl:"End residual:",val:fit.endResidual.toFixed(4)+" "+units}
+  ],[
+    {txt:"Store Fitted Spiral",cls:"ok",fn:()=>{tempGeom=[];tempIntersections=[];_takeSnapshot("Fit Measured Spiral");_storeSpiralConnection(p0,sp,true);const c=plotConnections[plotConnections.length-1];c.fitSourcePts=pts.map(p=>p.Point);c.fitRMS=fit.rms;c.fitMax=fit.max;c.fitMethod=knownTangent?"measured-known-tangent":"measured-solved-tangent";saveData();plotPoints();}},
+    {txt:"Generate Points",cls:"blue",fn:()=>{tempGeom=[];tempIntersections=[];_generateSpiralPoints(p0,sp);}},
+    {txt:"Done",cls:"",fn:()=>{tempGeom=[];tempIntersections=[];plotPoints();}}
+  ]);
 }
 function _cogoSpiralResult(p0,az,L,R,dir,tr){
   const sp=_spiralSolve(p0.Easting,p0.Northing,az,L,R,dir,tr);
@@ -12974,13 +13221,23 @@ function zoomToOccupied(){
       const distToEdge=Math.abs(Math.hypot(px-scx,py-scy)-sR);
       return distToEdge<=ARC_THRESH ? distToEdge : Infinity;
     }
+    function ptSpiralDist(px,py,conn){
+      const sp=(conn.samples&&conn.samples.length>1)?conn.samples:_spiralDensePath(conn,1.0);
+      let best=Infinity;
+      for(let j=0;j<sp.length-1;j++)best=Math.min(best,ptSegDist(px,py,X(sp[j].E),Y(sp[j].N),X(sp[j+1].E),Y(sp[j+1].N)));
+      return best<=ARC_THRESH?best:Infinity;
+    }
 
-    // Find best connection hit (line or arc)
+    // Find best connection hit. Spiral hit-testing is enabled during Area
+    // selection; other tools keep their existing line/arc contracts.
     let hitConnIdx=-1, bestDist=LINE_THRESH;
     plotConnections.forEach((conn,i)=>{
       let d;
       if(conn.type==="arc"){
         d=ptArcDist(mx,my,conn);
+      } else if(conn.type==="spiral"){
+        if(!window._areaClickActive)return;
+        d=ptSpiralDist(mx,my,conn);
       } else {
         const from=points.find(p=>p.Point==conn.from);
         const to  =points.find(p=>p.Point==conn.to);
@@ -13878,6 +14135,15 @@ const HELP_TOPICS = [
     preview:"Place a point at a distance and perpendicular offset from a line",
     body:`<h3>Offset to Line</h3>
 <p>Places a point at a measured distance along a line from the FROM end, then offset perpendicular. Positive offset = right of line looking A→B, negative = left.</p>`},
+
+  { id:"cogo-spiral", section:"COGO", title:"Spiral / Transition Curves",
+    preview:"Construct clothoids or fit them to measured field points",
+    body:`<h3>Spiral / Transition Curve</h3>
+<p><strong>Construct from L + R + tangent</strong> builds a standard Euler/clothoid transition from a stored TS or CS point.</p>
+<p><strong>Fit measured points — known tangent</strong> holds the starting tangent azimuth and solves the best-fit length, circular radius, and left/right direction from 2–12 measured points selected in station order.</p>
+<p><strong>Fit measured points — solve tangent</strong> uses 4–12 ordered measured points and also solves the starting tangent azimuth. The first point must be the TS for an IN spiral or CS for an OUT spiral; the last should be the opposite transition endpoint.</p>
+<p>The result reports RMS, maximum, and endpoint residuals. Red dashed vectors show measured-point residuals before you store the fitted spiral.</p>
+<div class="warn">A clothoid fit is a best-fit geometric reconstruction. With sparse/noisy shots, multiple spiral solutions can be plausible. Check residuals and known tangent/control information before relying on the result.</div>`},
 
   { id:"cogo-arc", section:"COGO", title:"Arc / Curve Layout",
     preview:"Generate or draw arcs by center+radius or 3-point",
