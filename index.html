@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.6.5";
+const APP_VERSION = "4.6.6";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -10110,6 +10110,16 @@ function _deedResolveFigures(figs,E,N){
           c=_deedSectionCornerFromAliquot(a,f.cornerRef.c);if(c)break;
         }
         if(c){runFrom(f,c,"PLSS section corner");changed=true;continue;}
+      }
+      // DEFAULT TIED FIGURE — the ordinary deed case: an except/easement
+      // whose commence chain starts at the parent parcel's point of
+      // beginning and walks tie courses to its own POB. No named reference
+      // needed; the tie IS the placement. (Dropped in the reference-based
+      // resolver rewrite; restored — tie-less figures still stack.)
+      if(f.kind!=="boundary"&&!f.startRef&&!f.cornerRef&&!f.aliquotSpec&&f.calls.some(c=>c.tie)){
+        const parent=(f.ownerKey&&figs.find(a=>placed.has(a)&&a.kind==="boundary"&&a.parcelKey===f.ownerKey))
+                   ||[...placed].find(a=>a.kind==="boundary")||null;
+        if(parent){runFrom(f,{E:parent.pobE,N:parent.pobN},"tied from parent POB");changed=true;continue;}
       }
       if(first&&first.cornerRef&&f.cornerRef){
         const n1=_deedCornerNode(first.cornerRef),n2=_deedCornerNode(f.cornerRef);
