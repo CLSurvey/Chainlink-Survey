@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.6.2">
+<meta name="application-name" content="ChainLink-v4.6.3">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.6.2</title>
+<title>ChainLink Survey v4.6.3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.6.2";
+const APP_VERSION = "4.6.3";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -6187,22 +6187,42 @@ function _areaCancel(redraw=true){
   if(redraw) plotPoints();
 }
 
+/* v4.6.3 — one authoritative cleanup for every temporary map/COGO mode.
+   This is intentionally broader than Area: temporary pick highlights,
+   intersection previews, stake-to-line sessions, traverse-correction traces,
+   and an in-progress polyline must never survive an undo/load/delete/tool exit. */
 function _clearTransientMapSelections(redraw=false){
-  // Area picker (including its ring overlay and preview geometry).
+  // Area picker (rings, selected polygon/arcs, preview geometry).
   _areaCancel(false);
 
-  // Universal point/connection pickers.  Their callbacks refer to the old
-  // point objects, so retaining them across a state replacement is unsafe.
+  // Universal point picker.  Do NOT invoke the old callback here: this helper
+  // is also used while restoring/replacing survey state, where callbacks may
+  // refer to point objects that no longer exist.
   window._connClickActive=false;
   window._connClickHandler=null;
   window._connClickCancelCb=null;
   if(typeof _pickedPts!=="undefined") _pickedPts=[];
-  tempGeom=(tempGeom||[]).filter(g=>!g._pick && !g._tv);
-  tempIntersections=[];
+  if(typeof _connFrom!=="undefined") _connFrom=null;
 
-  // A pending stake-to-line geometry pick is likewise invalid after a
-  // destructive state change.  Do not leave the canvas intercepting taps.
+  // Intersection/tap-intersection mode.
+  if(typeof intersectMode!=="undefined") intersectMode=false;
+  if(typeof intersectFirst!=="undefined") intersectFirst=null;
+  selectedConn=null;
+
+  // Stake-to-line preview/pick state.
   window._stlPickActive=false;
+  window._stlActive=false;
+
+  // Polyline construction is temporary until Done commits it.
+  window._plBuilding=false;
+  window._plTap=null;
+  if(typeof _plDraft!=="undefined") _plDraft=null;
+
+  // All temporary map geometry belongs to an active tool.  Once this master
+  // cleanup is requested, none of it is valid.  This also covers _pick and
+  // _tv overlays, COGO rays/circles, intersection solutions and spiral previews.
+  tempGeom=[];
+  tempIntersections=[];
 
   const banner=document.getElementById("intersectBanner");
   if(banner){
@@ -6763,6 +6783,7 @@ function cogoTraverseClosure(){
       tempGeom=tempGeom.filter(g=>g._tv!==true);
       window._connClickActive=false;
       window._connClickHandler=null;
+      window._connClickCancelCb=null;
       const banner=document.getElementById("intersectBanner");
       if(banner) banner.classList.remove("visible");
       plotPoints();
@@ -7835,14 +7856,23 @@ function cogoScale(){
 let _connFrom = null;
 
 function _connCancel(){
+  // A user cancellation is different from a destructive state reset: give the
+  // active picker its chance to clean tool-local state / return cb(null).
+  const cancelCb=window._connClickCancelCb;
   _connFrom=null;
   window._connClickActive=false;
   window._connClickHandler=null;
-  tempIntersections=[];   // clear any pick-in-progress markers
+  window._connClickCancelCb=null;
+  if(typeof _pickedPts!=="undefined") _pickedPts=[];
+  tempGeom=[];
+  tempIntersections=[];
   const banner=document.getElementById("intersectBanner");
   if(banner){
     banner.classList.remove("visible");
     banner.textContent="⊕ TAP SECOND LINE OR ARC — or tap empty space to cancel";
+  }
+  if(typeof cancelCb==="function"){
+    try{ cancelCb(); }catch(e){ console.warn("COGO cancel cleanup:",e); }
   }
   plotPoints();
 }
@@ -13107,15 +13137,14 @@ function zoomToOccupied(){
       top.remove();
       _modalStack=_modalStack.filter(x=>x!==top);
       if(_modalStack.length===0){
-        if(window._stlActive){ window._stlActive=false; }
-        tempGeom=[];tempIntersections=[];plotPoints();
+        _clearTransientMapSelections(true);
       }
       return;
     }
-    // No modal open — clear stl / lingering temp geometry
-    if(window._stlActive||tempGeom.length||tempIntersections.length){
-      window._stlActive=false;
-      tempGeom=[];tempIntersections=[];plotPoints();
+    // No modal open — any temporary map artifact is orphaned at this point.
+    if(window._stlActive||window._stlPickActive||window._connClickActive||window._plBuilding||
+       intersectMode||tempGeom.length||tempIntersections.length){
+      _clearTransientMapSelections(true);
       return;
     }
     if(selectedConn!==null||selectedPoint!==null||_selPolyline>=0){
@@ -14609,6 +14638,8 @@ function closeWorkspacePanel(){document.getElementById("workspaceShade").classLi
 function _wsCard2(body,title,sub,cls,fn,badge){const b=document.createElement("button");b.className="ws-card "+(cls||"");b.innerHTML='<strong>'+_esc(title)+'</strong><small>'+_esc(sub||"")+'</small>'+(badge?'<span class="ws-badge">'+_esc(badge)+'</span>':'');b.onclick=()=>{closeWorkspacePanel();fn()};body.appendChild(b);return b;}
 function _wsGroup2(body,title){const d=document.createElement("div");d.className="ws-group";d.textContent=title;body.appendChild(d)}
 function openWorkspace(name){
+  // Switching rooms must never carry a half-finished COGO/stake selection with it.
+  if(typeof _clearTransientMapSelections==="function") _clearTransientMapSelections(false);
   _activeWorkspace=name;_setWorkspaceActive(name);_hideContextDock();closeProjectDrawer();
   const meta={field:["F","Field","Collect observations and manage the occupied setup"],records:["R","Records","Import, assemble and fit deeds and record geometry"],cogo:["C","COGO","Coordinate geometry and computational tools"],stake:["S","Stake","Guide layout to points, lines and curves"],map:["M","Map","Imagery, GPS context and plot display"],project:["P","Project","Jobs, files, settings and help"]}[name];
   document.getElementById("workspaceIcon").textContent=meta[0];document.getElementById("workspaceTitle").textContent=meta[1];document.getElementById("workspaceSub").textContent=meta[2];
