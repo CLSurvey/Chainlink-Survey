@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.6.0">
+<meta name="application-name" content="ChainLink-v4.6.1">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.6.0</title>
+<title>ChainLink Survey v4.6.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.6.0";
+const APP_VERSION = "4.6.1";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -11861,8 +11861,13 @@ function plotPoints(extCtx,extW,extH){
   const cellW = ptFontSize * 2.8;
   const cellH = ptFontSize * 1.6;
 
-  // Occupancy grid for label collision — reset each frame
+  // Occupancy grid for point labels plus a shared screen-space annotation
+  // registry used later by deed course/curve/spiral labels. This keeps record
+  // callouts from piling on top of point text and one another.
   const _labelCells = new Set();
+  const _annoBoxes = [];
+  const _annoOverlaps=(b,pad=3)=>_annoBoxes.some(a=>!(b.r+pad<a.l||b.l-pad>a.r||b.b+pad<a.t||b.t-pad>a.b));
+  const _annoClaim=b=>{_annoBoxes.push(b);return b;};
   valid.forEach(p=>{
     const cx=X(p.Easting),cy=Y(p.Northing);
     const isOcc=currentPoint&&p.Point===currentPoint.Point;
@@ -11870,7 +11875,12 @@ function plotPoints(extCtx,extW,extH){
     if(p.Flag==="control"){color="#4a9eff";shape="triangle"}
     else if(p.Flag==="flagged"){color="#f5a623";shape="diamond"}
     else if(p.Type==="COGO"){color="#a78bfa";shape="square"}
-    else if(p.Type==="Deed"){color="#25c8d8";shape="diamond"}
+    else if(p.Type==="Deed"){
+      // Commencement/tie points are record-control geometry, not boundary
+      // corners. Give them their own hi-vis color so they read immediately.
+      color=/COMMENCE|\bTIE\s*\d*\b/i.test(p.Description||"")?"#ffe66d":"#25c8d8";
+      shape="diamond";
+    }
     else if(p.Type==="Import"){color="#60c8e8"}
     ctx.fillStyle=isOcc?(lightMode?"#1a1a1a":"#ffffff"):color;
     ctx.beginPath();
@@ -11906,11 +11916,22 @@ function plotPoints(extCtx,extW,extH){
         ctx.font=`bold ${ptFontSize}px 'Courier New',monospace`;
         ctx.textAlign="left";ctx.textBaseline="bottom";
         ctx.fillText(`${p.Point}`,lx,ly);
-        if(p.Description&&viewScale>0.6){
-          ctx.fillStyle=lightMode?"#000000":lightMode?"#000000":"#9ab0c8";
-          ctx.font=`${descFontSize}px 'Courier New',monospace`;
-          ctx.fillText(p.Description,lx,ly+descFontSize+1);
+        let dispDesc=p.Description||"";
+        const isTiePt=p.Type==="Deed"&&/COMMENCE|\bTIE\s*\d*\b/i.test(dispDesc);
+        if(isTiePt){
+          const tm=dispDesc.match(/\bTIE\s*(\d*)\b/i);
+          dispDesc=/COMMENCE/i.test(dispDesc)?"Commence":("Tie"+(tm&&tm[1]?" "+tm[1]:""));
         }
+        if(dispDesc&&viewScale>0.6){
+          ctx.fillStyle=isTiePt?"#ffe66d":(lightMode?"#000000":"#9ab0c8");
+          ctx.font=`${descFontSize}px 'Courier New',monospace`;
+          ctx.fillText(dispDesc,lx,ly+descFontSize+1);
+        }
+        // Register the approximate occupied rectangle so deed line labels can
+        // move around point labels instead of being drawn through them.
+        const pw=Math.max(ctx.measureText(String(p.Point)).width,dispDesc?ctx.measureText(dispDesc).width:0)+6;
+        const ph=ptFontSize+(dispDesc&&viewScale>0.6?descFontSize+3:0)+4;
+        _annoClaim({l:lx-2,r:lx+pw,t:ly-ptFontSize-3,b:ly-ptFontSize-3+ph});
       }
       ctx.shadowBlur=0;
     }
@@ -12235,24 +12256,23 @@ function plotPoints(extCtx,extW,extH){
         ctx.globalAlpha=1;
       }
       ctx.setLineDash([]);
-      // Tie courses — the record's path from the commence monument to the
-      // POB. Drawn dotted and dim: real geometry worth seeing (the commence
-      // corner is usually a found monument), visually subordinate to the
-      // boundary itself. Rebuilt each frame from the calls so it stays
-      // rigid with the record under swing and slide.
+      // Tie courses — the record path from the commencement monument to the
+      // POB. Full-opacity hi-vis yellow deliberately separates record ties
+      // from cyan boundaries, orange exceptions and magenta easements.
       let tieVerts=_deedTieVerts(fig);
       {
         if(tieVerts){
           ctx.save();
-          ctx.strokeStyle=st.col;ctx.globalAlpha=0.45;ctx.lineWidth=1.5;ctx.setLineDash([2,6]);
+          const tieCol="#ffe66d";
+          ctx.strokeStyle=tieCol;ctx.globalAlpha=1;ctx.lineWidth=2.6;ctx.setLineDash([3,5]);
+          ctx.lineCap="round";ctx.lineJoin="round";
           ctx.beginPath();
           tieVerts.forEach((v,i)=>{const sx=X(v.E),sy=Y(v.N);i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);});
           ctx.stroke();
           const cx=X(tieVerts[0].E),cy=Y(tieVerts[0].N);
-          ctx.setLineDash([]);ctx.beginPath();ctx.arc(cx,cy,4,0,2*Math.PI);ctx.stroke();
-          ctx.font="bold 9px 'Courier New',monospace";ctx.textAlign="left";
-          ctx.lineWidth=3;ctx.lineJoin="round";ctx.strokeStyle="rgba(0,0,0,.85)";
-          ctx.strokeText("Commence",cx+7,cy+3);ctx.fillStyle=st.col;ctx.fillText("Commence",cx+7,cy+3);
+          ctx.setLineDash([]);ctx.beginPath();ctx.arc(cx,cy,5,0,2*Math.PI);ctx.stroke();
+          // The stored tie point already carries the compact Commence label;
+          // don't print a second copy here.
           ctx.restore();
         }
       }
@@ -12269,6 +12289,38 @@ function plotPoints(extCtx,extW,extH){
         const txt=(t,x,y,fs)=>{ctx.font="bold "+fs+"px 'Courier New',monospace";
           ctx.lineWidth=Math.max(3,fs*0.32);ctx.lineJoin="round";
           ctx.strokeStyle="rgba(0,0,0,.85)";ctx.strokeText(t,x,y);ctx.fillText(t,x,y);};
+        // Find a nearby screen-space home for a rotated two-line course label.
+        // Candidates move perpendicular to the course first, preserving a
+        // strong visual association with the line. If all nearby slots are
+        // occupied, use the least-bad outer slot instead of hiding the call.
+        const placeCourseLabel=(t1,t2,cx,cy,ang,fs,slen)=>{
+          ctx.font="bold "+fs+"px 'Courier New',monospace";
+          const W=Math.max(ctx.measureText(t1).width,ctx.measureText(t2).width)+8;
+          const H=fs*2.35+6, ca=Math.abs(Math.cos(ang)),sa=Math.abs(Math.sin(ang));
+          const BW=ca*W+sa*H, BH=sa*W+ca*H;
+          const nx=-Math.sin(ang),ny=Math.cos(ang);
+          const step=fs*2.15;
+          const offsets=[0,step,-step,step*2,-step*2,step*3,-step*3];
+          let pick=null;
+          for(const off of offsets){
+            const x=cx+nx*off,y=cy+ny*off;
+            const b={l:x-BW/2,r:x+BW/2,t:y-BH/2,b:y+BH/2};
+            if(!_annoOverlaps(b)){pick={x,y,b};break;}
+          }
+          if(!pick){const off=step*3.5;const x=cx+nx*off,y=cy+ny*off;pick={x,y,b:{l:x-BW/2,r:x+BW/2,t:y-BH/2,b:y+BH/2}};}
+          _annoClaim(pick.b);
+          ctx.save();ctx.translate(pick.x,pick.y);ctx.rotate(ang);
+          txt(t1,0,-(fs+1),fs);txt(t2,0,fs+1,fs);ctx.restore();
+        };
+        const placeSingleLabel=(t,cx,cy,fs)=>{
+          ctx.font="bold "+fs+"px 'Courier New',monospace";
+          const W=ctx.measureText(t).width+8,H=fs+8;
+          const offs=[[0,0],[0,-fs*1.8],[0,fs*1.8],[-fs*2.5,0],[fs*2.5,0],[0,-fs*3.6],[0,fs*3.6]];
+          let pick=null;
+          for(const [ox,oy] of offs){const x=cx+ox,y=cy+oy,b={l:x-W/2,r:x+W/2,t:y-H/2,b:y+H/2};if(!_annoOverlaps(b)){pick={x,y,b};break;}}
+          if(!pick){const x=cx,y=cy-fs*3.6;pick={x,y,b:{l:x-W/2,r:x+W/2,t:y-H/2,b:y+H/2}};}
+          _annoClaim(pick.b);txt(t,pick.x,pick.y,fs);
+        };
         g.verts.forEach((v,i)=>{
           if(i===0)return;
           const u=g.verts[i-1];
@@ -12280,13 +12332,9 @@ function plotPoints(extCtx,extW,extH){
           if(ang>Math.PI/2)ang-=Math.PI; else if(ang<-Math.PI/2)ang+=Math.PI;
           const az=(Math.atan2(v.E-u.E,v.N-u.N)*180/Math.PI+360)%360;
           const dd=Math.hypot(v.E-u.E,v.N-u.N);
-          ctx.save();
-          ctx.translate((sx1+sx2)/2,(sy1+sy2)/2);ctx.rotate(ang);
           ctx.fillStyle=st.col;
           const fs=fsFor(slen);
-          txt(fmtBrg(az),0,-(fs+1),fs);
-          txt(dd.toFixed(2)+unitSuf,0,fs+1,fs);
-          ctx.restore();
+          placeCourseLabel(fmtBrg(az),dd.toFixed(2)+unitSuf,(sx1+sx2)/2,(sy1+sy2)/2,ang,fs,slen);
         });
         g.arcs.forEach(a=>{
           const sx1=X(a.sE),sy1=Y(a.sN),sx2=X(a.eE),sy2=Y(a.eN);
@@ -12297,7 +12345,7 @@ function plotPoints(extCtx,extW,extH){
           ctx.save();
           ctx.fillStyle=st.col;
           const afs=fsFor(Math.hypot(sx2-sx1,sy2-sy1));
-          txt("R="+a.r.toFixed(2)+"  L="+L.toFixed(2),(sx1+sx2)/2,(sy1+sy2)/2-(afs+1),afs);
+          placeSingleLabel("R="+a.r.toFixed(2)+"  L="+L.toFixed(2),(sx1+sx2)/2,(sy1+sy2)/2-(afs+1),afs);
           ctx.restore();
         });
         (g.spirals||[]).forEach(sp=>{
@@ -12307,11 +12355,11 @@ function plotPoints(extCtx,extW,extH){
           if(Math.hypot(sx2-sx1,sy2-sy1)<64)return;
           ctx.save();ctx.fillStyle=st.col;
           const afs=fsFor(Math.hypot(sx2-sx1,sy2-sy1));
-          txt("SP L="+sp.L.toFixed(2)+"  R="+sp.R.toFixed(2),X(q.E),Y(q.N)-(afs+1),afs);
+          placeSingleLabel("SP L="+sp.L.toFixed(2)+"  R="+sp.R.toFixed(2),X(q.E),Y(q.N)-(afs+1),afs);
           ctx.restore();
         });
         if(tieVerts&&tieVerts.length>1){
-          ctx.save();ctx.globalAlpha=0.6;
+          ctx.save();ctx.globalAlpha=1;
           tieVerts.forEach((v,i)=>{
             if(i===0)return;
             const u=tieVerts[i-1];
@@ -12322,13 +12370,9 @@ function plotPoints(extCtx,extW,extH){
             if(ang>Math.PI/2)ang-=Math.PI; else if(ang<-Math.PI/2)ang+=Math.PI;
             const az=(Math.atan2(v.E-u.E,v.N-u.N)*180/Math.PI+360)%360;
             const dd=Math.hypot(v.E-u.E,v.N-u.N);
-            ctx.save();
-            ctx.translate((sx1+sx2)/2,(sy1+sy2)/2);ctx.rotate(ang);
-            ctx.fillStyle=st.col;
+            ctx.fillStyle="#ffe66d";
             const fs=fsFor(slen);
-            txt(fmtBrg(az),0,-(fs+1),fs);
-            txt(dd.toFixed(2)+unitSuf+" tie",0,fs+1,fs);
-            ctx.restore();
+            placeCourseLabel(fmtBrg(az),dd.toFixed(2)+unitSuf+" TIE",(sx1+sx2)/2,(sy1+sy2)/2,ang,fs,slen);
           });
           ctx.restore();
         }
