@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.0">
+<meta name="application-name" content="ChainLink-v4.6.9">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.0</title>
+<title>ChainLink Survey v4.6.9</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.0";
+const APP_VERSION = "4.6.9";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -11260,125 +11260,9 @@ async function _parcelArcgisItems(lat,lon,dl){
   }
   return out.sort((a,b)=>_parcelItemScore(b)-_parcelItemScore(a)).slice(0,_PARCEL_MAX_SERVICES);
 }
-
-/* ── PARCEL PROVIDERS v4.7.0 ────────────────────────────────────────────
-   The UI remains map-center based. Providers are online-only and optional.
-   Auto mode tries any configured nationwide provider first, then the free
-   public-GIS discovery path. Tokens/keys stay only in this browser's
-   localStorage; they are never bundled into exported job geometry. */
-function _parcelProviderCfg(){
-  return {
-    mode:_lsGet("cl_parcelProvider")||"auto",
-    regrid:_lsGet("cl_parcelRegridToken")||"",
-    gpd:_lsGet("cl_parcelGpdKey")||"",
-    custom:_lsGet("cl_parcelCustomUrl")||""
-  };
-}
-function _parcelSetProviderCfg(c){
-  _lsSet("cl_parcelProvider",c.mode||"auto");
-  _lsSet("cl_parcelRegridToken",c.regrid||"");
-  _lsSet("cl_parcelGpdKey",c.gpd||"");
-  _lsSet("cl_parcelCustomUrl",c.custom||"");
-}
-function _parcelGeoJsonCandidate(feature,meta){
-  if(!feature||!feature.geometry)return null;
-  const g=feature.geometry, ll=[];
-  if(g.type==="Polygon") ll.push(...(g.coordinates||[]));
-  else if(g.type==="MultiPolygon") for(const poly of (g.coordinates||[])) ll.push(...(poly||[]));
-  else return null;
-  const job=[];
-  for(const ring of ll){
-    const rr=[];
-    for(const xy of ring||[]){ if(!xy||xy.length<2)continue; const q=_llToJob(+xy[1],+xy[0]); if(q&&isFinite(q.E)&&isFinite(q.N))rr.push(q); }
-    if(rr.length>=3)job.push(rr);
-  }
-  if(!job.length)return null;
-  const props=feature.properties||{};
-  return {rings:job,llRings:_parcelRoundLL(ll),attrs:props,
-    sourceTitle:meta.title||"Parcel provider",layerName:meta.layerName||"Parcels",
-    serviceUrl:meta.serviceUrl||"",layerUrl:meta.layerUrl||"",sourceHost:_parcelHost(meta.serviceUrl||meta.layerUrl),
-    provider:meta.provider||"Parcel provider"};
-}
-function _parcelWktToFeature(wkt,props){
-  wkt=String(wkt||"").trim(); if(!wkt)return null;
-  const pts=s=>s.split(",").map(t=>t.trim().split(/\s+/).slice(0,2).map(Number)).filter(x=>x.length===2&&x.every(Number.isFinite));
-  const rings=[];
-  if(/^POLYGON\s*\(\(/i.test(wkt)){
-    const body=wkt.replace(/^POLYGON\s*\(\(/i,"").replace(/\)\)\s*$/i,"");
-    for(const r of body.split(/\)\s*,\s*\(/))rings.push(pts(r));
-    return {type:"Feature",properties:props||{},geometry:{type:"Polygon",coordinates:rings}};
-  }
-  if(/^MULTIPOLYGON\s*\(\(\(/i.test(wkt)){
-    const body=wkt.replace(/^MULTIPOLYGON\s*\(\(\(/i,"").replace(/\)\)\)\s*$/i,"");
-    const polys=body.split(/\)\)\s*,\s*\(\(/).map(poly=>poly.split(/\)\s*,\s*\(/).map(pts));
-    return {type:"Feature",properties:props||{},geometry:{type:"MultiPolygon",coordinates:polys}};
-  }
-  return null;
-}
-async function _parcelRegrid(lat,lon,dl,onStep){
-  const cfg=_parcelProviderCfg(); if(!cfg.regrid)return null;
-  onStep&&onStep("Querying Regrid nationwide parcel data…");
-  const u="https://app.regrid.com/api/v2/us/parcels/point?lat="+encodeURIComponent(lat)+"&lon="+encodeURIComponent(lon)+"&limit=5&token="+encodeURIComponent(cfg.regrid);
-  const j=await _parcelFetchJson(u,9000,dl);
-  let fc=j&&j.parcels?j.parcels:j; const feats=(fc&&fc.features)||[]; if(!feats.length)return null;
-  let best=null,bestA=Infinity;
-  for(const f of feats){const c=_parcelGeoJsonCandidate(f,{title:"Regrid",serviceUrl:"https://app.regrid.com",provider:"Regrid nationwide parcel API"});if(!c)continue;const a=_parcelGeometryArea(c.rings);if(a>0&&a<bestA){best=c;bestA=a;}}
-  return best;
-}
-async function _parcelGetParcelData(lat,lon,dl,onStep){
-  const cfg=_parcelProviderCfg(); if(!cfg.gpd)return null;
-  onStep&&onStep("Querying GetParcelData nationwide parcel data…");
-  let budget=9000; if(dl)budget=Math.min(budget,Math.max(250,dl-Date.now()));
-  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),budget);
-  try{
-    const u="https://api.getparceldata.com/v1/parcels/point?lat="+encodeURIComponent(lat)+"&lng="+encodeURIComponent(lon)+"&limit=5";
-    const r=await fetch(u,{signal:ctl.signal,cache:"no-store",headers:{Authorization:"Bearer "+cfg.gpd}}); if(!r.ok)throw new Error("GetParcelData HTTP "+r.status);
-    const j=await r.json(), arr=(j&&j.parcels)||[]; let best=null,bestA=Infinity;
-    for(const p of arr){const f=_parcelWktToFeature(p.geometry_wkt,p);const c=_parcelGeoJsonCandidate(f,{title:"GetParcelData",serviceUrl:"https://api.getparceldata.com",provider:"GetParcelData nationwide parcel API"});if(!c)continue;const a=_parcelGeometryArea(c.rings);if(a>0&&a<bestA){best=c;bestA=a;}}
-    return best;
-  }finally{clearTimeout(to);}
-}
-async function _parcelCustom(lat,lon,dl,onStep){
-  const cfg=_parcelProviderCfg(); if(!cfg.custom)return null;
-  onStep&&onStep("Querying custom parcel endpoint…");
-  const u=cfg.custom.replace(/\{lat\}/gi,encodeURIComponent(lat)).replace(/\{lon\}|\{lng\}/gi,encodeURIComponent(lon));
-  const j=await _parcelFetchJson(u,9000,dl); const feats=(j&&j.features)||(j&&j.parcels&&j.parcels.features)||[]; if(!feats.length)return null;
-  let best=null,bestA=Infinity; for(const f of feats){const c=_parcelGeoJsonCandidate(f,{title:"Custom parcel endpoint",serviceUrl:u,provider:"Custom GeoJSON parcel endpoint"});if(!c)continue;const a=_parcelGeometryArea(c.rings);if(a>0&&a<bestA){best=c;bestA=a;}} return best;
-}
-function _parcelProviderSettings(){
-  const c=_parcelProviderCfg();
-  openModal((m,close)=>{
-    m.innerHTML='<h2>▱ Parcel Provider</h2><p class="info">Online-only. Map-center lookup can use a configured nationwide provider, then fall back to free public GIS discovery.</p>';
-    const lab=t=>{const d=document.createElement("div");d.className="input-label";d.textContent=t;m.appendChild(d)};
-    lab("Provider mode"); const sel=document.createElement("select");sel.className="disp-input";sel.style.fontSize=".95em";sel.innerHTML='<option value="auto">Auto — configured provider, then public GIS</option><option value="public">Free public GIS only</option><option value="regrid">Regrid only</option><option value="gpd">GetParcelData only</option><option value="custom">Custom GeoJSON URL only</option>';sel.value=c.mode;m.appendChild(sel);
-    const inp=(title,val,ph,type="text")=>{lab(title);const x=document.createElement("input");x.className="disp-input";x.style.fontSize=".88em";x.type=type;x.value=val;x.placeholder=ph;m.appendChild(x);return x};
-    const rg=inp("Regrid token",c.regrid,"optional", "password");
-    const gp=inp("GetParcelData API key",c.gpd,"optional", "password");
-    const cu=inp("Custom GeoJSON URL template",c.custom,"https://example/api?lat={lat}&lon={lon}");
-    const save=document.createElement("button");save.className="btn ok";save.textContent="Save provider settings";save.onclick=()=>{_parcelSetProviderCfg({mode:sel.value,regrid:rg.value.trim(),gpd:gp.value.trim(),custom:cu.value.trim()});close();showResult("Parcel Provider Saved",[{lbl:"Mode:",val:sel.options[sel.selectedIndex].text},{lbl:"Regrid:",val:rg.value.trim()?"configured":"not configured"},{lbl:"GetParcelData:",val:gp.value.trim()?"configured":"not configured"},{lbl:"Custom:",val:cu.value.trim()?"configured":"not configured"}]);};m.appendChild(save);
-    const b=document.createElement("button");b.className="btn";b.textContent="Cancel";b.onclick=close;m.appendChild(b);
-  });
-}
-async function _parcelProviderResolve(lat,lon,onStep,dl){
-  const c=_parcelProviderCfg(), mode=c.mode||"auto", errs=[];
-  const go=async(fn,name)=>{try{return await fn(lat,lon,dl,onStep);}catch(e){errs.push(name+": "+String(e&&e.message||e));return null;}};
-  let hit=null;
-  if(mode==="regrid"||mode==="auto") if(c.regrid&&(hit=await go(_parcelRegrid,"Regrid")))return hit;
-  if(mode==="gpd"||mode==="auto") if(c.gpd&&(hit=await go(_parcelGetParcelData,"GetParcelData")))return hit;
-  if(mode==="custom"||mode==="auto") if(c.custom&&(hit=await go(_parcelCustom,"Custom")))return hit;
-  if((mode==="regrid"&&!c.regrid)||(mode==="gpd"&&!c.gpd)||(mode==="custom"&&!c.custom)) throw new Error("Selected parcel provider is not configured. Open Parcel Provider Settings.");
-  return null;
-}
-
 async function _parcelResolve(lat,lon,onStep,dl,exclude){
   const skip=exclude instanceof Set?exclude:new Set(exclude||[]);
-  const cfg=_parcelProviderCfg();
-  if((cfg.mode||"auto")!=="public"){
-    const paid=await _parcelProviderResolve(lat,lon,onStep,dl);
-    if(paid)return paid;
-    if((cfg.mode||"auto")!=="auto")return null;
-  }
-  onStep&&onStep("Searching free public GIS parcel services near the map center…");
+  onStep&&onStep("Searching public GIS parcel services near the map center…");
   const items=(await _parcelArcgisItems(lat,lon,dl)).filter(it=>!skip.has(it.url));
   if(!items.length)return null;
   for(let i=0;i<items.length;i++){
@@ -11434,7 +11318,7 @@ function _parcelLookupHere(excludeUrls){
   const ll=_parcelMapCenterLL();if(!ll){alert("Could not determine the map-center latitude/longitude.");return;}
   const serial=++_gisParcelSearchSerial;_gisParcelBusy=true;_gisParcelPreview=null;plotPoints();
   openModal((m,close)=>{
-    m.innerHTML='<h2>▱ Import Parcel at Map Center</h2><p class="info">Online-only. ChainLink is querying the configured parcel provider and/or free public GIS services at <b>'+ll.lat.toFixed(6)+', '+ll.lon.toFixed(6)+'</b>. No nationwide parcel database is stored in the app.</p>';
+    m.innerHTML='<h2>▱ Import Parcel at Map Center</h2><p class="info">Online-only. ChainLink is querying free/public GIS services at <b>'+ll.lat.toFixed(6)+', '+ll.lon.toFixed(6)+'</b>. No nationwide parcel database is stored in the app.</p>';
     const st=document.createElement("div");st.className="result-box";st.innerHTML='<span class="lbl">Status:</span> <span class="val">Starting…</span>';m.appendChild(st);
     const cancel=document.createElement("button");cancel.className="btn";cancel.textContent="Cancel";cancel.onclick=()=>{_gisParcelSearchSerial++;_gisParcelBusy=false;plotPoints();close();};m.appendChild(cancel);
     (async()=>{
@@ -12168,7 +12052,6 @@ function satelliteMenu(){
     mk("🗺 Basemap: "+((_BASEMAPS[satBasemap]||_BASEMAPS.esri).label)+" — tap to switch","blue",()=>{
       satBasemap=satBasemap==="esri"?"topo":"esri";saveData();close();satelliteMenu();});
     mk("▱ Import parcel at map center (ONLINE)","accent",()=>{close();_parcelLookupHere();});
-    mk("⚙ Parcel provider settings","",()=>{close();_parcelProviderSettings();});
     if(_gisParcels.length)mk("▱ Remove GIS parcel references ("+_gisParcels.length+")","danger",()=>{close();_parcelClearImported();});
     mk("📌 Store Point at GPS position","ok",()=>{close();storeGpsPoint();});
     mk("⬇ Cache visible area for offline","blue",()=>{close();cacheAreaOffline();});
@@ -14790,7 +14673,6 @@ const HELP_TOPICS = [
 <p>The parcel is selected spatially from the aerial, so vacant land, rural tracts, shared addresses, and unassigned addresses are not a problem.</p>
 <h3>Online Only</h3>
 <p>No nationwide parcel database is bundled with ChainLink. The lookup runs only while connected. A parcel you explicitly import is saved as a small reference layer with the current job.</p>
-<h3>Provider Options</h3><p><strong>Map → Imagery / GPS → Parcel provider settings</strong> can use free public GIS discovery, Regrid, GetParcelData, or a custom GeoJSON endpoint. Auto mode tries a configured provider first and then falls back to public GIS discovery.</p>
 <div class="warn"><strong>REFERENCE ONLY.</strong> Tax/GIS parcel lines are not boundary-survey geometry and may be shifted, generalized, incomplete, or wrong. Never stake or determine a boundary from them.</div>
 <div class="tip">Coverage varies by jurisdiction. Public ArcGIS services are discovered automatically where possible; some counties block public queries or do not publish parcel geometry.</div>`},
 
