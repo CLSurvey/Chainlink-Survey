@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.1">
+<meta name="application-name" content="ChainLink-v4.7.2">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.1</title>
+<title>ChainLink Survey v4.7.2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.1";
+const APP_VERSION = "4.7.2";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1331,7 +1331,7 @@ function _deedFigSerialize(f){
     recordRot:f.recordRot||0,ownerKey:f.ownerKey||null,
     parentRef:f.parentRef||null,parcelKey:f.parcelKey||null,
     startRef:f.startRef||null,cornerRef:f.cornerRef||null,
-    sectionNo:f.sectionNo||null};
+    sectionNo:f.sectionNo||null,statedAcres:f.statedAcres||null};
 }
 function _takeSnapshot(label){
   // A picker is transient UI, not part of survey state.  End it before the
@@ -8847,9 +8847,34 @@ function parseDeedText(txt){
     // Deflection-angle deeds: "thence deflect 81°46'34\" right and run
     // Southeasterly, 50.18 feet" — the angle turns from the previous course
     const bareDefl=/^\s*(?:AND\s+)?\d{1,3}\s+DEGREES?\b[\s\S]{0,40}?\bTO\s+THE\s+(RIGHT|LEFT)\b/.test(seg)&&!/\b[NS]\s*\d|NORTH|SOUTH/.test(seg.slice(0,6));
-    if(/DEFLECT/.test(seg)||bareDefl){
-      let dAng=_deedParseAngle(seg,bareDefl?"":"DEFLECT(?:ION)?[^0-9]{0,50}?");
-      if(dAng!=null&&/INTERIOR\s+ANGLE/.test(seg))dAng=180-dAng;
+    /* Turned angles that are NOT written as deflections: "turning an interior
+       angle of 88°30'", "with an included angle of 110 degrees". Before 4.7.2
+       these fell past this block into the whole-circle-bearing gate below and
+       were silently published as azimuths — a turned angle became a bearing,
+       producing plausible geometry pointing the wrong way with no warning.
+       They are captured here instead and converted to a deflection magnitude.
+       Curve wording (central angle / delta) is excluded: that angle belongs to
+       an arc, not to a turn at a vertex. */
+    const angKind=(function(){
+      if(/CENTRAL\s+ANGLE|\bDELTA\b|\bCURVE\b|\bRADIUS\b|\bCHORD\b|\bARC\b/.test(seg))return null;
+      if(/INTERIOR\s+ANGLE/.test(seg))return "interior";
+      if(/INCLUDED\s+ANGLE/.test(seg))return "included";
+      if(/EXTERIOR\s+ANGLE/.test(seg))return "exterior";
+      if(/DEFLECT/.test(seg))return "deflection";
+      if(/\bANGLE\s+OF\b|\bTURN(?:ING|ED)?\s+AN?\s+ANGLE\b/.test(seg))return "angle";
+      return null;
+    })();
+    if(/DEFLECT/.test(seg)||bareDefl||angKind){
+      let dAng=_deedParseAngle(seg,bareDefl?"":(/DEFLECT/.test(seg)?"DEFLECT(?:ION)?[^0-9]{0,50}?":""));
+      if(dAng==null&&angKind)dAng=_deedParseAngle(seg,"ANGLE[^0-9]{0,20}?");
+      /* Deflection is the turn off the prolongation of the back course.
+         interior/included = 180 - interior. exterior = exterior - 180. A bare
+         "angle of X" is assumed interior and reported as an assumption. */
+      let angAssumed=false;
+      if(dAng!=null&&angKind&&angKind!=="deflection"){
+        if(angKind==="exterior")dAng=dAng-180;
+        else {dAng=180-dAng; if(angKind==="angle")angAssumed=true;}
+      }
       const ddm=seg.match(/\b(RIGHT|LEFT)\b(?!\s+OF\s+WAY)(?!-OF-WAY)/);
       const dDir=ddm?(ddm[1]==="RIGHT"?"R":"L"):null;
       let dd=_deedParseDistance(seg);
@@ -8860,10 +8885,12 @@ function parseDeedText(txt){
         const bare=seg.match(/(\d{1,6}(?:\.\d+)?)\s+TO\s+(?:THE|A)\s+(?:POINT|PLACE)\b/);
         if(bare)dd={val:parseFloat(bare[1]),unit:"FT",ft:parseFloat(bare[1])};
       }
-      if(dAng!=null&&dDir&&dd){
+      if(dAng!=null&&(dDir||angKind)&&dd){
         const wcd=seg.match(/\b(NORTH|SOUTH)?(EAST|WEST)?ERLY\b/);
         const wAz=wcd&&(wcd[1]||wcd[2])?{NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[(wcd[1]||"")+(wcd[2]||"")]:null;
-        calls.push({type:"line",_si,_pob:_POBARR,defl:{ang:dAng,dir:dDir},wordAz:(wAz!==undefined?wAz:null),bearing:null,dist:dd.ft,unit:dd.unit,rawVal:dd.val,raw:seg.slice(0,140)});
+        calls.push({type:"line",_si,_pob:_POBARR,
+          defl:{ang:dAng,dir:dDir||null,kind:angKind||"deflection",srcAng:_deedParseAngle(seg,/DEFLECT/.test(seg)?"DEFLECT(?:ION)?[^0-9]{0,50}?":(angKind?"ANGLE[^0-9]{0,20}?":"")),assumed:angAssumed},
+          wordAz:(wAz!==undefined?wAz:null),bearing:null,dist:dd.ft,unit:dd.unit,rawVal:dd.val,raw:seg.slice(0,140)});
         return;
       }
     }
@@ -8873,7 +8900,12 @@ function parseDeedText(txt){
     // Tight gate: degree mark present, no N/S/E/W quadrant, no deflect/turn
     // words, a distance follows. Falls through untouched if any US-style
     // quadrant bearing already matched.
-    if(!b && !/\b[NSEW]\b|NORTH|SOUTH|EAST|WEST|DEFLECT|\b(RIGHT|LEFT)\b|CURVE|RADIUS|CHORD/.test(seg)){
+    /* 4.7.2 — ANGLE/INTERIOR/INCLUDED/EXTERIOR/TURN added to the exclusion.
+       A whole-circle bearing is a direction from north; a turned angle is not,
+       and no British/Australian WCB description contains the word "angle".
+       Without this, "an interior angle of 88°30'" was published as azimuth
+       88.5° with no partial flag and no warning. */
+    if(!b && !/\b[NSEW]\b|NORTH|SOUTH|EAST|WEST|DEFLECT|\b(RIGHT|LEFT)\b|CURVE|RADIUS|CHORD|ANGLE|INTERIOR|INCLUDED|EXTERIOR|\bTURN(?:ING|ED)?\b/.test(seg)){
       const wcb=seg.match(/(?:^|[^0-9.])(\d{1,3})\s*(?:°|\bDEG(?:REES?)?\b)\.?\s*(?:(\d{1,2})\s*(?:['\u2032]|\bMIN(?:UTES?)?\b)(?:\s*(\d{1,2}(?:\.\d+)?)\s*(?:["\u2033]|\bSEC(?:ONDS?)?\b))?)?/);
       if(wcb){
         const wa=parseInt(wcb[1],10)+(wcb[2]?parseInt(wcb[2],10)/60:0)+(wcb[3]?parseFloat(wcb[3])/3600:0);
@@ -9021,8 +9053,23 @@ function parseDeedText(txt){
 }
 
 /* Geometry: run calls from a POB with rotation; returns vertices + arcs + closure */
-function computeDeed(calls,pobE,pobN,rotDeg){
+function computeDeed(calls,pobE,pobN,rotDeg,_turnSide){
   const rad=Math.PI/180;
+  /* A described turn whose side is not stated ("an interior angle of 88°30'")
+     has exactly two readings. A traverse turns consistently one way around a
+     closed figure, so both readings are run whole and the one that closes is
+     kept — the deed itself picks the branch. Geometry is always produced, even
+     when neither branch closes; the misclosure is reported, never hidden. */
+  if(_turnSide===undefined&&calls.some(c=>c.type==="line"&&c.defl&&!c.defl.dir&&!c.tie)){
+    const R=computeDeed(calls,pobE,pobN,rotDeg,"R");
+    const L=computeDeed(calls,pobE,pobN,rotDeg,"L");
+    const useR=R.closeDist<=L.closeDist;
+    const best=useR?R:L;
+    best.turnSide=useR?"R":"L";
+    best.turnSideAlt=useR?L.closeDist:R.closeDist;
+    best.turnSideAmbig=Math.abs(R.closeDist-L.closeDist)<0.05*Math.max(R.closeDist,L.closeDist,1);
+    return best;
+  }
   let E=pobE,N=pobN,tangent=null;
   const verts=[{E,N}], arcs=[], spirals=[], areaVerts=[{E,N}];
   const usable=calls.filter(c=>(c.type==="line"||c.type==="curve"||c.type==="spiral")&&!c.tie);
@@ -9030,7 +9077,8 @@ function computeDeed(calls,pobE,pobN,rotDeg){
     if(c.type==="line"){
       let az;
       if(c.defl){
-        if(tangent!=null)az=tangent+(c.defl.dir==="R"?c.defl.ang:-c.defl.ang);
+        const dDir=c.defl.dir||_turnSide||"R";
+        if(tangent!=null)az=tangent+(dDir==="R"?c.defl.ang:-c.defl.ang);
         else az=(c.wordAz!=null?c.wordAz:0)+rotDeg;
       }else if(c.bearing){
         az=_deedBearingToAz(c.bearing)+rotDeg;
@@ -9141,13 +9189,179 @@ function computeDeed(calls,pobE,pobN,rotDeg){
   const closeDist=Math.hypot(closeE,closeN);
   let perim=0;
   usable.forEach(c=>{perim+=c.type==="line"?c.dist:(c.type==="spiral"?(c.length||0):(c.arc||c.chordD||0));});
-  return {verts,arcs,spirals,areaVerts,closeDist,perim,
+  return {verts,arcs,spirals,areaVerts,closeDist,perim,closeE,closeN,usable,
     precision:closeDist>0.001?Math.round(perim/closeDist):null,
     closeAz:closeDist>0.001?((Math.atan2(closeE,closeN)/rad)%360+360)%360:0,
     skipped:calls.length-usable.length};
 }
 
 
+
+
+/* ── DEED BLUNDER DETECTION ─────────────────────────────────────────────
+   Geometry is always plotted, closing or not. This layer reads the
+   misclosure and says what most likely caused it, using the standard field
+   rules plus a brute-force repair search over the ways a written course is
+   commonly mistyped or misread.
+
+   The rules:
+     • A distance blunder leaves a misclosure PARALLEL to the offending
+       course, because only that course's length is wrong.
+     • An angle blunder at a station leaves a misclosure whose perpendicular
+       bisector passes through that station, because everything after it is
+       rotated about it.
+   Neither rule is conclusive on its own — both are reported as candidates
+   with the correction that would close the figure, never applied silently.
+   A deed's own stated acreage is a second, independent check on the whole
+   read: geometry that closes but disagrees with the recited area means a
+   course was dropped or duplicated, which closure alone cannot see. */
+function _deedCourseAz(g,i){
+  const v=g&&g.verts;if(!v||i+1>=v.length)return null;
+  const a=v[i],b=v[i+1];if(!a||!b||b.skip)return null;
+  const dE=b.E-a.E,dN=b.N-a.N;
+  if(Math.hypot(dE,dN)<1e-9)return null;
+  return ((Math.atan2(dE,dN)*180/Math.PI)%360+360)%360;
+}
+function _deedAngDiff(a,b){let d=Math.abs(((a-b)%360+360)%360);return d>180?360-d:d;}
+/* Re-run a figure with one call swapped out — the engine is pure, so a trial
+   read costs nothing but a traverse. */
+function _deedTrial(calls,idx,patch,pobE,pobN,rotDeg){
+  const trial=calls.map((c,i)=>i===idx?{...c,...patch}:c);
+  try{ return computeDeed(trial,pobE,pobN,rotDeg); }catch(e){ return null; }
+}
+function _deedFlipBearing(b,mode){
+  if(!b||b.card||b.q1==null)return null;
+  const ns=b.q1==="N"?"S":"N", ew=b.q2==="E"?"W":"E";
+  if(mode==="ns")return{...b,q1:ns};
+  if(mode==="ew")return{...b,q2:ew};
+  return{...b,q1:ns,q2:ew};
+}
+function _deedDigitVariants(v){
+  if(v==null||!isFinite(v))return [];
+  const s=String(v),out=new Set();
+  const digits=s.replace(/[^0-9]/g,"");
+  if(digits.length<2)return [];
+  // adjacent transposition — the classic keying and OCR slip (132.45 / 123.45)
+  for(let i=0;i<s.length-1;i++){
+    if(!/[0-9]/.test(s[i])||!/[0-9]/.test(s[i+1])||s[i]===s[i+1])continue;
+    const t=s.slice(0,i)+s[i+1]+s[i]+s.slice(i+2);
+    const n=parseFloat(t);if(isFinite(n)&&n>0&&n!==v)out.add(n);
+  }
+  // a dropped or doubled leading digit (1320 read as 320)
+  const m=s.match(/^(\d)(\d{2,})/);
+  if(m)out.add(parseFloat(m[2]+(s.slice(m[0].length)||"")));
+  return [...out];
+}
+function _deedBlunders(f,rotDeg){
+  const out=[];
+  if(!f||!f.calls||f.pobE==null)return out;
+  const g=f.computed;if(!g)return out;
+  const U=(typeof units!=="undefined"&&units==="m")?"m":"ft";
+  const tol=U==="m"?0.15:0.5;
+  const calls=f.calls;
+
+  // — unreadable courses are reported first: they bound everything else —
+  const partials=calls.filter(c=>c.type==="partial");
+  if(partials.length)out.push({sev:"warn",code:"partial",
+    msg:partials.length+" course"+(partials.length===1?"":"s")+" could not be read and "+(partials.length===1?"was":"were")+" left out of the geometry",
+    detail:partials.map(c=>(c.raw||"").slice(0,60)).join(" | ")});
+
+  // — assumed / resolved turn sides —
+  calls.forEach((c,i)=>{
+    if(c.type==="line"&&c.defl&&c.defl.assumed)
+      out.push({sev:"warn",code:"assumed-angle",call:i,
+        msg:"course "+(i+1)+": a bare \u201cangle of "+(c.defl.srcAng!=null?c.defl.srcAng.toFixed(4).replace(/\.?0+$/,""):"?")+"\u00b0\u201d was read as an INTERIOR angle",
+        detail:"the deed does not say interior, exterior or deflection \u2014 verify against the record"});
+  });
+  if(g.turnSide)out.push({sev:g.turnSideAmbig?"warn":"info",code:"turn-side",
+    msg:"unstated turn direction resolved to "+(g.turnSide==="R"?"RIGHT":"LEFT")+" by closure",
+    detail:"the other reading misclosed "+g.turnSideAlt.toFixed(2)+" "+U+(g.turnSideAmbig?" \u2014 too close to call, check the record":"")});
+
+  // — closure-driven blunder hunting —
+  if(g.closeDist>tol){
+    const closeAz=g.closeAz;
+    /* Distance blunder: misclosure parallel (or antiparallel) to a course.
+       Several courses can share that direction, and the rule cannot tell them
+       apart — every candidate is listed with its own correction rather than
+       one being picked arbitrarily. */
+    const distCands=[];
+    for(let i=0;i<(g.verts.length-1);i++){
+      const az=_deedCourseAz(g,i);if(az==null)continue;
+      const d=_deedAngDiff(az,closeAz);
+      if(d<2.5||d>177.5){
+        const c=(g.usable||[])[i];
+        const idx=calls.indexOf(c);
+        const sign=(d<2.5)?1:-1;
+        if(c&&c.type==="line"&&(c.dist+sign*g.closeDist)>0)distCands.push({sev:"error",code:"distance",call:idx,
+          msg:"course "+(idx+1)+" distance is a candidate blunder",
+          detail:"the misclosure runs "+(sign>0?"along":"against")+" this course; "+c.dist.toFixed(2)+" \u2192 "+(c.dist+sign*g.closeDist).toFixed(2)+" "+U+" would close the figure",
+          fix:{dist:+(c.dist+sign*g.closeDist).toFixed(3)}});
+      }
+    }
+    if(distCands.length>1)distCands.forEach(d=>{d.detail+=" (one of "+distCands.length+" courses lying along the misclosure \u2014 the rule cannot choose between them)";});
+    distCands.forEach(d=>out.push(d));
+    // angle blunder: the station equidistant from the start and the misclosed end
+    const v=g.verts,first=v[0],last=v[v.length-1];
+    for(let i=1;i<v.length-1;i++){
+      const p=v[i];if(!p||p.skip)continue;
+      const d1=Math.hypot(p.E-first.E,p.N-first.N),d2=Math.hypot(p.E-last.E,p.N-last.N);
+      if(Math.min(d1,d2)<g.closeDist)continue;
+      if(Math.abs(d1-d2)<Math.max(g.closeDist*0.25,tol))
+        out.push({sev:"error",code:"angle",call:i,
+          msg:"an angle blunder at station "+(i+1)+" would explain the misclosure",
+          detail:"that station sits on the perpendicular bisector of the closure line \u2014 the courses after it appear rotated about it"});
+    }
+    // brute-force repair search: quadrant flips and digit slips, one course at a time
+    const best=[];
+    calls.forEach((c,i)=>{
+      if(c.type!=="line"||c.tie)return;
+      const trials=[];
+      if(c.bearing&&!c.bearing.card){
+        ["ns","ew","both"].forEach(mode=>{
+          const b=_deedFlipBearing(c.bearing,mode);
+          if(b)trials.push({patch:{bearing:b},what:"bearing read as "+_deedAzToBearingStr(_deedBearingToAz(b))+" instead of "+_deedAzToBearingStr(_deedBearingToAz(c.bearing))});
+        });
+      }
+      _deedDigitVariants(c.rawVal!=null?c.rawVal:c.dist).forEach(nv=>{
+        const scale=(c.dist&&c.rawVal)?c.dist/c.rawVal:1;
+        trials.push({patch:{dist:nv*scale,rawVal:nv},what:"distance read as "+nv+" instead of "+(c.rawVal!=null?c.rawVal:c.dist)});
+      });
+      trials.forEach(t=>{
+        const r=_deedTrial(calls,i,t.patch,f.pobE,f.pobN,rotDeg);
+        if(r&&r.closeDist<Math.min(tol,g.closeDist*0.1))
+          best.push({sev:"error",code:"repair",call:i,gain:g.closeDist-r.closeDist,
+            msg:"course "+(i+1)+" closes the deed if the "+t.what.split(" ")[0]+" is corrected",
+            detail:t.what+" \u2014 misclosure "+g.closeDist.toFixed(2)+" \u2192 "+r.closeDist.toFixed(2)+" "+U});
+      });
+    });
+    best.sort((a,b)=>b.gain-a.gain);
+    best.slice(0,3).forEach(b=>out.push(b));
+  }
+
+  // — stated acreage as an independent check on the whole read —
+  if(f.statedAcres&&g.verts.length>2){
+    const a=_deedArea(g),acres=U==="m"?a/4046.8564224:a/43560;
+    const diff=Math.abs(acres-f.statedAcres),pct=f.statedAcres>0?diff/f.statedAcres*100:0;
+    if(pct>3)out.push({sev:pct>15?"error":"warn",code:"acreage",
+      msg:"plotted area disagrees with the recited acreage by "+pct.toFixed(1)+"%",
+      detail:"deed recites "+f.statedAcres+" ac; geometry gives "+acres.toFixed(3)+" ac"+(g.closeDist<=tol?" \u2014 the figure closes, so a course may have been dropped or duplicated":"")});
+    else out.push({sev:"info",code:"acreage",
+      msg:"plotted area agrees with the recited acreage ("+acres.toFixed(3)+" ac vs "+f.statedAcres+" ac)",detail:""});
+  }
+  return out;
+}
+function _deedBlunderReport(){
+  if(!_deedPlot||!_deedPlot.figures.length){alert("No deed is plotted.");return;}
+  const rows=[];let n=0;
+  _deedPlot.figures.forEach(f=>{
+    const list=_deedBlunders(f,(_deedPlot.rot||0)+(f.recordRot||0));
+    const g=f.computed;
+    rows.push({lbl:"\u2500\u2500 "+(f.name||f.kind)+":",val:g?("closure "+g.closeDist.toFixed(2)+" "+units+(g.precision?"  (1:"+g.precision+")":"")):"not placed"});
+    if(!list.length)rows.push({lbl:"",val:"no detectable problems"});
+    list.forEach(d=>{n++;rows.push({lbl:(d.sev==="error"?"\u26d4":d.sev==="warn"?"\u26a0":"\u2713")+" "+d.code+":",val:_esc(d.msg)+(d.detail?" \u2014 "+_esc(d.detail):"")});});
+  });
+  showResult("\ud83d\udd0e Deed Diagnostics",rows.length?rows:[{lbl:"Status:",val:"nothing to report"}]);
+}
 
 /* Device-appropriate press verb for prompts */
 function _pressWord(cap){
@@ -9642,7 +9856,9 @@ function parseDeedFigures(txt){
     }
     const calls=parseDeedText(p.text);
     if(!calls.length)return;
+    const acM=p.text.match(/CONTAINING\s+(?:APPROXIMATELY\s+)?([\d,]+(?:\.\d+)?)\s*(?:\+\/-\s*)?ACRES?/);
     const fig={kind:semanticKind,calls,pobE:null,pobN:null,ptNums:[],
+      statedAcres:acM?parseFloat(acM[1].replace(/,/g,"")):null,
       parcelKey:ownKey,parcelLabel:ownLabel,ownerKey:semanticKind!=="boundary"?(explicitOwner||activeParcelKey):null,
       parentRef:_deedParentRef(p.text,ownKey),startRef:_deedNamedCornerRef(p.text),sectionNo:_deedSectionNo(p.text),
       name:semanticKind==="boundary"?"Boundary":(semanticKind==="except"?"Except parcel":"Easement")};
@@ -10156,6 +10372,8 @@ function _deedResolveFigures(figs,E,N){
     ...(_deedPlot.figures.some(f=>f.sectionAxes)?[{lbl:"PLSS fabric:",val:"aliquot geometry aligned to stated section-line bearings"}]:[]),
     ...(_deedPlot.figures.some(f=>f.kind==="boundary"&&f.computed&&f.computed.closeDist>1)?[{lbl:"⚠ Record closure:",val:"one or more described parcels misclose by over 1.00 "+units+"; geometry was not forced closed"}]:[]),
     ...(_deedPlot.figures.some(f=>f.placementReason&&f.placementReason!=="selected boundary POB")?[{lbl:"Resolved:",val:"named parcel corners and PLSS section corners used where stated"}]:[]),
+    ...(function(){const n=_deedPlot.figures.reduce((a,f)=>a+_deedBlunders(f,(_deedPlot.rot||0)+(f.recordRot||0)).filter(d=>d.sev!=="info").length,0);
+      return n?[{lbl:"\ud83d\udd0e Diagnostics:",val:n+" item"+(n===1?"":"s")+" flagged \u2014 open Deed \u2192 Diagnostics for the likely cause"}]:[];})(),
     ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"reference could not be resolved automatically; stacked at selected POB"}]:[])],
     (function(){const need=_deedPlot.figures.map((f,i)=>({f,i})).filter(x=>x.f.autoStacked);if(!need.length)return null;return [{txt:"🖐 Place "+(need.length===1?("“"+need[0].f.name.split(" (")[0]+"” now"):("the "+need.length+" unresolved figures now")),cls:"ok",fn:()=>{if(need.length===1){_deedAdjustScope=need[0].i;_deedAdjustStart();}else _deedMovePicker();}}];})());
 }
@@ -10577,6 +10795,8 @@ function deedPlotterMenu(){
         (_deedPlot.figures.some(_deedExceptOutside)?" <span style='color:#e07a5f'>(unreliable while ⚠ outside parent — full exception areas subtracted)</span>":"")+" · "):"")+
       "swing "+(_deedPlot.rot||0).toFixed(3)+"°</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    (function(){const n=_deedPlot.figures.reduce((a,f)=>a+_deedBlunders(f,(_deedPlot.rot||0)+(f.recordRot||0)).filter(d=>d.sev!=="info").length,0);
+      mk("\ud83d\udd0e Diagnostics"+(n?" \u2014 "+n+" flagged":" \u2014 clear"),n?"danger":"",()=>{close();_deedBlunderReport();});})();
     // swing slider — rotate record calls to fit found monuments
     const w=document.createElement("div");
     w.innerHTML="<div class='input-label'>Swing (±3° fine)</div>";
