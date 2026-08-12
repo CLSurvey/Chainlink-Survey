@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.0">
+<meta name="application-name" content="ChainLink-v4.7.1">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.0</title>
+<title>ChainLink Survey v4.7.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.0";
+const APP_VERSION = "4.7.1";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1284,14 +1284,6 @@ let _snapshots        = [];   // full state snapshots for robust undo
 let _redoStack        = [];   // snapshots popped by undo, replayable by redo
 let _helpContext      = null; // current screen for contextual help
 const MAX_SNAPSHOTS   = 20;   // keep last 20 undoable actions
-/* GIS parcel reference state — declared HERE, above _snapState/loadData/saveData,
-   because a `let` in its temporal dead zone throws on `typeof` too, so a
-   typeof guard would not have protected an early call. */
-let _gisParcels        = [];   // imported reference polygons saved with this job
-let _gisParcelPreview  = null; // transient candidate before user accepts it
-let _gisParcelBusy     = false;
-let _gisParcelSearchSerial = 0;
-
 function _snapState(label){
   // Deep-copy of current state (shared by undo + redo)
   return {
@@ -1299,7 +1291,6 @@ function _snapState(label){
     points: JSON.parse(JSON.stringify(points)),
     plotConnections: JSON.parse(JSON.stringify(plotConnections)),
     polylines: (typeof _polylines!=="undefined")?JSON.parse(JSON.stringify(_polylines)):[],
-    gisParcels: _gisParcels.map(_parcelSerialize),
     pointCounter,
     units, prismConstant, // so undoing a unit conversion restores both
     deedPlot: (typeof _deedPlot!=="undefined" && _deedPlot) ? {
@@ -1313,8 +1304,6 @@ function _restoreSnap(snap){
   points=snap.points;
   plotConnections=snap.plotConnections;
   if(typeof _polylines!=="undefined" && snap.polylines) _polylines=snap.polylines;
-  _gisParcels=Array.isArray(snap.gisParcels)?snap.gisParcels:[];
-  _gisParcelPreview=null;
   if(typeof _selPolyline!=="undefined") _selPolyline=-1;
   pointCounter=snap.pointCounter;
   if(snap.units!==undefined){ units=snap.units; prismConstant=snap.prismConstant; }
@@ -1481,7 +1470,7 @@ function _startNewJob(jn,N,E,Z,deferSetup,noStart){
            Type:"Setup",Description:"Start",Flag:"",ih:0}];
   undoStack=[];_snapshots=[];_redoStack=[];pointCounter=noStart?1:2;plotConnections=[];currentPoint=noStart?null:points[0];
   _polylines=[];
-  recentShots=[];tempGeom=[];tempIntersections=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();_deedPlot=null;_gisParcels=[];_gisParcelPreview=null;
+  recentShots=[];tempGeom=[];tempIntersections=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();_deedPlot=null;
   jobName=jn;
   saveData();
   updateStatus();plotPoints();
@@ -1529,9 +1518,9 @@ function loadData() {
   try { _areaLabels=JSON.parse(_lsGet("cl_areaLabels")||"[]"); if(!Array.isArray(_areaLabels)) _areaLabels=[]; } catch(e){ _areaLabels=[]; }
   _recomputeAreaLabels(); // drop labels whose points no longer exist
   try { const ga=_lsGet("cl_geoAnchor"); geoAnchor=ga?JSON.parse(ga):null; } catch(e){ geoAnchor=null; }
-  try { _gisParcels=JSON.parse(_lsGet("cl_gisParcels")||"[]"); if(!Array.isArray(_gisParcels))_gisParcels=[];
-        _gisParcels=_gisParcels.map(g=>g&&g.llRings&&g.llRings.length?_parcelSerialize(g):g).filter(Boolean); } catch(e){ _gisParcels=[]; }
-  _gisParcelPreview=null;
+  /* 4.7.1 — the online GIS parcel feature was removed; drop its storage so
+     old jobs stop carrying dead reference geometry around. */
+  try { _lsRemove("cl_gisParcels"); _lsRemove("cl_parcelSources"); } catch(e){}
   try { satOn=_lsGet("cl_satOn")==="true"&&!!geoAnchor; } catch(e){ satOn=false; }
   try { satOpacity=parseFloat(_lsGet("cl_satOpacity")||"0.85")||0.85; } catch(e){ satOpacity=0.85; }
   try { satRotNudge=parseFloat(_lsGet("cl_satRot")||"0")||0; } catch(e){ satRotNudge=0; }
@@ -1546,7 +1535,7 @@ function loadData() {
       _deedRecompute();
     } else _deedPlot=null;
   } catch(e){ _deedPlot=null; }
-  try { if(geoAnchor&&satOn&&_lsGet("cl_gpsLive")!=="off")startLiveGps(); else stopLiveGps(); } catch(e){}
+  try { _ensureLiveGps(); } catch(e){}
   try { _syncSatBtn(); } catch(e){}
   updateStatus(); plotPoints(); _updateUndoBtn();
 }
@@ -1575,7 +1564,6 @@ function saveData() {
   _lsSet("cl_bearingMode",bearingMode);
   _lsSet("cl_areaLabels", JSON.stringify(_areaLabels.map(l=>({E:l.E,N:l.N,label:l.label,ptNums:l.ptNums,u:l.u,arcSigs:l.arcSigs||[]}))));
   _lsSet("cl_geoAnchor",  geoAnchor?JSON.stringify(geoAnchor):"");
-  _lsSet("cl_gisParcels", JSON.stringify(Array.isArray(_gisParcels)?_gisParcels.map(_parcelSerialize):[]));
   _lsSet("cl_satOn",      String(satOn));
   _lsSet("cl_satOpacity", String(satOpacity));
   _lsSet("cl_satRot",     String(satRotNudge));
@@ -8254,7 +8242,7 @@ function clearAllData(){
       .forEach(k=>_lsRemove(k));
     _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
     surveyMode="2D";jobName="survey";_dirHandle=null;
-    plotConnections=[];_polylines=[];tempIntersections=[];tempGeom=[];undoStack=[];recentShots=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();_deedPlot=null;_gisParcels=[];_gisParcelPreview=null;
+    plotConnections=[];_polylines=[];tempIntersections=[];tempGeom=[];undoStack=[];recentShots=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();_deedPlot=null;
     _defaultState();saveData();
     showResult("Cleared",[{lbl:"Status:",val:"Ready for new job"}]);
   });
@@ -10951,6 +10939,7 @@ function _setAnchor(lat,lon,zone,E,N){
   const p=_projForward(lat,lon,zone);
   geoAnchor={lat,lon,E,N,mx:m.mx,my:m.my,conv:p.conv,zoneName:zone.name,m2u:_m2u()};
   _jobZoneCache=null;
+  try{ _ensureLiveGps(); }catch(e){}   // anchored -> marker on by default
 }
 
 function _getTile(z,x,y){
@@ -11072,524 +11061,6 @@ function _jobToLL(E,N){
 }
 
 
-/* ── ONLINE PUBLIC PARCEL LOOKUP ────────────────────────────────────────
-   Online-only reference feature. No nationwide parcel database is bundled.
-   The current aerial/map CENTER is used as the spatial query point. The
-   resolver searches ArcGIS Online for public FeatureServer/MapServer items
-   whose published extent overlaps the point. No county, state, or region is
-   special-cased — every location goes through the same discovery. Returned
-   polygons are REFERENCE ONLY — never survey boundary evidence. */
-/* state declared with the undo/redo block near the top of the file */
-
-function _llToJob(lat,lon){
-  const A=geoAnchor;if(!A)return null;
-  const m=_ll2merc(lat,lon),M2U=A.m2u||_m2u();
-  const k=Math.cos(A.lat*Math.PI/180);
-  const g=(A.conv+(satRotNudge||0))*Math.PI/180,cg=Math.cos(g),sg=Math.sin(g);
-  const dxm=(m.mx-A.mx)*k,dym=(m.my-A.my)*k;
-  const dE=(dxm*cg-dym*sg)*M2U,dN=(dxm*sg+dym*cg)*M2U;
-  return{E:A.E+dE,N:A.N+dN};
-}
-function _parcelMapCenterLL(){
-  if(!geoAnchor)return null;
-  const c=document.getElementById("plotCanvas"),wrap=document.getElementById("canvasWrap");
-  const w=(c&&c.clientWidth)||(wrap&&wrap.clientWidth)||0,h=(c&&c.clientHeight)||(wrap&&wrap.clientHeight)||0;
-  if(!w||!h)return{lat:geoAnchor.lat,lon:geoAnchor.lon};
-  const T=_viewTransform(w,h);if(!T)return{lat:geoAnchor.lat,lon:geoAnchor.lon};
-  const E=(w/2-T.offX)/T.scale,N=(h/2-T.offY)/T.scale;
-  return _jobToLL(E,N)||{lat:geoAnchor.lat,lon:geoAnchor.lon};
-}
-/* Parcels are stored as the SOURCE lon/lat geometry and projected to job
-   coordinates at draw time. Baking job coordinates at import time froze them
-   against the geoAnchor and rotation nudge in effect at that instant, so any
-   later re-anchor or nudge of the imagery slid the aerial out from under the
-   parcel while the parcel stayed put. Storing lon/lat only also halves what
-   goes to localStorage and into each of the 20 undo snapshots. */
-const _PARCEL_LL_DP=7;           // ~1 cm; ArcGIS commonly returns 12+ digits
-const _parcelProjCache=new WeakMap();
-function _parcelRoundLL(llRings){
-  const r=Math.pow(10,_PARCEL_LL_DP);
-  return (llRings||[]).map(ring=>(ring||[]).filter(xy=>xy&&xy.length>=2)
-    .map(xy=>[Math.round(+xy[0]*r)/r,Math.round(+xy[1]*r)/r]));
-}
-function _parcelSerialize(g){
-  if(!g)return null;
-  return{llRings:g.llRings||[],attrs:g.attrs||{},sourceTitle:g.sourceTitle||"",layerName:g.layerName||"",
-    serviceUrl:g.serviceUrl||"",layerUrl:g.layerUrl||"",sourceHost:g.sourceHost||"",provider:g.provider||"",
-    importedAt:g.importedAt||null};
-}
-function _parcelAnchorSig(){
-  const A=geoAnchor;if(!A)return "none";
-  return [A.lat,A.lon,A.E,A.N,A.mx,A.my,A.conv,A.m2u,satRotNudge||0].join("|");
-}
-/* Job-coordinate rings for a stored parcel, recomputed whenever the anchor or
-   rotation nudge changes. Falls back to any pre-4.6.8 baked rings. */
-function _parcelJobRings(g){
-  if(!g)return [];
-  if(!g.llRings||!g.llRings.length)return g.rings||[];
-  const sig=_parcelAnchorSig();
-  const hit=_parcelProjCache.get(g);
-  if(hit&&hit.sig===sig)return hit.rings;
-  const out=[];
-  for(const ring of g.llRings){
-    const rr=[];
-    for(const xy of ring||[]){
-      if(!xy||xy.length<2)continue;
-      const q=_llToJob(+xy[1],+xy[0]);
-      if(q&&isFinite(q.E)&&isFinite(q.N))rr.push(q);
-    }
-    if(rr.length>=3)out.push(rr);
-  }
-  _parcelProjCache.set(g,{sig,rings:out});
-  return out;
-}
-/* Search budget. 4.6.x probed strictly sequentially — one slow or
-   unreachable host could consume the entire budget before the second
-   candidate service was ever contacted, and the catalog stage alone ran
-   four sequential queries. Discovery now runs its catalog queries in
-   parallel and probing runs a small concurrent pool, so a dead host costs
-   one worker slot instead of the whole search. */
-const _PARCEL_BUDGET_MS    = 40000;
-const _PARCEL_MAX_SERVICES = 14;
-const _PARCEL_MAX_LAYERS   = 3;
-const _PARCEL_CONCURRENCY  = 5;
-const _PARCEL_SRC_MS       = 15000;  // sub-budget for saved sources
-const _PARCEL_GOOD_ACRES   = 400;    // a hit this small is unambiguously a parcel
-function _parcelOutOfTime(dl){return !!dl&&Date.now()>=dl;}
-function _parcelTimeLeft(dl){return dl?Math.max(0,Math.round((dl-Date.now())/1000))+"s left":"";}
-
-/* Every failure path used to return null silently, so CORS blocks, HTTP
-   403s, timeouts and "there really is no parcel here" all produced the
-   same empty result. Each attempt now records why it failed and the log is
-   shown on the no-result screen. */
-let _parcelDiag=[];
-function _parcelLog(label,reason){if(_parcelDiag.length<80)_parcelDiag.push({label:String(label||""),reason:String(reason||"")});}
-function _parcelWhy(e){
-  if(e&&(e.name==="AbortError"||/abort/i.test(String(e.message||""))))return "timed out";
-  const m=String((e&&e.message)||e||"error");
-  if(/failed to fetch|networkerror|load failed|network request failed/i.test(m))
-    return "blocked — no CORS header, offline, or mixed content";
-  return m;
-}
-/* Deadline-aware: never wait past the overall search budget. */
-async function _parcelFetchJson(url,ms,dl){
-  let budget=ms||7000;
-  if(dl){const left=dl-Date.now();if(left<=250)throw new Error("search time limit reached");budget=Math.min(budget,left);}
-  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),budget);
-  try{
-    const r=await fetch(url,{signal:ctl.signal,cache:"no-store",credentials:"omit"});
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    const j=await r.json();
-    if(j&&j.error)throw new Error(j.error.message||("ArcGIS error "+j.error.code));
-    return j;
-  }finally{clearTimeout(to);}
-}
-function _parcelHost(u){try{return new URL(u).hostname;}catch(e){return u||"public GIS";}}
-/* An http:// service is dead on arrival inside an https PWA (mixed content),
-   so upgrade the scheme rather than reporting a mystery network failure. */
-function _parcelNormalizeService(raw){
-  let u=String(raw||"").trim();
-  if(!u)return null;
-  u=u.replace(/[?#].*$/,"").replace(/\/+$/,"");
-  u=u.replace(/\/query$/i,"");
-  if(/^http:\/\//i.test(u)&&typeof location!=="undefined"&&location.protocol==="https:")u="https://"+u.slice(7);
-  let layerUrl=null;
-  const m=u.match(/^(.*\/(?:FeatureServer|MapServer))\/(\d+)$/i);
-  if(m){layerUrl=u;u=m[1];}
-  if(!/\/(?:FeatureServer|MapServer)$/i.test(u))return null;
-  return{serviceUrl:u,layerUrl};
-}
-function _parcelField(attrs,patterns){
-  if(!attrs)return null;const ks=Object.keys(attrs);
-  for(const re of patterns){const k=ks.find(x=>re.test(x));if(k!=null&&attrs[k]!=null&&String(attrs[k]).trim()!=="")return {key:k,val:attrs[k]};}
-  return null;
-}
-function _parcelAttrs(attrs){
-  const id=_parcelField(attrs,[/^(parcel|parcelid|parcel_id|parid|pin|apn|account|accountno|taxid|tax_id)$/i,/parcel.*(?:id|no|num)/i,/^ppin$/i]);
-  const owner=_parcelField(attrs,[/^owner(?:name)?$/i,/owner.*name/i,/taxpayer/i,/^name1$/i]);
-  const acres=_parcelField(attrs,[/^acres?$/i,/acreage/i,/gis.*acre/i,/calc.*acre/i,/calc.*area/i,/deed.*area/i,/taxmap.*(?:cal|area)/i]);
-  const address=_parcelField(attrs,[/site.*addr/i,/property.*addr/i,/situs/i,/location.*addr/i,/^address$/i]);
-  return{id:id&&String(id.val),owner:owner&&String(owner.val),acres:acres&&String(acres.val),address:address&&String(address.val)};
-}
-function _parcelRingArea(r){
-  let a=0;if(!r||r.length<3)return 0;
-  for(let i=0,j=r.length-1;i<r.length;j=i++)a+=r[j].E*r[i].N-r[i].E*r[j].N;
-  return a/2;
-}
-function _parcelGeometryArea(rings){return Math.abs((rings||[]).reduce((a,r)=>a+_parcelRingArea(r),0));}
-function _parcelAcres(rings){const a=_parcelGeometryArea(rings);return units==="ft"?a/43560:a/4046.8564224;}
-/* Server-side esriSpatialRelIntersects is honoured inconsistently, and some
-   services answer with a countywide index shell. Confirm containment here in
-   source lon/lat before a polygon is ever offered as "the parcel you are
-   standing on". */
-function _parcelPtInRings(llRings,lon,lat){
-  let inside=false;
-  for(const ring of llRings||[]){
-    const r=ring||[];
-    for(let i=0,j=r.length-1;i<r.length;j=i++){
-      if(!r[i]||!r[j]||r[i].length<2||r[j].length<2)continue;
-      const xi=+r[i][0],yi=+r[i][1],xj=+r[j][0],yj=+r[j][1];
-      if(!isFinite(xi)||!isFinite(yi)||!isFinite(xj)||!isFinite(yj))continue;
-      if(((yi>lat)!==(yj>lat))&&(lon<(xj-xi)*(lat-yi)/((yj-yi)||1e-15)+xi))inside=!inside;
-    }
-  }
-  return inside;
-}
-function _parcelCandidateFromFeature(feature,meta,lat,lon){
-  if(!feature||!feature.geometry||!Array.isArray(feature.geometry.rings))return null;
-  const jobRings=[];
-  for(const ring of feature.geometry.rings){
-    const rr=[];for(const xy of ring||[]){if(!xy||xy.length<2)continue;const q=_llToJob(+xy[1],+xy[0]);if(q&&isFinite(q.E)&&isFinite(q.N))rr.push(q);}
-    if(rr.length>=3)jobRings.push(rr);
-  }
-  if(!jobRings.length)return null;
-  const llRings=_parcelRoundLL(feature.geometry.rings);
-  return{rings:jobRings,llRings,attrs:feature.attributes||{},
-    contains:_parcelPtInRings(llRings,lon,lat),acres:_parcelAcres(jobRings),
-    sourceTitle:meta.title||meta.layerName||"Public parcel service",layerName:meta.layerName||"Parcels",
-    serviceUrl:meta.serviceUrl||"",layerUrl:meta.layerUrl||"",sourceHost:_parcelHost(meta.serviceUrl||meta.layerUrl),
-    provider:meta.provider||"ArcGIS public GIS"};
-}
-function _parcelLayerScore(name){
-  name=String(name||"").toLowerCase();let s=0;
-  if(/parcel_polygon|parcel polygon/.test(name))s+=100;
-  if(/^parcels?$/.test(name))s+=90;
-  if(/parcel/.test(name))s+=70;
-  if(/cadastral/.test(name))s+=50;
-  if(/tax.*(?:lot|parcel)|property.*(?:boundary|parcel)|land ?record/.test(name))s+=40;
-  if(/map tip|cama/.test(name))s+=12;
-  if(/anno|annotation|label|dimension|centerline|easement|subdivision|building|district|zoning/.test(name))s-=80;
-  if(/\bpoints?\b|\blines?\b|\bnumbers?\b/.test(name))s-=80;
-  return s;
-}
-/* Two shapes of query: the modern one first, then a stripped fallback for
-   older ArcGIS Server builds that reject pagination/precision parameters
-   outright instead of ignoring them. */
-async function _parcelQueryFeatures(layerUrl,lat,lon,dl){
-  const base=layerUrl+"/query?f=json&where=1%3D1&geometry="+encodeURIComponent(lon+","+lat)+
-    "&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true&outSR=4326";
-  try{return await _parcelFetchJson(base+"&geometryPrecision=8&resultRecordCount=6",6500,dl);}
-  catch(e){
-    if(e&&e.name==="AbortError")throw e;
-    return await _parcelFetchJson(base,6500,dl);
-  }
-}
-async function _parcelQueryLayer(layerUrl,lat,lon,meta,dl){
-  if(_parcelOutOfTime(dl))return null;
-  const tag=(meta.host||_parcelHost(layerUrl))+" · "+(meta.layerName||("layer "+layerUrl.split("/").pop()));
-  let info;
-  try{info=await _parcelFetchJson(layerUrl+"?f=json",5000,dl);}
-  catch(e){_parcelLog(tag,_parcelWhy(e));return null;}
-  if(info.type&&info.type!=="Feature Layer")return null;
-  if(info.geometryType&&info.geometryType!=="esriGeometryPolygon"){_parcelLog(tag,"not a polygon layer");return null;}
-  if(info.capabilities&&!/Query/i.test(info.capabilities)){_parcelLog(tag,"query not permitted");return null;}
-  const name=info.name||meta.layerName;
-  let j;
-  try{j=await _parcelQueryFeatures(layerUrl,lat,lon,dl);}
-  catch(e){_parcelLog((meta.host||"")+" · "+name,_parcelWhy(e));return null;}
-  if(!j.features||!j.features.length){_parcelLog((meta.host||"")+" · "+name,"no polygon at this point");return null;}
-  // Prefer a polygon that actually contains the point, then the smallest —
-  // a countywide shell and the parcel both "intersect".
-  let best=null;
-  for(const f of j.features){
-    const c=_parcelCandidateFromFeature(f,{...meta,layerName:name,layerUrl},lat,lon);
-    if(!c||!(c.acres>0))continue;
-    if(!best)best=c;
-    else if((c.contains?1:0)!==(best.contains?1:0))best=c.contains?c:best;
-    else if(c.acres<best.acres)best=c;
-  }
-  if(!best)_parcelLog((meta.host||"")+" · "+name,"features returned but no usable polygon geometry");
-  return best;
-}
-async function _parcelTryService(serviceUrl,title,lat,lon,dl,opts){
-  opts=opts||{};
-  if(_parcelOutOfTime(dl))return null;
-  const host=_parcelHost(serviceUrl);
-  let root;
-  try{root=await _parcelFetchJson(serviceUrl+"?f=json",5500,dl);}
-  catch(e){_parcelLog(host,_parcelWhy(e));return null;}
-  let layers;
-  if(opts.layerUrl){
-    layers=[{url:opts.layerUrl,name:root.mapName||title||"saved layer"}];
-  }else{
-    const all=(root.layers||[]).filter(x=>x&&x.id!=null);
-    if(!all.length){_parcelLog(host,"service publishes no layers");return null;}
-    const scored=all.map(x=>({url:serviceUrl+"/"+x.id,name:x.name,_s:_parcelLayerScore(x.name)}));
-    const named=scored.filter(x=>x._s>0);
-    // A source the user saved is trusted: probe its polygon layers even when
-    // the layer names carry no parcel wording at all.
-    const pool=named.length?named:(opts.trusted?scored.filter(x=>x._s>-40):[]);
-    layers=pool.sort((a,b)=>b._s-a._s).slice(0,_PARCEL_MAX_LAYERS);
-    if(!layers.length){_parcelLog(host,"no parcel-like layer among "+all.length);return null;}
-  }
-  let best=null;
-  for(const L of layers){
-    if(_parcelOutOfTime(dl))break;
-    const hit=await _parcelQueryLayer(L.url,lat,lon,{title:title||root.mapName||root.serviceDescription||L.name,layerName:L.name,serviceUrl,host,provider:opts.provider||"ArcGIS public GIS"},dl);
-    if(!hit)continue;
-    if(!best||((hit.contains?1:0)>(best.contains?1:0))||(hit.contains===best.contains&&hit.acres<best.acres))best=hit;
-    if(best.contains&&best.acres<=_PARCEL_GOOD_ACRES)break;
-  }
-  return best;
-}
-
-/* ── Saved sources ──────────────────────────────────────────────────────
-   Public-catalog discovery only sees services registered as public ArcGIS
-   Online items. A county whose parcels live on its own ArcGIS Server, or
-   behind a non-Esri vendor viewer, is invisible to that catalog no matter
-   how the search is tuned — which is why discovery-only lookup can fail
-   every single time in some counties and work instantly in others.
-   Sources are therefore user-extensible and self-learning: paste a REST
-   endpoint once, and any service that succeeds is remembered and tried
-   first next time. Stored globally (not per job); no jurisdiction is
-   hardcoded anywhere in the app. */
-function _parcelSources(){
-  try{const a=JSON.parse(_lsGet("cl_parcelSources")||"[]");return Array.isArray(a)?a.filter(x=>x&&x.serviceUrl):[];}
-  catch(e){return [];}
-}
-function _parcelSourcesSave(a){_lsSet("cl_parcelSources",JSON.stringify((a||[]).slice(0,12)));}
-function _parcelSourceRemember(hit){
-  if(!hit||!hit.serviceUrl)return;
-  const a=_parcelSources().filter(x=>x.serviceUrl!==hit.serviceUrl);
-  a.unshift({serviceUrl:hit.serviceUrl,layerUrl:hit.layerUrl||null,title:hit.sourceTitle||hit.sourceHost||"",learned:true});
-  _parcelSourcesSave(a);
-}
-function _parcelSourceAdd(raw,cb){
-  const n=_parcelNormalizeService(raw);
-  if(!n){alert("That is not an ArcGIS REST endpoint.\n\nPaste a URL ending in /FeatureServer, /MapServer, or a specific layer such as /MapServer/3.");cb&&cb(false);return;}
-  const dl=Date.now()+12000;
-  _parcelFetchJson(n.serviceUrl+"?f=json",8000,dl).then(root=>{
-    const a=_parcelSources().filter(x=>x.serviceUrl!==n.serviceUrl);
-    a.unshift({serviceUrl:n.serviceUrl,layerUrl:n.layerUrl,title:root.mapName||root.serviceDescription||_parcelHost(n.serviceUrl),learned:false});
-    _parcelSourcesSave(a);
-    showResult("Parcel Source Saved",[
-      {lbl:"Service:",val:_esc(n.serviceUrl)},
-      {lbl:"Layer:",val:n.layerUrl?_esc(n.layerUrl.split("/").pop()):"auto-select"},
-      {lbl:"Layers seen:",val:String((root.layers||[]).length)},
-      {lbl:"Note:",val:"This source is tried before public-catalog discovery on every lookup."}]);
-    cb&&cb(true);
-  }).catch(e=>{
-    showResult("Source Not Reachable",[
-      {lbl:"Service:",val:_esc(n.serviceUrl)},
-      {lbl:"Reason:",val:_esc(_parcelWhy(e))},
-      {lbl:"Note:",val:"A server that answers in a browser tab but fails here is blocking cross-origin requests (no CORS header). That cannot be fixed from inside the app."}]);
-    cb&&cb(false);
-  });
-}
-function _parcelSourcesMenu(){
-  openModal((m,close)=>{
-    const list=_parcelSources();
-    m.innerHTML='<h2>▱ Parcel Sources</h2><p class="info">Services tried <b>before</b> public-catalog discovery. Paste any ArcGIS REST endpoint from a county GIS site — the service root (…/MapServer) or one layer (…/MapServer/3).</p>';
-    const w=document.createElement("div");
-    w.innerHTML="<div class='input-label'>ArcGIS REST endpoint</div>";
-    const inp=document.createElement("input");
-    inp.type="text";inp.placeholder="https://host/arcgis/rest/services/Parcels/MapServer";
-    inp.style.cssText="width:100%;background:#111;color:var(--accent,#d9a13c);border:1px solid #444;border-radius:6px;padding:10px;font-family:'Courier New',monospace;font-size:.95em";
-    w.appendChild(inp);m.appendChild(w);
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
-    mk("Test and save source","ok",()=>{const v=inp.value;if(!v.trim())return;close();_parcelSourceAdd(v);});
-    if(list.length){
-      const box=document.createElement("div");box.className="result-box";
-      box.innerHTML=list.map((s,i)=>'<span class="lbl">'+(i+1)+". "+(s.learned?"learned":"saved")+':</span> <span class="val">'+_esc(s.title||_parcelHost(s.serviceUrl))+" — "+_esc(s.serviceUrl)+'</span>').join("<br>");
-      m.appendChild(box);
-      mk("Remove all saved sources ("+list.length+")","danger",()=>{close();confirmDialog("Remove all "+list.length+" saved parcel source"+(list.length===1?"":"s")+"?",yes=>{if(yes)_parcelSourcesSave([]);});});
-    }
-    mk("Close","",close);
-  });
-}
-
-/* ── Discovery ──────────────────────────────────────────────────────────
-   4.6.x ranked catalog items by title wording and kept the top eight. Items
-   with world extents (national/premium parcel products, most of which are
-   token-gated) score identically to a county service and routinely filled
-   every slot. Ranking is now by how tightly the item's own extent brackets
-   the query point — the most local service is probed first — with title
-   wording used only as a relevance gate. */
-function _parcelItemRelevant(it){
-  const t=((it&&it.title)||"").toLowerCase(),tags=((it&&it.tags)||[]).join(" ").toLowerCase(),all=t+" "+tags;
-  if(!/parcel|cadastr|tax ?map|property ?bound|land ?record/.test(all))return false;
-  if(/\baddress(es)? points?\b|\bowner points?\b|\bsales\b|\bpermits?\b|\bvoting\b|\bflood\b|\bsoils?\b/.test(t))return false;
-  return true;
-}
-function _parcelItemExtent(it){
-  const e=it&&it.extent;
-  if(!Array.isArray(e)||e.length<2||!Array.isArray(e[0])||!Array.isArray(e[1]))return null;
-  const x0=Math.min(+e[0][0],+e[1][0]),x1=Math.max(+e[0][0],+e[1][0]);
-  const y0=Math.min(+e[0][1],+e[1][1]),y1=Math.max(+e[0][1],+e[1][1]);
-  if(![x0,x1,y0,y1].every(isFinite))return null;
-  return{x0,x1,y0,y1,area:Math.max(0,(x1-x0))*Math.max(0,(y1-y0))};
-}
-function _parcelItemRank(it,lat,lon){
-  const ex=_parcelItemExtent(it);
-  // Extent-less items are still worth probing, just last.
-  if(!ex)return{contains:false,area:1e9};
-  const pad=0.02;
-  const contains=lon>=ex.x0-pad&&lon<=ex.x1+pad&&lat>=ex.y0-pad&&lat<=ex.y1+pad;
-  return{contains,area:ex.area||1e9};
-}
-async function _parcelArcgisItems(lat,lon,dl){
-  const d=0.05,bbox=[lon-d,lat-d,lon+d,lat+d].join(",");
-  const queries=[
-    'parcels AND (type:"Feature Service" OR type:"Map Service")',
-    'parcel AND (type:"Feature Service" OR type:"Map Service")',
-    'cadastral AND (type:"Feature Service" OR type:"Map Service")',
-    '"tax parcel" AND (type:"Feature Service" OR type:"Map Service")'
-  ];
-  // Run the catalog queries concurrently — sequentially they alone could
-  // consume most of the budget on field LTE.
-  const results=await Promise.all(queries.map(q=>{
-    const u="https://www.arcgis.com/sharing/rest/search?f=json&num=50&bbox="+encodeURIComponent(bbox)+"&q="+encodeURIComponent(q);
-    return _parcelFetchJson(u,8000,dl).catch(e=>{_parcelLog("arcgis.com catalog",_parcelWhy(e));return null;});
-  }));
-  const out=[],seen=new Set();
-  for(const j of results){
-    for(const it of (j&&j.results)||[]){
-      if(!it||!it.url||seen.has(it.url))continue;
-      if(it.type!=="Feature Service"&&it.type!=="Map Service")continue;
-      if(!_parcelItemRelevant(it))continue;
-      seen.add(it.url);
-      const r=_parcelItemRank(it,lat,lon);
-      out.push({item:it,contains:r.contains,area:r.area});
-    }
-  }
-  if(!out.length)_parcelLog("arcgis.com catalog","no public parcel service items indexed for this area");
-  out.sort((a,b)=>(b.contains-a.contains)||(a.area-b.area));
-  return out.slice(0,_PARCEL_MAX_SERVICES).map(x=>{
-    const n=_parcelNormalizeService(x.item.url);
-    return n?{serviceUrl:n.serviceUrl,layerUrl:n.layerUrl,title:x.item.title,trusted:false}:null;
-  }).filter(Boolean);
-}
-/* Concurrent probe pool. Stops feeding new candidates as soon as a hit that
-   is unambiguously a parcel (contains the point, small enough to be one)
-   comes back; in-flight requests are allowed to finish and still compete. */
-async function _parcelProbePool(cands,lat,lon,dl,onStep,stage){
-  if(!cands.length)return null;
-  const hits=[];let idx=0,done=0;const total=cands.length;
-  const better=(a,b)=>!b?a:!a?b:((a.contains?1:0)!==(b.contains?1:0)?(a.contains?a:b):(a.acres<b.acres?a:b));
-  const worker=async()=>{
-    while(true){
-      if(_parcelOutOfTime(dl))return;
-      const i=idx++;if(i>=cands.length)return;
-      const c=cands[i];
-      onStep&&onStep(stage+" — checking "+(done+1)+" of "+total+" ("+_parcelTimeLeft(dl)+")");
-      let hit=null;
-      try{hit=await _parcelTryService(c.serviceUrl,c.title,lat,lon,dl,{layerUrl:c.layerUrl,trusted:c.trusted});}
-      catch(e){_parcelLog(_parcelHost(c.serviceUrl),_parcelWhy(e));}
-      done++;
-      if(hit){hits.push(hit);if(hit.contains&&hit.acres>0&&hit.acres<=_PARCEL_GOOD_ACRES)idx=cands.length;}
-    }
-  };
-  await Promise.all(Array.from({length:Math.min(_PARCEL_CONCURRENCY,cands.length)},worker));
-  return hits.reduce((a,b)=>better(a,b),null);
-}
-async function _parcelResolve(lat,lon,onStep,dl,exclude){
-  const skip=exclude instanceof Set?exclude:new Set(exclude||[]);
-  const tried=new Set(skip);
-  // 1 — saved and learned sources, on their own sub-budget so a dead saved
-  //     source cannot spend the whole search.
-  const saved=_parcelSources().map(s=>({serviceUrl:s.serviceUrl,layerUrl:s.layerUrl||null,title:s.title||"",trusted:true}))
-    .filter(s=>!skip.has(s.serviceUrl));
-  if(saved.length){
-    onStep&&onStep("Checking your saved parcel sources…");
-    const sub=Math.min(dl,Date.now()+_PARCEL_SRC_MS);
-    const hit=await _parcelProbePool(saved,lat,lon,sub,onStep,"Saved sources");
-    saved.forEach(s=>tried.add(s.serviceUrl));
-    if(hit){hit.triedUrls=[...tried];return hit;}
-  }
-  // 2 — public-catalog discovery.
-  if(_parcelOutOfTime(dl))return null;
-  onStep&&onStep("Searching public GIS catalogs near the crosshair…");
-  const cands=(await _parcelArcgisItems(lat,lon,dl)).filter(c=>!tried.has(c.serviceUrl));
-  if(!cands.length)return null;
-  const hit=await _parcelProbePool(cands,lat,lon,dl,onStep,"Public GIS sources");
-  cands.forEach(c=>tried.add(c.serviceUrl));
-  if(hit){hit.triedUrls=[...tried];return hit;}
-  return null;
-}
-
-function _drawGisParcels(ctx,w,h,T){
-  if((!_gisParcels||!_gisParcels.length)&&!_gisParcelPreview&&!_gisParcelBusy)return;
-  const X=e=>e*T.scale+T.offX,Y=n=>h-(n*T.scale+T.offY);
-  ctx.save();ctx.lineJoin="round";ctx.lineCap="round";
-  const draw=(g,preview)=>{
-    if(!g)return;
-    const rings=_parcelJobRings(g);if(!rings.length)return;
-    ctx.beginPath();for(const ring of rings){ring.forEach((q,i)=>{const x=X(q.E),y=Y(q.N);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.closePath();}
-    ctx.fillStyle=preview?"rgba(185,255,102,.16)":"rgba(94,231,255,.09)";ctx.fill("evenodd");
-    ctx.strokeStyle=preview?"#b9ff66":"#5ee7ff";ctx.lineWidth=preview?3:2;ctx.setLineDash(preview?[8,4]:[6,4]);ctx.stroke();
-    if(showLabels){
-      const r=rings[0];if(r&&r.length){const E=r.reduce((a,q)=>a+q.E,0)/r.length,N=r.reduce((a,q)=>a+q.N,0)/r.length;
-        const a=_parcelAttrs(g.attrs||{}),lbl=(preview?"GIS PARCEL?":"GIS PARCEL")+(a.id?" · "+a.id:"")+" · REF ONLY";
-        ctx.font="bold 10px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="middle";const x=X(E),y=Y(N),lw=ctx.measureText(lbl).width;
-        ctx.fillStyle=lightMode?"rgba(255,255,255,.92)":"rgba(4,12,14,.82)";ctx.fillRect(x-lw/2-4,y-9,lw+8,16);ctx.fillStyle=preview?"#5b7d20":"#5ee7ff";ctx.fillText(lbl,x,y);}
-    }
-  };
-  (_gisParcels||[]).forEach(g=>draw(g,false));if(_gisParcelPreview)draw(_gisParcelPreview,true);
-  if(_gisParcelBusy){ctx.setLineDash([]);ctx.strokeStyle="#b9ff66";ctx.lineWidth=2;const x=w/2,y=h/2;ctx.beginPath();ctx.moveTo(x-12,y);ctx.lineTo(x+12,y);ctx.moveTo(x,y-12);ctx.lineTo(x,y+12);ctx.stroke();}
-  ctx.restore();
-}
-function _parcelAccept(c){
-  _takeSnapshot("Import GIS parcel");
-  _parcelSourceRemember(c);
-  _gisParcelPreview=null;_gisParcels.push(_parcelSerialize({...c,importedAt:new Date().toISOString()}));saveData();plotPoints();
-  showResult("GIS Parcel Imported",[{lbl:"Status:",val:"REFERENCE ONLY — tax/GIS geometry, not a survey boundary"},{lbl:"Source:",val:_esc(c.sourceTitle||c.sourceHost)},{lbl:"Public service:",val:_esc(c.sourceHost||"ArcGIS")},{lbl:"Saved:",val:"this service is now tried first on the next lookup"}]);
-}
-function _parcelReview(c,lat,lon){
-  _gisParcelPreview=c;plotPoints();const a=_parcelAttrs(c.attrs),acre=_parcelAcres(_parcelJobRings(c));
-  openModal((m,close)=>{
-    m.innerHTML='<h2>▱ Public GIS Parcel</h2><p class="info"><strong style="color:var(--warn)">REFERENCE ONLY.</strong> Tax/GIS parcel lines are not boundary survey geometry. Confirm the highlighted parcel is the tract you intended.</p>';
-    const box=document.createElement("div");box.className="result-box";
-    const row=(k,v)=>v?'<span class="lbl">'+_esc(k)+':</span> <span class="val">'+_esc(v)+'</span><br>':'';
-    box.innerHTML=row("Parcel",a.id)+row("Owner",a.owner)+row("Address",a.address)+row("GIS acres",a.acres)+
-      row("Geometry",acre.toFixed(3)+" ac approx")+row("Crosshair",c.contains?"inside this polygon":"NOT inside — nearest intersecting polygon")+
-      row("Layer",c.layerName)+row("Source",c.sourceTitle)+row("Host",c.sourceHost)+row("Query point",lat.toFixed(6)+", "+lon.toFixed(6));
-    m.appendChild(box);
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
-    mk("✓ Import as GIS reference","ok",()=>{close();_parcelAccept(c);});
-    mk("Search another public source","blue",()=>{close();_gisParcelPreview=null;plotPoints();_parcelLookupHere(c.triedUrls||[c.serviceUrl]);});
-    mk("Cancel","",()=>{_gisParcelPreview=null;plotPoints();close();});
-  });
-}
-function _parcelNoResult(title,ll,extra){
-  const rows=[{lbl:"Crosshair:",val:ll.lat.toFixed(6)+", "+ll.lon.toFixed(6)}].concat(extra||[]);
-  const seen=new Set(),log=[];
-  for(const d of _parcelDiag){const k=d.label+"|"+d.reason;if(seen.has(k))continue;seen.add(k);log.push(d);}
-  log.slice(0,14).forEach(d=>rows.push({lbl:_esc(d.label)+":",val:_esc(d.reason)}));
-  if(!log.length)rows.push({lbl:"Log:",val:"no source responded at all — check the connection"});
-  showResult(title,rows,[
-    {txt:"▱ Add a parcel source URL",cls:"accent",fn:_parcelSourcesMenu},
-    {txt:"Retry search",cls:"blue",fn:()=>_parcelLookupHere()}
-  ]);
-}
-function _parcelLookupHere(excludeUrls){
-  if(!geoAnchor){alert("Anchor the job to imagery/GPS first, then center the crosshair over the parcel.");return;}
-  if(typeof navigator!=="undefined"&&navigator.onLine===false){alert("Public parcel lookup is online-only. Connect to the internet and try again.");return;}
-  const ll=_parcelMapCenterLL();if(!ll){alert("Could not determine the crosshair latitude/longitude.");return;}
-  const serial=++_gisParcelSearchSerial;_gisParcelBusy=true;_gisParcelPreview=null;_parcelDiag=[];plotPoints();
-  openModal((m,close)=>{
-    m.innerHTML='<h2>▱ Import Parcel at Crosshair</h2><p class="info">Online-only. Querying saved sources and free/public GIS services at <b>'+ll.lat.toFixed(6)+', '+ll.lon.toFixed(6)+'</b>. No nationwide parcel database is stored in the app.</p>';
-    const st=document.createElement("div");st.className="result-box";st.innerHTML='<span class="lbl">Status:</span> <span class="val">Starting…</span>';m.appendChild(st);
-    const cancel=document.createElement("button");cancel.className="btn";cancel.textContent="Cancel";cancel.onclick=()=>{_gisParcelSearchSerial++;_gisParcelBusy=false;plotPoints();close();};m.appendChild(cancel);
-    (async()=>{
-      let hit=null,failed=null;const dl=Date.now()+_PARCEL_BUDGET_MS;
-      const skip=new Set((excludeUrls||[]).filter(Boolean));
-      try{
-        hit=await _parcelResolve(ll.lat,ll.lon,t=>{if(serial===_gisParcelSearchSerial)st.innerHTML='<span class="lbl">Status:</span> <span class="val">'+_esc(t)+'</span>';},dl,skip);
-      }catch(e){failed=_parcelWhy(e);}
-      if(serial!==_gisParcelSearchSerial)return;
-      _gisParcelBusy=false;plotPoints();close();
-      if(hit){_parcelReview(hit,ll.lat,ll.lon);return;}
-      if(failed)_parcelNoResult("Parcel Search Failed",ll,[{lbl:"Error:",val:_esc(failed)}]);
-      else if(_parcelOutOfTime(dl))_parcelNoResult("Parcel Search Timed Out",ll,[{lbl:"Result:",val:"Stopped after "+Math.round(_PARCEL_BUDGET_MS/1000)+" s. Sources tried, in order, below."}]);
-      else if(skip.size)_parcelNoResult("No Other Public Source Found",ll,[{lbl:"Already tried:",val:skip.size+" service"+(skip.size===1?"":"s")}]);
-      else _parcelNoResult("No Free Parcel Found",ll,[{lbl:"Result:",val:"No queryable public parcel polygon was reachable here."},{lbl:"Fix:",val:"Open your county GIS site, copy its ArcGIS REST endpoint, and add it as a source — it is then tried first, every time."}]);
-    })();
-  });
-}
-function _parcelClearImported(){
-  if(!_gisParcels.length){alert("No GIS parcel references are imported.");return;}
-  confirmDialog("Remove all "+_gisParcels.length+" imported GIS parcel reference layer"+(_gisParcels.length===1?"":"s")+" from this job?",yes=>{if(!yes)return;_takeSnapshot("Remove GIS parcel references");_gisParcels=[];_gisParcelPreview=null;saveData();plotPoints();});
-}
 
 /* — Live GPS marker — */
 let _gpsWatchId=null,_liveFix=null,_gpsStakeTarget=null,_relocateTarget=null;
@@ -11904,6 +11375,17 @@ function _gpsToJob(lat,lon){
   const dxm=(m.mx-A.mx)*k, dym=(m.my-A.my)*k;
   return{E:A.E+(dxm*cg-dym*sg)*M2U, N:A.N+(dxm*sg+dym*cg)*M2U};
 }
+/* The live position marker is ON by default. Through 4.6.x the watch was
+   gated on satOn, so the blue dot only existed while the aerial was showing
+   — turning imagery off, or opening a job saved with it off, silently killed
+   the marker with no indication why. The marker is now independent of
+   imagery: it runs whenever the job is anchored. Only an explicit OFF in the
+   satellite menu (cl_gpsLive="off") or a permission denial stops it. */
+function _gpsLiveWanted(){ return _lsGet("cl_gpsLive")!=="off"; }
+function _ensureLiveGps(){
+  if(geoAnchor&&_gpsLiveWanted()){ if(_gpsWatchId==null)startLiveGps(); }
+  else stopLiveGps();
+}
 function startLiveGps(){
   if(_gpsWatchId!=null)return;
   if(!navigator.geolocation){alert("Geolocation isn't available on this device/browser.");return;}
@@ -11924,7 +11406,7 @@ function startLiveGps(){
     err=>{
       // Timeouts / temporary unavailability are normal (indoors, canopy) —
       // keep the watch alive. Only a permission denial is fatal.
-      if(err&&err.code===1){stopLiveGps();alert("Live GPS stopped: location permission denied.");saveData();plotPoints();}
+      if(err&&err.code===1){stopLiveGps();_lsSet("cl_gpsLive","off");alert("Live GPS stopped: location permission denied.\nRe-enable it from Satellite \u2192 Live GPS marker once permission is granted.");saveData();plotPoints();}
     },
     {enableHighAccuracy:true,maximumAge:2000,timeout:30000});
 }
@@ -12274,12 +11756,13 @@ function _restorePlotControlsState(){
 }
 
 document.addEventListener("DOMContentLoaded",()=>setTimeout(_restorePlotControlsState,0));
+/* Android/iOS suspend the geolocation watch when the PWA is backgrounded. */
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden){ try{_ensureLiveGps();}catch(e){} } });
 
 function toggleSatAndGps(){
   if(!geoAnchor){_satSetupFlow();return;} // not anchored yet — run setup
   satOn=!satOn;
-  if(satOn){ if(_lsGet("cl_gpsLive")!=="off")startLiveGps(); }
-  else stopLiveGps();
+  _ensureLiveGps();   // marker is independent of imagery — it stays on
   saveData();_syncSatBtn();
 }
 
@@ -12302,9 +11785,6 @@ function satelliteMenu(){
     };
     mk("🗺 Basemap: "+((_BASEMAPS[satBasemap]||_BASEMAPS.esri).label)+" — tap to switch","blue",()=>{
       satBasemap=satBasemap==="esri"?"topo":"esri";saveData();close();satelliteMenu();});
-    mk("▱ Import parcel at crosshair (ONLINE)","accent",()=>{close();_parcelLookupHere();});
-    mk("▱ Parcel sources"+(_parcelSources().length?" ("+_parcelSources().length+")":""),"",()=>{close();_parcelSourcesMenu();});
-    if(_gisParcels.length)mk("▱ Remove GIS parcel references ("+_gisParcels.length+")","danger",()=>{close();_parcelClearImported();});
     mk("📌 Store Point at GPS position","ok",()=>{close();storeGpsPoint();});
     mk("⬇ Cache visible area for offline","blue",()=>{close();cacheAreaOffline();});
     mk("🔺 NGS monuments — fetch nearby","blue",()=>{close();_ngsFetchList();});
@@ -12343,8 +11823,8 @@ function satelliteMenu(){
     sl("Rotation nudge (°) — align imagery to plot",satRotNudge,-5,5,0.1,v=>satRotNudge=v);
     mk(_gpsWatchId!=null?"📍 Live GPS marker: ON — tap to stop":"📍 Live GPS marker: OFF — tap to start",
        _gpsWatchId!=null?"ok":"blue",
-       ()=>{if(_gpsWatchId!=null){stopLiveGps();_lsSet("cl_gpsLive","off");}
-            else{startLiveGps();_lsSet("cl_gpsLive","on");}
+       ()=>{if(_gpsWatchId!=null){_lsSet("cl_gpsLive","off");stopLiveGps();}
+            else{_lsSet("cl_gpsLive","on");_ensureLiveGps();}
             close();plotPoints();});
     mk("📡 Re-anchor / GPS again","blue",()=>{close();_satSetupFlow();});
     mk("Remove anchor & imagery","danger",()=>{
@@ -12520,7 +12000,7 @@ function _zoomToGround(unitsAcross){
 }
 function _stageNewJob(){
   _clearTransientMapSelections(false);
-  points=[];plotConnections=[];_polylines=[];_areaLabels=[];_gisParcels=[];_gisParcelPreview=null;
+  points=[];plotConnections=[];_polylines=[];_areaLabels=[];
   tempGeom=[];tempIntersections=[];recentShots=[];
   selectedPoint=null;currentPoint=null;
   if(typeof selectedConn!=="undefined")selectedConn=null;
@@ -12616,7 +12096,6 @@ function plotPoints(extCtx,extW,extH){
     ctx.fillStyle=lightMode?"#000000":lightMode?"#000000":"#9ab0c8";ctx.fillText(lbl,lw+4,sy);
   }
   ctx.restore();
-  try{ _drawGisParcels(ctx,w,h,T); }catch(e){}
   _drawScaleBar(ctx,w,h,scale);
   // Connections with azimuth + distance labels, and true arc rendering
   plotConnections.forEach(conn=>{
@@ -14917,17 +14396,6 @@ const HELP_TOPICS = [
 <p>The point gets tagged like <strong>[GPS ±15ft]</strong> so that later — in the point list or an export — nobody mistakes a rough walked-to position for a precise instrument measurement. They're different animals, and the tag keeps them honest.</p>
 <div class="tip">Perfect for scouting a property before the real work: walk it once, pin everything you find, then decide where to set up.</div>`},
 
-  { id:"sat-parcel", section:"Satellite & GPS", title:"Import a Public GIS Parcel",
-    preview:"Online-only tax/GIS parcel reference under the map center",
-    body:`<h3>Center the Parcel, Then Import</h3>
-<p>With an anchored aerial open, pan until the tract you want is under the <strong>center of the map</strong>. Open <strong>Map → Import GIS Parcel</strong>. ChainLink sends that latitude/longitude to free, public parcel GIS services and imports the polygon when one can be discovered.</p>
-<h3>No Address Required</h3>
-<p>The parcel is selected spatially from the aerial, so vacant land, rural tracts, shared addresses, and unassigned addresses are not a problem.</p>
-<h3>Online Only</h3>
-<p>No nationwide parcel database is bundled with ChainLink. The lookup runs only while connected. A parcel you explicitly import is saved as a small reference layer with the current job.</p>
-<div class="warn"><strong>REFERENCE ONLY.</strong> Tax/GIS parcel lines are not boundary-survey geometry and may be shifted, generalized, incomplete, or wrong. Never stake or determine a boundary from them.</div>
-<div class="tip">Coverage varies by jurisdiction. Public ArcGIS services are discovered automatically where possible; some counties block public queries or do not publish parcel geometry.</div>`},
-
   { id:"sat-offline", section:"Satellite & GPS", title:"Using Imagery With No Cell Signal",
     preview:"Save the aerial photo before you leave WiFi",
     body:`<h3>The Problem</h3>
@@ -15455,8 +14923,6 @@ function renderDrawerTab(tab){
     _drawerSection(body,"View");
     _drawerItem(body,"◎","Fit all","Show all current geometry",()=>{closeProjectDrawer();resetPlot()});
     _drawerItem(body,"O","Occupied point","Center view on current setup",()=>{closeProjectDrawer();zoomToOccupied()});
-    _drawerItem(body,"▱","Import GIS parcel","ONLINE · parcel under the crosshair",()=>{closeProjectDrawer();_parcelLookupHere()},_gisParcels.length?('<span class="chev">'+_gisParcels.length+'</span>'):null);
-    _drawerItem(body,"▱","Parcel sources","Add a county GIS endpoint tried before discovery",()=>{closeProjectDrawer();_parcelSourcesMenu()},_parcelSources().length?('<span class="chev">'+_parcelSources().length+'</span>'):null);
     _drawerItem(body,"⚙","Map settings","Basemap, opacity and GPS options",()=>{closeProjectDrawer();satelliteMenu()});
   }
 }
@@ -15484,7 +14950,7 @@ function openWorkspace(name){
   } else if(name==="stake"){
     _wsGroup2(body,"Layout");add("Stake Stored Point","Select a point from the plot","primary",stakeStoredPoint);add("Stake Coordinates","Enter target N, E and elevation","",stakeEnteredCoords);add("Stake Line / Arc","Select existing geometry","accent",stakeToLine);add("GPS Navigate","Walk to a point using phone GPS","",stakeoutMenu);add("All Stake Tools","Open the complete stakeout menu","",stakeoutMenu);
   } else if(name==="map"){
-    _wsGroup2(body,"Basemap and position");add("Imagery / GPS","Basemap, anchor, opacity and live marker","accent",satelliteMenu,satOn?"ON":null);add("Import GIS Parcel","ONLINE · public parcel under the crosshair","accent",()=>_parcelLookupHere(),_gisParcels.length?(_gisParcels.length+" REF"):null);add("Parcel Sources","County GIS endpoints tried before discovery","",()=>_parcelSourcesMenu(),_parcelSources().length?(_parcelSources().length+""):null);add("Toggle Satellite","Switch imagery and GPS together",satOn?"primary":"",toggleSatAndGps);add("Fit All","Show every point and record","",resetPlot);add("Locate Occupied","Center on the occupied point","",zoomToOccupied);
+    _wsGroup2(body,"Basemap and position");add("Imagery / GPS","Basemap, anchor, opacity and live marker","accent",satelliteMenu,satOn?"ON":null);add("Toggle Satellite","Switch imagery and GPS together",satOn?"primary":"",toggleSatAndGps);add("Fit All","Show every point and record","",resetPlot);add("Locate Occupied","Center on the occupied point","",zoomToOccupied);
     _wsGroup2(body,"Display");add(showLabels?"Hide Labels":"Show Labels","Point, line and record labels","",toggleLabels);add(showElevations?"Hide Elevations":"Show Elevations","Elevation annotations","",toggleElevations);add("Project Explorer","Records, points and layers","",()=>openProjectDrawer("layers"));
   } else if(name==="project"){
     _wsGroup2(body,"Job");add("Project Explorer","Browse records, points and layers","accent",openProjectDrawer);add("Job Manager","New, continue or load a job","",()=>{closeAllModals();_showJobScreen()});add("Rename Job","Change the current project name","",()=>alphaInput("Job Name:",jobName,jn=>{if(jn){jobName=jn;saveData()}}));add("Point List","Review project coordinates","",pointListMenu);
