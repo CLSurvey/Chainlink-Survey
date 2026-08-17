@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.2">
+<meta name="application-name" content="ChainLink-v4.7.4">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.2</title>
+<title>ChainLink Survey v4.7.4</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.2";
+const APP_VERSION = "4.7.4";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -4397,7 +4397,7 @@ function _updateUndoBtn(){
   if(btn){
     // hidden during deed slide-and-rotate — the canvas LOCK IN / Cancel
     // buttons occupy the bottom strip, and adjust mode has its own Cancel
-    const hasUndo=(!_deedAdjust)&&(_snapshots.length>0||undoStack.length>0);
+    const hasUndo=(!_deedAdjust)&&(!_jobAdjust)&&(_snapshots.length>0||undoStack.length>0);
     if(hasUndo){
       btn.classList.add("visible");
       if(_snapshots.length>0){
@@ -4413,7 +4413,7 @@ function _updateUndoBtn(){
   }
   const rbtn=document.getElementById("redoBtn");
   if(rbtn){
-    if(_redoStack.length>0&&!_deedAdjust){
+    if(_redoStack.length>0&&!_deedAdjust&&!_jobAdjust){
       rbtn.classList.add("visible");
       rbtn.textContent="↪ Redo: "+_redoStack[_redoStack.length-1].label;
     } else {
@@ -5725,6 +5725,7 @@ function cogoMenu(){
     mk("Cut / Fill","",                     ()=>{close();cogoCutFill()});
     mk("✏ Draw Connection","",              ()=>{close();drawConnection()});
     mk("Rotate / Align","",                 ()=>{close();cogoRotateAlign()});
+    mk("\ud83d\udd90 Move / Shift Job (drag)","ok",()=>{close();_jobMoveMenu()});
     mk("Translate (Shift All)","",          ()=>{close();cogoTranslate()});
     mk("Scale Points","",                   ()=>{close();cogoScale()});
     mk("Cancel","",close);
@@ -10670,6 +10671,125 @@ function _deedPasteModal(prefill){
 let _deedAdjust=false,_deedAdjSnap=null,_deedAdjustScope=null; // scope: whole set, one figure, or _deedAdjustRecordId
 let _deedSnapPreview=null;
 let _deedAdjUndoMark=null;
+
+/* ── JOB MOVE / SHIFT ───────────────────────────────────────────────────
+   The deed record can already be dragged onto found monuments. This is the
+   same gesture pointed the other way: drag the stored job — points and every
+   piece of geometry hung off them — onto the imagery, or onto a plotted deed.
+
+   Rotation is OFF by default and has to be asked for. Observed coordinates
+   carry a basis of bearings from the backsight; sliding the job preserves
+   every bearing and distance in it, while spinning it silently rewrites all
+   of them. A translation is a change of origin, which is usually what an
+   imagery mismatch actually is.
+
+   A plotted deed never moves here — it is the thing being fitted to. NGS
+   monuments never move either: they are control, published in the job's own
+   coordinate system, and a shift that drags its own control along with it
+   would hide the very error it is correcting. */
+let _jobAdjust=false, _jobAdjSnap=null, _jobAdjAllowRot=false, _jobAdjDE=0, _jobAdjDN=0, _jobAdjROT=0, _jobAdjUndoMark=null;
+function _jobMovablePts(){
+  const d=_deedPointNumberSet();
+  return points.filter(p=>!d.has(p.Point));
+}
+function _jobAdjustStart(allowRot){
+  if(!points.length){alert("No points to move.");return;}
+  try{
+    _jobAdjUndoMark={len:_snapshots.length,redo:_redoStack.slice()};
+    _takeSnapshot("move/shift job");
+  }catch(e){_jobAdjUndoMark=null;}
+  _jobAdjAllowRot=!!allowRot;
+  _jobAdjDE=0;_jobAdjDN=0;_jobAdjROT=0;
+  _jobAdjSnap={
+    pts:points.map(p=>({Point:p.Point,E:p.Easting,N:p.Northing})),
+    conns:JSON.parse(JSON.stringify(plotConnections||[])),
+    polys:(typeof _polylines!=="undefined")?JSON.parse(JSON.stringify(_polylines)):[],
+    areas:JSON.parse(JSON.stringify(_areaLabels||[]))
+  };
+  _jobAdjust=true;_updateUndoBtn();plotPoints();
+}
+function _jobAdjustEnd(lock){
+  if(!lock&&_jobAdjSnap){
+    const byNum=new Map(_jobAdjSnap.pts.map(q=>[q.Point,q]));
+    points.forEach(p=>{const q=byNum.get(p.Point);if(q){p.Easting=q.E;p.Northing=q.N;}});
+    plotConnections.splice(0,plotConnections.length,..._jobAdjSnap.conns);
+    if(typeof _polylines!=="undefined")_polylines.splice(0,_polylines.length,..._jobAdjSnap.polys);
+    _areaLabels.splice(0,_areaLabels.length,..._jobAdjSnap.areas);
+    if(_jobAdjUndoMark){_snapshots.length=_jobAdjUndoMark.len;_redoStack=_jobAdjUndoMark.redo;}
+  }
+  const dE=_jobAdjDE,dN=_jobAdjDN,rot=_jobAdjROT;
+  _jobAdjust=false;_jobAdjSnap=null;_jobAdjUndoMark=null;_updateUndoBtn();
+  if(lock){
+    saveData();
+    if(navigator.vibrate)navigator.vibrate([25,35,25]);
+    showResult("\u2713 Job Shifted",[
+      {lbl:"\u0394N:",val:dN.toFixed(3)+" "+units},
+      {lbl:"\u0394E:",val:dE.toFixed(3)+" "+units},
+      {lbl:"Shift:",val:Math.hypot(dE,dN).toFixed(3)+" "+units+(Math.hypot(dE,dN)>0.0005?"  at "+fmtBrg(((Math.atan2(dE,dN)*180/Math.PI)%360+360)%360):"")},
+      {lbl:"Rotation:",val:_jobAdjAllowRot?(toDMS(rot)+"  \u2014 bearings were rewritten"):"none \u2014 every bearing and distance preserved"},
+      {lbl:"Moved:",val:_jobMovablePts().length+" point"+(_jobMovablePts().length===1?"":"s")+", connections, polylines and area labels"},
+      {lbl:"Held fixed:",val:"plotted deed records, NGS monuments and the job anchor"}]);
+  } else plotPoints();
+}
+/* Everything hung off the points travels with them. cogoTranslate predates
+   polylines and area labels and moves neither; this path moves both. */
+function _jobTranslate(dE,dN){
+  if(!isFinite(dE)||!isFinite(dN))return;
+  const d=_deedPointNumberSet();
+  points.forEach(p=>{if(!d.has(p.Point)){p.Easting+=dE;p.Northing+=dN;}});
+  (plotConnections||[]).forEach(c=>{
+    if(c.type==="spiral"){
+      c.startE+=dE;c.startN+=dN;c.endE+=dE;c.endN+=dN;
+      (c.samples||[]).forEach(q=>{q.E+=dE;q.N+=dN;});
+    } else if(c.type==="arc"){ c.centerE+=dE;c.centerN+=dN; }
+  });
+  if(typeof _polylines!=="undefined")_polylines.forEach(pl=>{
+    (pl.verts||[]).forEach(v=>{v.E+=dE;v.N+=dN;});
+    (pl.segs||[]).forEach(s=>{if(s.centerE!=null){s.centerE+=dE;s.centerN+=dN;}});
+  });
+  (_areaLabels||[]).forEach(a=>{if(a.E!=null){a.E+=dE;a.N+=dN;}});
+  _jobAdjDE+=dE;_jobAdjDN+=dN;
+  plotPoints();
+}
+function _jobRotateAbout(pE,pN,deg){
+  if(!_jobAdjAllowRot||!isFinite(deg)||!deg)return;
+  const rad=Math.PI/180,c=Math.cos(deg*rad),s=Math.sin(deg*rad);
+  const R=(E,N)=>_rotateEN(E,N,pE,pN,c,s);
+  const d=_deedPointNumberSet();
+  points.forEach(p=>{if(!d.has(p.Point)){const q=R(p.Easting,p.Northing);p.Easting=q.E;p.Northing=q.N;}});
+  (plotConnections||[]).forEach(cn=>{
+    if(cn.type==="spiral"){
+      const a=R(cn.startE,cn.startN),b=R(cn.endE,cn.endN);
+      cn.startE=a.E;cn.startN=a.N;cn.endE=b.E;cn.endN=b.N;
+      cn.startAz=((cn.startAz+deg)%360+360)%360;cn.endAz=((cn.endAz+deg)%360+360)%360;
+      cn.chordAz=((cn.chordAz+deg)%360+360)%360;
+      (cn.samples||[]).forEach(q=>{const z=R(q.E,q.N);q.E=z.E;q.N=z.N;});
+    } else if(cn.type==="arc"){
+      const q=R(cn.centerE,cn.centerN);cn.centerE=q.E;cn.centerN=q.N;
+      cn.startAngle-=deg*rad;cn.endAngle-=deg*rad;
+    }
+  });
+  if(typeof _polylines!=="undefined")_polylines.forEach(pl=>{
+    (pl.verts||[]).forEach(v=>{const q=R(v.E,v.N);v.E=q.E;v.N=q.N;});
+    (pl.segs||[]).forEach(sg=>{if(sg.centerE!=null){const q=R(sg.centerE,sg.centerN);sg.centerE=q.E;sg.centerN=q.N;}});
+  });
+  (_areaLabels||[]).forEach(a=>{if(a.E!=null){const q=R(a.E,a.N);a.E=q.E;a.N=q.N;}});
+  _jobAdjROT+=deg;
+  plotPoints();
+}
+function _jobMoveMenu(){
+  openModal((m,close)=>{
+    const n=_jobMovablePts().length, deedN=points.length-n;
+    m.innerHTML="<h2>\ud83d\udd90 Move / Shift Job</h2><p class='info'>Drag the stored job onto the imagery the same way a deed record is dragged. "+
+      "<b>"+n+"</b> point"+(n===1?"":"s")+" will move"+(deedN?(", "+deedN+" deed point"+(deedN===1?"":"s")+" held fixed"):"")+".</p>"+
+      "<p class='info' style='color:#e0a03f'>Aerial imagery is a picture, not control \u2014 it is commonly several feet off. If your observations are good, consider whether the basemap is the thing that is wrong.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
+    mk("\ud83d\udd90 Slide only \u2014 preserve rotation","ok",()=>{close();_jobAdjustStart(false);});
+    mk("\u21bb Slide and rotate","",()=>{close();confirmDialog("Rotating rewrites every bearing in the job. Continue?",yes=>{if(yes)_jobAdjustStart(true);});});
+    mk("Cancel","",close);
+  });
+}
+
 function _deedAdjustStart(){
   // a mistaken LOCK IN must be undoable: snapshot before any movement.
   // Mark both stacks first, so a CANCEL leaves undo/redo exactly as found
@@ -12647,24 +12767,74 @@ function plotPoints(extCtx,extW,extH){
     ctx.font="bold 11px 'Share Tech Mono',monospace"; ctx.fillStyle=col;
     ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(String(n),px,py-17);
   };
+  /* Two-line course annotation for a polyline segment, rotated onto the line
+     and read the same way as a connection label: distance over bearing. The
+     label rides just off the line and steps perpendicular when the midpoint
+     is already claimed by a point or deed label, so alignments through dense
+     point clusters stay legible. */
+  const _plLabel=(t1,t2,sx1,sy1,sx2,sy2,col)=>{
+    const mx=(sx1+sx2)/2, my=(sy1+sy2)/2;
+    let ang=Math.atan2(sy2-sy1,sx2-sx1);
+    if(ang>Math.PI/2||ang<-Math.PI/2)ang+=Math.PI;
+    const f1=Math.max(9,Math.min(18,9+viewScale*0.9));
+    const f2=Math.max(8,Math.min(14,8+viewScale*0.6));
+    ctx.font=`bold ${f1}px 'Courier New',monospace`;const w1=ctx.measureText(t1).width;
+    ctx.font=`${f2}px 'Courier New',monospace`;  const w2=ctx.measureText(t2).width;
+    const boxW=Math.max(w1,w2)+8, boxH=f1+f2+6;
+    // step perpendicular to the segment until the slot is free
+    const nx=-Math.sin(ang), ny=Math.cos(ang), step=boxH*0.9;
+    let ox=0,oy=0;
+    for(const k of [0,-1,1,-2,2]){
+      const cx=mx+nx*step*k, cy=my+ny*step*k;
+      const bb={l:cx-boxW/2,r:cx+boxW/2,t:cy-boxH,b:cy+boxH*0.2};
+      if(!_annoOverlaps(bb)){ _annoClaim(bb); ox=nx*step*k; oy=ny*step*k; break; }
+      if(k===2){ ox=nx*step*2; oy=ny*step*2; }
+    }
+    ctx.save();
+    ctx.translate(mx+ox,my+oy);ctx.rotate(ang);
+    ctx.fillStyle=lightMode?"rgba(255,255,255,.92)":"rgba(8,11,20,.82)";
+    ctx.fillRect(-boxW/2,-(boxH+2),boxW,boxH+2);
+    ctx.textAlign="center";ctx.textBaseline="top";
+    ctx.font=`bold ${f1}px 'Courier New',monospace`;
+    ctx.fillStyle=lightMode?"#000000":col;
+    ctx.fillText(t1,0,-(boxH+1));
+    ctx.font=`${f2}px 'Courier New',monospace`;
+    ctx.fillStyle=lightMode?"#000000":"#9ab0c8";
+    ctx.fillText(t2,0,-(boxH+1)+f1+1);
+    ctx.restore();
+  };
   const _drawPolyline=(pl,col,lw,rings)=>{
     if(!pl||!pl.verts||pl.verts.length===0)return;
     ctx.save();
     ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.setLineDash([]); ctx.lineCap="round"; ctx.lineJoin="round";
     const brgToRad=b=>(90-b)*Math.PI/180;
+    const labels=[];
     for(let i=0;i<pl.segs.length;i++){
       const A=pl.verts[i], B=pl.verts[i+1]; if(!A||!B)continue;
       const s=pl.segs[i];
+      const ax=X(A.E),ay=Y(A.N),bx=X(B.E),by=Y(B.N);
       if(s.type==="arc"){
         const sB=_plBearing(s.centerE,s.centerN,A.E,A.N);
         const eB=_plBearing(s.centerE,s.centerN,B.E,B.N);
         ctx.beginPath();
         ctx.arc(X(s.centerE),Y(s.centerN),s.R*scale,-brgToRad(sB),-brgToRad(eB),(s.dir==="ccw"));
         ctx.stroke();
+        // Arc: reported as arc length over radius, with the chord bearing —
+        // the three numbers you would stake or check the curve from.
+        let sweep=(s.dir==="ccw")?(sB-eB):(eB-sB);
+        sweep=((sweep%360)+360)%360;
+        const arcLen=s.R*sweep*Math.PI/180;
+        labels.push({t1:"\u2312 "+arcLen.toFixed(2)+units,
+          t2:"R="+Number(s.R).toFixed(2)+"  "+fmtBrg(_plBearing(A.E,A.N,B.E,B.N)),
+          ax,ay,bx,by,px:Math.hypot(bx-ax,by-ay)});
       } else {
-        ctx.beginPath(); ctx.moveTo(X(A.E),Y(A.N)); ctx.lineTo(X(B.E),Y(B.N)); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+        const hd=Math.hypot(B.E-A.E,B.N-A.N);
+        labels.push({t1:hd.toFixed(2)+units,t2:fmtBrg(_plBearing(A.E,A.N,B.E,B.N)),
+          ax,ay,bx,by,px:Math.hypot(bx-ax,by-ay)});
       }
     }
+    if(showLabels)labels.forEach(L=>{ if(L.px>60)_plLabel(L.t1,L.t2,L.ax,L.ay,L.bx,L.by,col); });
     if(rings) pl.verts.forEach((v,i)=>_plRing(v.E,v.N,i+1,col));
     ctx.restore();
   };
@@ -12999,6 +13169,37 @@ function plotPoints(extCtx,extW,extH){
     ctx.fillStyle="#ffd9cf";ctx.fillText("✕ Cancel",cx2+bw/2,by+bh/2);
     ctx.restore();
   }else{window._deedLockBtn=null;window._deedCancelBtn=null;}
+  if(_jobAdjust&&!extCtx){
+    ctx.save();
+    ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="middle";
+    const fine=(window.matchMedia&&matchMedia("(pointer:fine)").matches);
+    const hint="\ud83d\udd90 moving the job \u2014 "+(fine?"drag to slide":"drag to slide"+(_jobAdjAllowRot?" \u00b7 two fingers to rotate":""))
+      +(_jobAdjAllowRot?"":" \u00b7 rotation locked");
+    const hw=ctx.measureText(hint).width;
+    ctx.fillStyle="rgba(120,80,10,.88)";ctx.fillRect(w/2-hw/2-12,10,hw+24,24);
+    ctx.fillStyle="#ffe4a8";ctx.fillText(hint,w/2,22);
+    const dd=Math.hypot(_jobAdjDE,_jobAdjDN);
+    if(dd>0.0005||Math.abs(_jobAdjROT)>1e-9){
+      const rs="\u0394N "+_jobAdjDN.toFixed(2)+"  \u0394E "+_jobAdjDE.toFixed(2)+"  ("+dd.toFixed(2)+" "+units+")"
+        +(_jobAdjAllowRot?("  rot "+_jobAdjROT.toFixed(3)+"\u00b0"):"");
+      ctx.font="bold 11px 'Courier New',monospace";
+      const rw=ctx.measureText(rs).width;
+      ctx.fillStyle="rgba(25,110,45,.92)";ctx.fillRect(w/2-rw/2-10,39,rw+20,22);
+      ctx.fillStyle="#c6ffd8";ctx.fillText(rs,w/2,50);
+    }
+    const bw=130,bh=40,gap=14;
+    const lx=w/2-bw-gap/2, cx2=w/2+gap/2, by=h-bh-16;
+    window._jobLockBtn={x:lx,y:by,w:bw,h:bh};
+    window._jobCancelBtn={x:cx2,y:by,w:bw,h:bh};
+    ctx.font="bold 12px 'Courier New',monospace";
+    ctx.fillStyle="rgba(25,110,45,.92)";ctx.strokeStyle="#59d97c";ctx.lineWidth=1.5;
+    ctx.fillRect(lx,by,bw,bh);ctx.strokeRect(lx,by,bw,bh);
+    ctx.fillStyle="#c6ffd8";ctx.fillText("\u2713 LOCK IN",lx+bw/2,by+bh/2);
+    ctx.fillStyle="rgba(90,25,25,.92)";ctx.strokeStyle="#e07a5f";
+    ctx.fillRect(cx2,by,bw,bh);ctx.strokeRect(cx2,by,bw,bh);
+    ctx.fillStyle="#ffd9cf";ctx.fillText("\u2715 Cancel",cx2+bw/2,by+bh/2);
+    ctx.restore();
+  }else{window._jobLockBtn=null;window._jobCancelBtn=null;}
   if((window._deedPobCalls||window._deedPobCb)&&!extCtx){
     ctx.save();
     ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="top";
@@ -13153,7 +13354,7 @@ function zoomToOccupied(){
     // synthesized contextmenu event — debounce so only one modal opens.
     if(Date.now()-(window._lpLast||0)<1200) return;
     window._lpLast=Date.now();
-    if(_deedAdjust)return;
+    if(_deedAdjust||_jobAdjust)return;
     // Deed POB pick mode
     if(window._deedPobCalls){
       const calls=window._deedPobCalls; window._deedPobCalls=null;
@@ -13260,6 +13461,14 @@ function zoomToOccupied(){
       _mLastX=e.clientX;_mLastY=e.clientY;
       return;
     }
+    if(_jobAdjust){
+      const rect=canvas.getBoundingClientRect();
+      const a=_screenToWorld(_mLastX-rect.left,_mLastY-rect.top);
+      const b=_screenToWorld(e.clientX-rect.left,e.clientY-rect.top);
+      if(a&&b)_jobTranslate(b.E-a.E,b.N-a.N);
+      _mLastX=e.clientX;_mLastY=e.clientY;
+      return;
+    }
     viewOffsetX+=dx;
     viewOffsetY-=dy;
     _mLastX=e.clientX; _mLastY=e.clientY;
@@ -13293,7 +13502,7 @@ function zoomToOccupied(){
   let _lpTimer=null, _lpStartX=0, _lpStartY=0;
 
   canvas.addEventListener("touchstart",e=>{
-    if(_deedAdjust){
+    if(_deedAdjust||_jobAdjust){
       window._daPrev=[...e.touches].map(t=>({x:t.clientX,y:t.clientY}));
       clearTimeout(_lpTimer);_lpTimer=null;
       return;
@@ -13334,7 +13543,7 @@ function zoomToOccupied(){
   },{passive:true});
 
   canvas.addEventListener("touchend",e=>{
-    if(_deedAdjust){window._daPrev=e.touches.length?[...e.touches].map(t=>({x:t.clientX,y:t.clientY})):null;}
+    if(_deedAdjust||_jobAdjust){window._daPrev=e.touches.length?[...e.touches].map(t=>({x:t.clientX,y:t.clientY})):null;}
     clearTimeout(_lpTimer); _lpTimer=null;
     if(isPinching && e.touches.length===1){
       lastX=e.touches[0].clientX;
@@ -13373,6 +13582,37 @@ function zoomToOccupied(){
           const mP=_screenToWorld(mPx,mPy), mN=_screenToWorld(mNx,mNy);
           if(mP)_deedRotateAbout(mP.E,mP.N,dA);
           if(mP&&mN)_deedTranslate(mN.E-mP.E,mN.N-mP.N);
+        }
+      }
+      window._daPrev=now;
+      return;
+    }
+    if(_jobAdjust){
+      const now=[...e.touches].map(t=>({x:t.clientX,y:t.clientY}));
+      const prev=window._daPrev;
+      if(prev&&prev.length===now.length){
+        const rect=canvas.getBoundingClientRect();
+        if(now.length===1){
+          const a=_screenToWorld(prev[0].x-rect.left,prev[0].y-rect.top);
+          const b=_screenToWorld(now[0].x-rect.left,now[0].y-rect.top);
+          if(a&&b)_jobTranslate(b.E-a.E,b.N-a.N);
+        }else if(now.length>=2){
+          // Pinch scales the MAP, not the job — the job is world-anchored and
+          // stays under the fingers while the imagery zooms for corner-fitting.
+          const dP=Math.hypot(prev[1].x-prev[0].x,prev[1].y-prev[0].y);
+          const dNn=Math.hypot(now[1].x-now[0].x,now[1].y-now[0].y);
+          const mNx=(now[0].x+now[1].x)/2-rect.left, mNy=(now[0].y+now[1].y)/2-rect.top;
+          if(dP>0&&Math.abs(dNn/dP-1)>0.002)zoomAround(dNn/dP,mNx,mNy);
+          const mPx=(prev[0].x+prev[1].x)/2-rect.left, mPy=(prev[0].y+prev[1].y)/2-rect.top;
+          const mP=_screenToWorld(mPx,mPy), mN=_screenToWorld(mNx,mNy);
+          if(_jobAdjAllowRot){
+            const angP=Math.atan2(prev[1].y-prev[0].y,prev[1].x-prev[0].x);
+            const angN=Math.atan2(now[1].y-now[0].y,now[1].x-now[0].x);
+            let dA=(angN-angP)*180/Math.PI;
+            if(dA>180)dA-=360; if(dA<-180)dA+=360;
+            if(mP)_jobRotateAbout(mP.E,mP.N,dA);
+          }
+          if(mP&&mN)_jobTranslate(mN.E-mP.E,mN.N-mP.N);
         }
       }
       window._daPrev=now;
@@ -13430,6 +13670,12 @@ function zoomToOccupied(){
         window._deedLastSnap=null;
       }
       else if(inBtn(window._deedCancelBtn)) _deedAdjustEnd(false);
+      return;
+    }
+    if(_jobAdjust){
+      const inBtn=(b)=>b&&mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h;
+      if(inBtn(window._jobLockBtn))        _jobAdjustEnd(true);
+      else if(inBtn(window._jobCancelBtn)) _jobAdjustEnd(false);
       return;
     }
     // ⚠ outside-parent badge: tap = move that figure directly
@@ -13780,6 +14026,36 @@ function _showTapIntResult(sols, title){
   }
 }
 
+/* Start a connection with this point as FROM, then wait for a tap on the TO
+   point. Shared by the point context menu and the on-plot action dock. */
+function _connectFromPoint(p){
+  _connFrom=p;
+  window._connClickActive=true;
+  window._connClickHandler=function(toPt){
+    if(toPt.Point===p.Point) return;   // tapping the same point is a no-op
+    _connCancel();
+    _plotStylePrompt(style=>{
+      if(style!=="none"){
+        _takeSnapshot("Draw Connection");
+        plotConnections.push({from:p.Point,to:toPt.Point,style});
+        saveData();
+        showResult("\u2714 Connected",[
+          {lbl:"From:",val:"#"+p.Point+" "+(p.Description||"")},
+          {lbl:"To:",  val:"#"+toPt.Point+" "+(toPt.Description||"")},
+          {lbl:"Bearing:",val:fmtBrg(azimuth(p,toPt))},
+          {lbl:"Distance:",val:dist2D(p,toPt).toFixed(3)+" "+units},
+          {lbl:"Style:",val:style},
+        ],[{txt:"Connect Another",cls:"ok",fn:()=>_drawConnByTap()}]);
+      }
+    });
+  };
+  const banner=document.getElementById("intersectBanner");
+  if(banner){
+    banner.textContent="\u2714 From: Pt #"+p.Point+" \u2014 tap the TO point on the plot";
+    banner.classList.add("visible");
+  }
+  plotPoints();
+}
 function _pointContextMenu(p){
   openModal((modal,close)=>{
     modal.innerHTML=`<h2>📍 Point #${p.Point}</h2>`;
@@ -13817,33 +14093,7 @@ function _pointContextMenu(p){
     mk("📍 Stakeout to Here","ok",()=>_doStakeout(p,`#${p.Point}`));
     mk("✏ Edit Point","",()=>{ _editPointMenu(p); });
     mk("🚩 Flag / Mark","",()=>flagPoint_pt(p));
-    mk("↔ Connect to Another Point","blue",()=>{
-      // Set this point as FROM, then enter tap mode for TO
-      _connFrom=p;
-      window._connClickActive=true;
-      window._connClickHandler=function(toPt){
-        if(toPt.Point===p.Point) return; // ignore tapping same point
-        _connCancel();
-        _plotStylePrompt(style=>{
-          if(style!=="none"){
-            _takeSnapshot("Draw Connection");
-            plotConnections.push({from:p.Point,to:toPt.Point,style});
-            saveData();
-            showResult("✔ Connected",[
-              {lbl:"From:",val:"#"+p.Point+" "+(p.Description||"")},
-              {lbl:"To:",  val:"#"+toPt.Point+" "+(toPt.Description||"")},
-              {lbl:"Style:",val:style},
-            ],[{txt:"Connect Another",cls:"ok",fn:()=>_drawConnByTap()}]);
-          }
-        });
-      };
-      const banner=document.getElementById("intersectBanner");
-      if(banner){
-        banner.textContent="✔ From: Pt #"+p.Point+" — tap the TO point on the plot";
-        banner.classList.add("visible");
-      }
-      plotPoints();
-    });
+    mk("↔ Connect to Another Point","blue",()=>_connectFromPoint(p));
     mk("✕ Delete Point","danger",()=>{
       confirmDialog(`Delete Point #${p.Point}?`,yes=>{
         if(!yes)return;
@@ -15181,7 +15431,7 @@ function openWorkspace(name){
 
 function _hideContextDock(){const d=document.getElementById("contextDock");if(d)d.classList.remove("open")}
 function _contextDock(kind,name,actions){const d=document.getElementById("contextDock"),a=document.getElementById("contextActions");document.getElementById("contextKind").textContent=kind;document.getElementById("contextName").textContent=name;a.innerHTML="";actions.forEach(x=>{const b=document.createElement("button");b.textContent=x[0];b.className=x[2]||"";b.onclick=()=>{_hideContextDock();x[1]()};a.appendChild(b)});const c=document.createElement("button");c.textContent="Close";c.onclick=_hideContextDock;a.appendChild(c);d.classList.add("open")}
-function _showPointQuickActions(p){selectedPoint=p;plotPoints();_contextDock("Point","#"+p.Point+(p.Description?" · "+p.Description:""),[["Details",()=>_pointContextMenu(p)],["Occupy",()=>{_takeSnapshot("Occupy Point");currentPoint=p;saveData();updateStatus();plotPoints()},"primary"],["Stake",()=>{if(!currentPoint){alert("Occupy a point first.");return}_doStakeout(p,"#"+p.Point,_lastTHValue||0)},"primary"],["Flag",()=>flagPoint_pt(p)]]);}
+function _showPointQuickActions(p){selectedPoint=p;plotPoints();_contextDock("Point","#"+p.Point+(p.Description?" · "+p.Description:""),[["Details",()=>_pointContextMenu(p)],["Occupy",()=>{_takeSnapshot("Occupy Point");currentPoint=p;saveData();updateStatus();plotPoints()},"primary"],["Stake",()=>{if(!currentPoint){alert("Occupy a point first.");return}_doStakeout(p,"#"+p.Point,_lastTHValue||0)},"primary"],["Connect",()=>{selectedPoint=null;_connectFromPoint(p)}]]);}
 function _showLineQuickActions(conn,idx){selectedConn=idx;plotPoints();_contextDock("Line","#"+conn.from+" → #"+conn.to,[["Details",()=>_lineContextMenu(conn,idx)],["Stake",()=>{window._stlActive=true;_stlMeasure({kind:"line",conn})},"primary"],["Offset",()=>_lineContextMenu(conn,idx)],["Delete",()=>{_takeSnapshot("Delete Line");plotConnections.splice(idx,1);saveData()},"danger"]]);}
 function _showArcQuickActions(conn,idx){selectedConn=idx;plotPoints();_contextDock("Arc","R "+Number(conn.R||0).toFixed(2),[["Details",()=>_arcContextMenu(conn,idx)],["Stake",()=>{window._stlActive=true;_stlMeasure({kind:"arc",conn})},"primary"],["Tools",()=>_arcContextMenu(conn,idx)],["Delete",()=>{_takeSnapshot("Delete Arc");plotConnections.splice(idx,1);saveData()},"danger"]]);}
 
