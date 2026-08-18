@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.4">
+<meta name="application-name" content="ChainLink-v4.7.6">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.4</title>
+<title>ChainLink Survey v4.7.6</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.4";
+const APP_VERSION = "4.7.6";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -2623,6 +2623,162 @@ function _emitPolyVerts(verts,closed,style,layer,lineFn,arcFn){
     else lineFn(P.E,P.N,Q.E,Q.N,style,layer);
   }
 }
+
+/* ── KML IMPORT ─────────────────────────────────────────────────────────
+   Brings LineStrings, LinearRings, Polygons and Points out of a .kml and
+   into the job as polylines and points. KML is WGS84 lon/lat, so the job
+   has to be anchored before there is anything to convert into — the same
+   gate KML export already carries.
+
+   Every imported feature is stamped with a batch id and the source file
+   name. That stamp is what makes the import independently movable: a KML
+   traced in Google Earth carries GOOGLE's imagery registration, which
+   disagrees with Esri's by a few feet, so an imported creek routinely lands
+   beside the creek in your basemap. Being able to slide that import alone,
+   without disturbing observed points or a plotted deed, is the whole point
+   of tracking which geometry came from where. */
+let _kmlBatchSeq = 1;
+function _kmlText(el,tag){
+  const n=el.getElementsByTagName(tag);
+  return n.length?(n[0].textContent||"").trim():"";
+}
+/* KML coordinate tuples are lon,lat[,alt] separated by whitespace. */
+function _kmlCoords(txt){
+  const out=[];
+  String(txt||"").trim().split(/\s+/).forEach(tok=>{
+    const p=tok.split(",");
+    if(p.length<2)return;
+    const lon=parseFloat(p[0]), lat=parseFloat(p[1]), alt=p.length>2?parseFloat(p[2]):0;
+    if(!isFinite(lon)||!isFinite(lat))return;
+    if(Math.abs(lat)>90||Math.abs(lon)>180)return;
+    out.push({lat,lon,z:isFinite(alt)?alt:0});
+  });
+  return out;
+}
+/* Douglas-Peucker. A creek traced in Google Earth arrives with hundreds of
+   vertices; every one of them would otherwise get a labelled segment. */
+function _kmlSimplify(verts,tol){
+  if(!tol||verts.length<3)return verts;
+  const keep=new Array(verts.length).fill(false);
+  keep[0]=keep[verts.length-1]=true;
+  const seg=(a,b)=>{
+    let worst=-1,wi=-1;
+    const A=verts[a],B=verts[b];
+    const dx=B.E-A.E, dy=B.N-A.N, len=Math.hypot(dx,dy);
+    for(let i=a+1;i<b;i++){
+      const P=verts[i];
+      const d=len<1e-9?Math.hypot(P.E-A.E,P.N-A.N)
+                      :Math.abs(dx*(A.N-P.N)-dy*(A.E-P.E))/len;
+      if(d>worst){worst=d;wi=i;}
+    }
+    if(worst>tol&&wi>0){keep[wi]=true;seg(a,wi);seg(wi,b);}
+  };
+  seg(0,verts.length-1);
+  return verts.filter((v,i)=>keep[i]);
+}
+function _kmlLLtoJob(c){
+  const q=_gpsToJob(c.lat,c.lon);
+  return q&&isFinite(q.E)&&isFinite(q.N)?{E:q.E,N:q.N}:null;
+}
+function importKML(){
+  if(!requirePro("KML import")) return;
+  if(!geoAnchor){alert("KML is latitude/longitude, so the job must be anchored first.\n\nMap \u2192 Imagery / GPS \u2192 anchor, then import.");return;}
+  _pickImportFile(".kml,application/vnd.google-earth.kml+xml,text/xml",(text,fname)=>{
+    if(/^PK\u0003\u0004/.test(text)||/\.kmz$/i.test(fname||"")){
+      alert("That looks like a .kmz (a zipped KML).\n\nOpen it in Google Earth and use File \u2192 Save Place As \u2192 .kml, then import that.");
+      return;
+    }
+    let doc;
+    try{ doc=new DOMParser().parseFromString(text,"application/xml"); }
+    catch(e){ alert("Couldn't parse the KML."); return; }
+    if(!doc||doc.querySelector("parsererror")){alert("Couldn't parse the KML \u2014 the file may be malformed.");return;}
+    // Collect first so the user can see the size of the thing before committing
+    const marks=doc.getElementsByTagName("Placemark");
+    if(!marks.length){alert("No Placemark elements found in that KML.");return;}
+    const lines=[],pts=[];
+    for(const pm of marks){
+      const nm=_kmlText(pm,"name")||"KML";
+      ["LineString","LinearRing"].forEach(tag=>{
+        for(const g of pm.getElementsByTagName(tag)){
+          const c=_kmlCoords(_kmlText(g,"coordinates"));
+          if(c.length>=2)lines.push({name:nm,coords:c,closed:tag==="LinearRing"});
+        }
+      });
+      for(const g of pm.getElementsByTagName("Point")){
+        const c=_kmlCoords(_kmlText(g,"coordinates"));
+        if(c.length)pts.push({name:nm,c:c[0]});
+      }
+    }
+    if(!lines.length&&!pts.length){alert("That KML has no lines or points ChainLink can use.");return;}
+    const totalV=lines.reduce((a,l)=>a+l.coords.length,0);
+    const busy=totalV>400;
+    openModal((m,close)=>{
+      m.innerHTML="<h2>\ud83c\udf0d Import KML</h2><p class='info'><b>"+_esc(fname||"file")+"</b><br>"+
+        lines.length+" line"+(lines.length===1?"":"s")+" ("+totalV+" vertices), "+pts.length+" point"+(pts.length===1?"":"s")+"</p>"+
+        "<p class='info'>Lines come in as polylines with azimuths and distances on every segment. Points come in as stored points."+
+        (busy?" <b style='color:#e0a03f'>This file is dense \u2014 simplifying is recommended or the plot will be buried in labels.</b>":"")+"</p>";
+      const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
+      const run=tol=>{close();_kmlDoImport(lines,pts,tol,fname);};
+      const u=units==="m"?"m":"ft";
+      mk("Import as drawn ("+totalV+" vertices)",busy?"":"ok",()=>run(0));
+      mk("Simplify \u2014 "+(units==="m"?"0.3 m":"1 ft")+" tolerance",busy?"ok":"",()=>run(units==="m"?0.3:1));
+      mk("Simplify \u2014 "+(units==="m"?"1.5 m":"5 "+u)+" tolerance","",()=>run(units==="m"?1.5:5));
+      mk("Cancel","",close);
+    });
+  });
+}
+function _kmlDoImport(lines,pts,tol,fname){
+  _takeSnapshot("Import KML");
+  const batch=_kmlBatchSeq++;
+  const src=(fname||"KML").replace(/\.kml$/i,"");
+  let nLines=0,nPts=0,vIn=0,vOut=0,dropped=0;
+  lines.forEach((L,idx)=>{
+    let verts=[];
+    for(const c of L.coords){const q=_kmlLLtoJob(c);if(q)verts.push(q);}
+    vIn+=L.coords.length;
+    if(verts.length<2){dropped++;return;}
+    if(L.closed&&verts.length>2){
+      const a=verts[0],b=verts[verts.length-1];
+      if(Math.hypot(a.E-b.E,a.N-b.N)<1e-6)verts.pop();
+    }
+    verts=_kmlSimplify(verts,tol);
+    if(L.closed&&verts.length>2)verts.push({E:verts[0].E,N:verts[0].N});
+    if(verts.length<2){dropped++;return;}
+    vOut+=verts.length;
+    const segs=[];
+    for(let i=0;i<verts.length-1;i++)segs.push({type:"line"});
+    _polylines.push({name:(L.name||"KML")+(lines.length>1?" "+(idx+1):""),verts,segs,
+      kmlBatch:batch,kmlSrc:src});
+    nLines++;
+  });
+  pts.forEach(P=>{
+    const q=_kmlLLtoJob(P.c);
+    if(!q)return;
+    let num=pointCounter; while(_ptExists(num))num++;
+    points.push({Point:num,Northing:q.N,Easting:q.E,Elevation:0,
+      Type:"KML",Flag:"",Description:(P.name||"KML").slice(0,32),kmlBatch:batch});
+    pointCounter=Math.max(pointCounter,num+1);
+    nPts++;
+  });
+  saveData();plotPoints();
+  const rows=[
+    {lbl:"Source:",val:_esc(src)},
+    {lbl:"Polylines:",val:String(nLines)},
+    {lbl:"Points:",val:String(nPts)},
+    {lbl:"Vertices:",val:tol?(vIn+" \u2192 "+vOut+"  (simplified at "+tol+" "+units+")"):String(vOut)}];
+  if(dropped)rows.push({lbl:"Skipped:",val:dropped+" feature"+(dropped===1?"":"s")+" with too few usable coordinates"});
+  rows.push({lbl:"Labels:",val:"azimuth and distance draw on every segment \u2014 use LBL to hide them"});
+  rows.push({lbl:"Position:",val:"Google Earth imagery differs from this basemap by a few feet. Use COGO \u2192 Move / Shift Job \u2192 this import to slide it on its own."});
+  showResult("\u2713 KML Imported",rows,[
+    {txt:"\ud83d\udd90 Shift this import now",cls:"ok",fn:()=>_jobAdjustStart(false,{kmlBatch:batch,label:src})}]);
+}
+function _kmlBatches(){
+  const seen=new Map();
+  (_polylines||[]).forEach(pl=>{if(pl.kmlBatch!=null&&!seen.has(pl.kmlBatch))seen.set(pl.kmlBatch,pl.kmlSrc||"KML");});
+  (points||[]).forEach(p=>{if(p.kmlBatch!=null&&!seen.has(p.kmlBatch))seen.set(p.kmlBatch,"KML");});
+  return [...seen].map(([id,name])=>({id,name}));
+}
+
 function importLandXML(){
   if(!requirePro("LandXML import")) return;
   _pickImportFile(".xml,application/xml,text/xml",(text,fname)=>{
@@ -5640,6 +5796,7 @@ function projectImportMenu(){
     _wsButton(modal,"Load ChainLink CSV","ok",()=>{close();loadFromFile()});
     _wsButton(modal,"Import DXF","blue",()=>{close();importDXF()});
     _wsButton(modal,"Import LandXML","blue",()=>{close();importLandXML()});
+    _wsButton(modal,"Import KML","blue",()=>{close();importKML()});
     _wsButton(modal,"Import Deed Record","accent",()=>{close();if(_deedPlot)_deedImportAnother();else deedPlotterMenu();});
     _wsButton(modal,"Back","",()=>{close();projectWorkspaceMenu();});
   });
@@ -5683,6 +5840,7 @@ function moreMenu(){
     mk("📥 Load CSV from File","blue",()=>{close();loadFromFile()});
     mk("📥 Import DXF","blue",()=>{close();importDXF()});
     mk("📥 Import LandXML","blue",()=>{close();importLandXML()});
+    mk("🌍 Import KML (Google Earth)","blue",()=>{close();importKML()});
     mk("🗂 Change Save Folder","",()=>{close();_dirHandle=null;saveToFile()});
 
     mk("🗑 Delete Connection","danger",()=>{close();deleteConnection()});
@@ -10688,12 +10846,32 @@ let _deedAdjUndoMark=null;
    coordinate system, and a shift that drags its own control along with it
    would hide the very error it is correcting. */
 let _jobAdjust=false, _jobAdjSnap=null, _jobAdjAllowRot=false, _jobAdjDE=0, _jobAdjDN=0, _jobAdjROT=0, _jobAdjUndoMark=null;
+/* Scope of the drag. null = the whole job. {kmlBatch:n} = one KML import and
+   nothing else, so a traced creek can be slid onto the right creek without
+   dragging observed points, deed geometry or a second import along with it. */
+let _jobAdjScope=null;
+function _jobScopeHasPt(p){
+  if(!_jobAdjScope)return !_deedPointNumberSet().has(p.Point);
+  return p.kmlBatch===_jobAdjScope.kmlBatch;
+}
+function _jobScopeHasPoly(pl){
+  if(!_jobAdjScope)return true;
+  return pl&&pl.kmlBatch===_jobAdjScope.kmlBatch;
+}
+function _jobScopeLabel(){
+  return _jobAdjScope?("KML import \u201c"+(_jobAdjScope.label||"KML")+"\u201d"):"whole job";
+}
 function _jobMovablePts(){
   const d=_deedPointNumberSet();
   return points.filter(p=>!d.has(p.Point));
 }
-function _jobAdjustStart(allowRot){
-  if(!points.length){alert("No points to move.");return;}
+function _jobAdjustStart(allowRot,scope){
+  _jobAdjScope=scope||null;
+  if(_jobAdjScope){
+    const nP=points.filter(_jobScopeHasPt).length,
+          nL=(_polylines||[]).filter(_jobScopeHasPoly).length;
+    if(!nP&&!nL){alert("Nothing from that import is still in the job.");_jobAdjScope=null;return;}
+  } else if(!points.length&&!(_polylines||[]).length){alert("No geometry to move.");return;}
   try{
     _jobAdjUndoMark={len:_snapshots.length,redo:_redoStack.slice()};
     _takeSnapshot("move/shift job");
@@ -10717,8 +10895,10 @@ function _jobAdjustEnd(lock){
     _areaLabels.splice(0,_areaLabels.length,..._jobAdjSnap.areas);
     if(_jobAdjUndoMark){_snapshots.length=_jobAdjUndoMark.len;_redoStack=_jobAdjUndoMark.redo;}
   }
-  const dE=_jobAdjDE,dN=_jobAdjDN,rot=_jobAdjROT;
-  _jobAdjust=false;_jobAdjSnap=null;_jobAdjUndoMark=null;_updateUndoBtn();
+  const dE=_jobAdjDE,dN=_jobAdjDN,rot=_jobAdjROT,scopeLbl=_jobScopeLabel(),scoped=!!_jobAdjScope;
+  const movedPts=points.filter(_jobScopeHasPt).length;
+  const movedPls=(_polylines||[]).filter(_jobScopeHasPoly).length;
+  _jobAdjust=false;_jobAdjSnap=null;_jobAdjUndoMark=null;_jobAdjScope=null;_updateUndoBtn();
   if(lock){
     saveData();
     if(navigator.vibrate)navigator.vibrate([25,35,25]);
@@ -10727,27 +10907,32 @@ function _jobAdjustEnd(lock){
       {lbl:"\u0394E:",val:dE.toFixed(3)+" "+units},
       {lbl:"Shift:",val:Math.hypot(dE,dN).toFixed(3)+" "+units+(Math.hypot(dE,dN)>0.0005?"  at "+fmtBrg(((Math.atan2(dE,dN)*180/Math.PI)%360+360)%360):"")},
       {lbl:"Rotation:",val:_jobAdjAllowRot?(toDMS(rot)+"  \u2014 bearings were rewritten"):"none \u2014 every bearing and distance preserved"},
-      {lbl:"Moved:",val:_jobMovablePts().length+" point"+(_jobMovablePts().length===1?"":"s")+", connections, polylines and area labels"},
-      {lbl:"Held fixed:",val:"plotted deed records, NGS monuments and the job anchor"}]);
+      {lbl:"Scope:",val:scopeLbl},
+      {lbl:"Moved:",val:scoped
+        ?(movedPls+" polyline"+(movedPls===1?"":"s")+(movedPts?" and "+movedPts+" point"+(movedPts===1?"":"s"):""))
+        :(movedPts+" point"+(movedPts===1?"":"s")+", connections, polylines and area labels")},
+      {lbl:"Held fixed:",val:scoped
+        ?"every other point, polyline, deed record and monument in the job"
+        :"plotted deed records, NGS monuments and the job anchor"}]);
   } else plotPoints();
 }
 /* Everything hung off the points travels with them. cogoTranslate predates
    polylines and area labels and moves neither; this path moves both. */
 function _jobTranslate(dE,dN){
   if(!isFinite(dE)||!isFinite(dN))return;
-  const d=_deedPointNumberSet();
-  points.forEach(p=>{if(!d.has(p.Point)){p.Easting+=dE;p.Northing+=dN;}});
-  (plotConnections||[]).forEach(c=>{
+  points.forEach(p=>{if(_jobScopeHasPt(p)){p.Easting+=dE;p.Northing+=dN;}});
+  if(!_jobAdjScope)(plotConnections||[]).forEach(c=>{
     if(c.type==="spiral"){
       c.startE+=dE;c.startN+=dN;c.endE+=dE;c.endN+=dN;
       (c.samples||[]).forEach(q=>{q.E+=dE;q.N+=dN;});
     } else if(c.type==="arc"){ c.centerE+=dE;c.centerN+=dN; }
   });
   if(typeof _polylines!=="undefined")_polylines.forEach(pl=>{
+    if(!_jobScopeHasPoly(pl))return;
     (pl.verts||[]).forEach(v=>{v.E+=dE;v.N+=dN;});
     (pl.segs||[]).forEach(s=>{if(s.centerE!=null){s.centerE+=dE;s.centerN+=dN;}});
   });
-  (_areaLabels||[]).forEach(a=>{if(a.E!=null){a.E+=dE;a.N+=dN;}});
+  if(!_jobAdjScope)(_areaLabels||[]).forEach(a=>{if(a.E!=null){a.E+=dE;a.N+=dN;}});
   _jobAdjDE+=dE;_jobAdjDN+=dN;
   plotPoints();
 }
@@ -10755,9 +10940,8 @@ function _jobRotateAbout(pE,pN,deg){
   if(!_jobAdjAllowRot||!isFinite(deg)||!deg)return;
   const rad=Math.PI/180,c=Math.cos(deg*rad),s=Math.sin(deg*rad);
   const R=(E,N)=>_rotateEN(E,N,pE,pN,c,s);
-  const d=_deedPointNumberSet();
-  points.forEach(p=>{if(!d.has(p.Point)){const q=R(p.Easting,p.Northing);p.Easting=q.E;p.Northing=q.N;}});
-  (plotConnections||[]).forEach(cn=>{
+  points.forEach(p=>{if(_jobScopeHasPt(p)){const q=R(p.Easting,p.Northing);p.Easting=q.E;p.Northing=q.N;}});
+  if(!_jobAdjScope)(plotConnections||[]).forEach(cn=>{
     if(cn.type==="spiral"){
       const a=R(cn.startE,cn.startN),b=R(cn.endE,cn.endN);
       cn.startE=a.E;cn.startN=a.N;cn.endE=b.E;cn.endN=b.N;
@@ -10770,22 +10954,39 @@ function _jobRotateAbout(pE,pN,deg){
     }
   });
   if(typeof _polylines!=="undefined")_polylines.forEach(pl=>{
+    if(!_jobScopeHasPoly(pl))return;
     (pl.verts||[]).forEach(v=>{const q=R(v.E,v.N);v.E=q.E;v.N=q.N;});
     (pl.segs||[]).forEach(sg=>{if(sg.centerE!=null){const q=R(sg.centerE,sg.centerN);sg.centerE=q.E;sg.centerN=q.N;}});
   });
-  (_areaLabels||[]).forEach(a=>{if(a.E!=null){const q=R(a.E,a.N);a.E=q.E;a.N=q.N;}});
+  if(!_jobAdjScope)(_areaLabels||[]).forEach(a=>{if(a.E!=null){const q=R(a.E,a.N);a.E=q.E;a.N=q.N;}});
   _jobAdjROT+=deg;
   plotPoints();
 }
-function _jobMoveMenu(){
+function _jobMoveMenu(scope){
   openModal((m,close)=>{
+    const batches=_kmlBatches();
     const n=_jobMovablePts().length, deedN=points.length-n;
+    const lbl=scope?("KML import \u201c"+_esc(scope.label||"KML")+"\u201d"):null;
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
+    if(scope){
+      const nL=(_polylines||[]).filter(pl=>pl&&pl.kmlBatch===scope.kmlBatch).length;
+      const nP=points.filter(p=>p.kmlBatch===scope.kmlBatch).length;
+      m.innerHTML="<h2>\ud83d\udd90 Shift Import</h2><p class='info'>Moving <b>"+lbl+"</b> only \u2014 "+
+        nL+" polyline"+(nL===1?"":"s")+(nP?" and "+nP+" point"+(nP===1?"":"s"):"")+
+        ". Everything else in the job stays exactly where it is.</p>"+
+        "<p class='info'>A KML traced in Google Earth carries Google's imagery registration, which differs from this basemap by a few feet. Sliding the import alone is usually the right correction.</p>";
+      mk("\ud83d\udd90 Slide only \u2014 preserve shape","ok",()=>{close();_jobAdjustStart(false,scope);});
+      mk("\u21bb Slide and rotate","",()=>{close();_jobAdjustStart(true,scope);});
+      mk("Cancel","",close);
+      return;
+    }
     m.innerHTML="<h2>\ud83d\udd90 Move / Shift Job</h2><p class='info'>Drag the stored job onto the imagery the same way a deed record is dragged. "+
       "<b>"+n+"</b> point"+(n===1?"":"s")+" will move"+(deedN?(", "+deedN+" deed point"+(deedN===1?"":"s")+" held fixed"):"")+".</p>"+
       "<p class='info' style='color:#e0a03f'>Aerial imagery is a picture, not control \u2014 it is commonly several feet off. If your observations are good, consider whether the basemap is the thing that is wrong.</p>";
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
     mk("\ud83d\udd90 Slide only \u2014 preserve rotation","ok",()=>{close();_jobAdjustStart(false);});
     mk("\u21bb Slide and rotate","",()=>{close();confirmDialog("Rotating rewrites every bearing in the job. Continue?",yes=>{if(yes)_jobAdjustStart(true);});});
+    batches.forEach(b=>mk("\ud83c\udf0d Shift only the import \u201c"+b.name+"\u201d","blue",
+      ()=>{close();_jobMoveMenu({kmlBatch:b.id,label:b.name});}));
     mk("Cancel","",close);
   });
 }
@@ -11936,6 +12137,7 @@ function _zonePick(lat,lon,cb){
 }
 
 /* — Anchor an existing job point via GPS or manual lat/lon — */
+
 function _satSetupFlow(){
   const defPt=(currentPoint&&currentPoint.Point)||1;
   calculatorInput("Anchor at point # (stand HERE for GPS):",String(defPt),pn=>{
@@ -13173,8 +13375,8 @@ function plotPoints(extCtx,extW,extH){
     ctx.save();
     ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="middle";
     const fine=(window.matchMedia&&matchMedia("(pointer:fine)").matches);
-    const hint="\ud83d\udd90 moving the job \u2014 "+(fine?"drag to slide":"drag to slide"+(_jobAdjAllowRot?" \u00b7 two fingers to rotate":""))
-      +(_jobAdjAllowRot?"":" \u00b7 rotation locked");
+    const hint="\ud83d\udd90 moving "+_jobScopeLabel()+" \u2014 drag to slide"
+      +(_jobAdjAllowRot?" \u00b7 two fingers to rotate":" \u00b7 rotation locked");
     const hw=ctx.measureText(hint).width;
     ctx.fillStyle="rgba(120,80,10,.88)";ctx.fillRect(w/2-hw/2-12,10,hw+24,24);
     ctx.fillStyle="#ffe4a8";ctx.fillText(hint,w/2,22);
