@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.7">
+<meta name="application-name" content="ChainLink-v4.7.8">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.7</title>
+<title>ChainLink Survey v4.7.8</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.7";
+const APP_VERSION = "4.7.8";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1501,6 +1501,7 @@ function loadData() {
   try { const s=_lsGet("cl_points"); if(s){ points=JSON.parse(s); pointCounter=points.length?points.reduce((m,p)=>p.Point>m?p.Point:m,0)+1:1; currentPoint=points[0]||null; orientationChosen=true; } else _defaultState(); } catch(e){ _defaultState(); }
   try { plotConnections=JSON.parse(_lsGet("cl_connections")||"[]"); } catch(e){ plotConnections=[]; }
   try { _polylines=JSON.parse(_lsGet("cl_polylines")||"[]"); } catch(e){ _polylines=[]; }
+  try { _waybackRestore(); } catch(e){}
   if(typeof _ngsLoad==="function")_ngsLoad();
   try { _orientationOffset_unused=parseFloat(_lsGet("cl_orientOffset")||"0"); } catch(e){ _orientationOffset_unused=0; }
   try { surveyMode=_lsGet("cl_surveyMode")||"2D"; } catch(e){ surveyMode="2D"; }
@@ -11268,13 +11269,38 @@ function deedPlotterMenu(){
 
 let geoAnchor=null;          // {lat,lon,E,N,mx,my,conv,zoneName,m2u}
 let satOn=false, satOpacity=0.85, satRotNudge=0, satBasemap="esri";
+/* Wayback = Esri's archive of every World Imagery release since Feb 2014.
+   The release number is the time parameter in the tile path, so a historical
+   basemap is just the current one with a different number in the URL. The
+   list of releases is read from the service at runtime (see _waybackFetch)
+   rather than hardcoded, so it stays current on its own. */
+let _waybackRel=null, _waybackLabel="", _waybackList=null, _waybackTpl=null;
+function _waybackUrl(z,y,x){
+  if(_waybackTpl)return _waybackTpl.replace("{TileMatrix}",z).replace("{TileRow}",y).replace("{TileCol}",x)
+                                  .replace("{z}",z).replace("{y}",y).replace("{x}",x);
+  return "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/"
+    +(_waybackRel||0)+"/"+z+"/"+y+"/"+x;
+}
+/* maxZ is the deepest level the service is ASKED for, not a promise that the
+   level exists everywhere. Through 4.7.x this was pinned at 19 while Esri
+   serves 20-21 over most of the US, so close-in work was drawing a stretched
+   z19 tile instead of the sharper one sitting right there. The draw loop
+   already falls back to a parent tile when a level is missing, so asking
+   deeper costs a 404 in thin coverage and gains real detail everywhere else. */
 const _BASEMAPS={
   esri:{url:(z,y,x)=>"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"+z+"/"+y+"/"+x,
-        maxZ:19, attr:"Imagery: Esri, Maxar, Earthstar Geographics", label:"Aerial (Esri)"},
+        maxZ:21, attr:"Imagery: Esri, Maxar, Earthstar Geographics", label:"Aerial (Esri)"},
+  usgs:{url:(z,y,x)=>"https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/"+z+"/"+y+"/"+x,
+        maxZ:18, attr:"Imagery: USGS The National Map (NAIP)", label:"Aerial (USGS / NAIP)"},
+  wayback:{url:_waybackUrl, maxZ:21, label:"Aerial — historical",
+        attr:()=>"Imagery: Esri World Imagery Wayback"+(_waybackLabel?" \u2014 "+_waybackLabel:"")},
   topo:{url:(z,y,x)=>"https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/"+z+"/"+y+"/"+x,
         maxZ:16, attr:"Map: USGS The National Map", label:"USGS Topo"}
 };
-const _tileCache=new Map();  // "z/x/y" -> {img,ok,err}
+/* Cache key must carry the release, or switching years shows last year's
+   tiles from memory. */
+function _bmCacheKey(){return satBasemap==="wayback"?("wayback:"+(_waybackRel||0)):satBasemap;}
+const _tileCache=new Map();  // "bm/z/x/y" -> {img,ok,err}
 let _satRafPending=false;
 function _satRepaint(){ if(_satRafPending)return; _satRafPending=true;
   requestAnimationFrame(()=>{_satRafPending=false;plotPoints();}); }
@@ -11512,7 +11538,7 @@ function _setAnchor(lat,lon,zone,E,N){
 function _getTile(z,x,y){
   const n=Math.pow(2,z); x=((x%n)+n)%n;
   if(y<0||y>=n)return null;
-  const key=satBasemap+"/"+z+"/"+x+"/"+y;
+  const key=_bmCacheKey()+"/"+z+"/"+x+"/"+y;
   let t=_tileCache.get(key);
   if(t)return t.ok?t.img:null;
   if(_tileCache.size>350){let i=0;for(const k of _tileCache.keys()){_tileCache.delete(k);if(++i>=120)break;}}
@@ -11608,7 +11634,7 @@ function _drawSatellite(ctx,w,h,T){
   // Required attribution
   ctx.save();
   ctx.font="8px 'Courier New',monospace";ctx.textAlign="right";ctx.textBaseline="bottom";
-  const at=_bm.attr;
+  const at=(typeof _bm.attr==="function"?_bm.attr():_bm.attr);
   const aw=ctx.measureText(at).width;
   ctx.fillStyle="rgba(0,0,0,.55)";ctx.fillRect(w-aw-8,h-13,aw+6,11);
   ctx.fillStyle="rgba(220,228,240,.85)";ctx.fillText(at,w-5,h-4);
@@ -12164,6 +12190,139 @@ function _zonePick(lat,lon,cb){
 
 /* — Anchor an existing job point via GPS or manual lat/lon — */
 
+
+/* ── WAYBACK RELEASES ───────────────────────────────────────────────────
+   The archive list comes from the service's own WMTS capabilities document,
+   so no release numbers are baked into the app and the list stays current
+   without a release of ChainLink. Parsed results are cached in localStorage
+   so the picker still works in the field with no signal — the tiles
+   themselves need a connection, but choosing a year does not. */
+const _WAYBACK_CAPS="https://wayback.maptiles.arcgis.com/arcgis/rest/services/world_imagery/mapserver/wmts/1.0.0/wmtscapabilities.xml";
+function _waybackCacheLoad(){
+  try{
+    const j=JSON.parse(_lsGet("cl_waybackList")||"null");
+    if(j&&Array.isArray(j.list)&&j.list.length){_waybackList=j.list;return true;}
+  }catch(e){}
+  return false;
+}
+/* Parsed by scanning the raw XML rather than through DOMParser. The
+   capabilities document is namespace-prefixed (ows:Title) and prefix
+   handling varies between engines, so a namespace-agnostic scan is both
+   more robust in the field and testable off-device. Each <Layer> block
+   yields a tile template; the release number is the integer in its /tile/
+   path segment, which is exactly what the service uses as its time
+   parameter. */
+function _waybackParse(xmlText){
+  const txt=String(xmlText||"");
+  if(!/<\w*:?Layer[\s>]/.test(txt))return null;
+  const blocks=txt.split(/<(?:\w+:)?Layer[\s>]/).slice(1);
+  const out=[],seen=new Set();
+  for(const b of blocks){
+    const tm=b.match(/template\s*=\s*"([^"]*\/tile\/[^"]*)"/i);
+    if(!tm)continue;
+    const tpl=tm[1].replace(/&amp;/g,"&");
+    const rm=tpl.match(/\/tile\/(\d+)\//);
+    if(!rm)continue;
+    const rel=parseInt(rm[1],10);
+    if(!isFinite(rel)||seen.has(rel))continue;
+    const ti=b.match(/<(?:\w+:)?Title[^>]*>([\s\S]*?)<\/(?:\w+:)?Title>/i);
+    const title=ti?ti[1].trim():"";
+    const d=title.match(/(\d{4})-(\d{2})-(\d{2})/);
+    seen.add(rel);
+    out.push({rel,
+      label:d?d[0]:(title.replace(/World Imagery/i,"").replace(/[()]/g,"").replace(/Wayback/i,"").trim()||("release "+rel)),
+      year:d?parseInt(d[1],10):null, tpl});
+  }
+  if(!out.length)return null;
+  out.sort((a,b)=>a.label<b.label?1:a.label>b.label?-1:0);
+  return out;
+}
+async function _waybackFetch(force){
+  if(_waybackList&&!force)return _waybackList;
+  if(!force&&_waybackCacheLoad())return _waybackList;
+  const ctl=new AbortController(), to=setTimeout(()=>ctl.abort(),12000);
+  try{
+    const r=await fetch(_WAYBACK_CAPS,{signal:ctl.signal,cache:"no-store",credentials:"omit"});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const list=_waybackParse(await r.text());
+    if(!list)throw new Error("the capabilities document did not parse as expected");
+    _waybackList=list;
+    _lsSet("cl_waybackList",JSON.stringify({at:Date.now(),list}));
+    return list;
+  } finally { clearTimeout(to); }
+}
+function _waybackSet(item){
+  _waybackRel=item.rel; _waybackLabel=item.label; _waybackTpl=item.tpl||null;
+  satBasemap="wayback"; satOn=true;
+  _lsSet("cl_waybackRel",JSON.stringify({rel:item.rel,label:item.label,tpl:item.tpl||null}));
+  saveData(); _syncSatBtn(); plotPoints();
+}
+function _waybackRestore(){
+  try{
+    const j=JSON.parse(_lsGet("cl_waybackRel")||"null");
+    if(j&&j.rel){_waybackRel=j.rel;_waybackLabel=j.label||"";_waybackTpl=j.tpl||null;}
+  }catch(e){}
+  _waybackCacheLoad();
+}
+function _waybackMenu(){
+  openModal((m,close)=>{
+    m.innerHTML="<h2>\ud83d\udd53 Historical Imagery</h2><p class='info'>Every release of the Esri World Imagery basemap since February 2014. Pick a date to fly the whole plot back to it \u2014 your points, deed and polylines stay exactly where they are.</p>";
+    const body=document.createElement("div");
+    body.innerHTML="<div class='result-box'><span class='lbl'>Loading:</span> <span class='val'>fetching the release list\u2026</span></div>";
+    m.appendChild(body);
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
+    const render=list=>{
+      body.innerHTML="";
+      /* Dozens of releases, most of which are identical over any one parcel.
+         Grouped by year so the list is scannable on a phone; the newest
+         release in each year is the one offered. */
+      const byYear=new Map();
+      list.forEach(it=>{const y=it.year||it.label.slice(0,4);if(!byYear.has(y))byYear.set(y,[]);byYear.get(y).push(it);});
+      [...byYear.keys()].sort((a,b)=>b-a).forEach(y=>{
+        const items=byYear.get(y);
+        const b=document.createElement("button");
+        b.className="btn "+(_waybackRel&&items.some(i=>i.rel===_waybackRel)?"ok":"");
+        b.textContent=y+"  \u2014  "+items.length+" release"+(items.length===1?"":"s")+
+          (_waybackRel&&items.some(i=>i.rel===_waybackRel)?"  \u2713":"");
+        b.onclick=()=>{
+          if(items.length===1){close();_waybackSet(items[0]);return;}
+          openModal((m2,c2)=>{
+            m2.innerHTML="<h2>\ud83d\udd53 "+y+"</h2><p class='info'>Releases published in "+y+".</p>";
+            items.forEach(it=>{
+              const bb=document.createElement("button");
+              bb.className="btn "+(it.rel===_waybackRel?"ok":"");
+              bb.textContent=it.label+(it.rel===_waybackRel?"  \u2713":"");
+              bb.onclick=()=>{c2();_waybackSet(it);};
+              m2.appendChild(bb);
+            });
+            const cb=document.createElement("button");cb.className="btn";cb.textContent="Back";cb.onclick=c2;m2.appendChild(cb);
+          });
+        };
+        body.appendChild(b);
+      });
+    };
+    _waybackFetch(false).then(render).catch(e=>{
+      body.innerHTML="<div class='result-box'><span class='lbl'>Could not load:</span> <span class='val'>"+
+        _esc(String(e&&e.message||e))+"</span><br><span class='lbl'>Note:</span> <span class='val'>the release list needs a connection the first time; after that it is remembered.</span></div>";
+    });
+    mk("Refresh release list","",()=>{_waybackFetch(true).then(render).catch(()=>{});});
+    mk("Close","",close);
+  });
+}
+function _basemapMenu(){
+  openModal((m,close)=>{
+    m.innerHTML="<h2>\ud83d\uddfa Basemap</h2><p class='info'>Sources differ in resolution and in when they were flown. If one is soft over your site, try another \u2014 they are captured by different providers.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
+    const pick=k=>{satBasemap=k;satOn=true;saveData();_syncSatBtn();close();plotPoints();};
+    ["esri","usgs","topo"].forEach(k=>{
+      mk(_BASEMAPS[k].label+(satBasemap===k?"  \u2713":""),satBasemap===k?"ok":"",()=>pick(k));
+    });
+    mk("\ud83d\udd53 Historical (Wayback)"+(satBasemap==="wayback"?("  \u2713 "+_waybackLabel):""),
+      satBasemap==="wayback"?"ok":"blue",()=>{close();_waybackMenu();});
+    mk("Close","",close);
+  });
+}
+
 function _satSetupFlow(){
   const defPt=(currentPoint&&currentPoint.Point)||1;
   calculatorInput("Anchor at point # (stand HERE for GPS):",String(defPt),pn=>{
@@ -12351,8 +12510,9 @@ function satelliteMenu(){
       r.onchange=()=>saveData();
       wrap.appendChild(r);modal.appendChild(wrap);
     };
-    mk("🗺 Basemap: "+((_BASEMAPS[satBasemap]||_BASEMAPS.esri).label)+" — tap to switch","blue",()=>{
-      satBasemap=satBasemap==="esri"?"topo":"esri";saveData();close();satelliteMenu();});
+    mk("🗺 Basemap: "+((_BASEMAPS[satBasemap]||_BASEMAPS.esri).label)
+       +(satBasemap==="wayback"&&_waybackLabel?" "+_waybackLabel:""),"blue",()=>{close();_basemapMenu();});
+    mk("🕓 Historical imagery (Wayback)","blue",()=>{close();_waybackMenu();});
     mk("📌 Store Point at GPS position","ok",()=>{close();storeGpsPoint();});
     mk("⬇ Cache visible area for offline","blue",()=>{close();cacheAreaOffline();});
     mk("🔺 NGS monuments — fetch nearby","blue",()=>{close();_ngsFetchList();});
