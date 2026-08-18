@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.6">
+<meta name="application-name" content="ChainLink-v4.7.7">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.6</title>
+<title>ChainLink Survey v4.7.7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.6";
+const APP_VERSION = "4.7.7";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -2678,7 +2678,23 @@ function _kmlSimplify(verts,tol){
 }
 function _kmlLLtoJob(c){
   const q=_gpsToJob(c.lat,c.lon);
-  return q&&isFinite(q.E)&&isFinite(q.N)?{E:q.E,N:q.N}:null;
+  return q&&isFinite(q.E)&&isFinite(q.N)?{E:q.E,N:q.N,Z:c.z||0}:null;
+}
+/* Dedupe is deliberately BATCH-LOCAL. The general _importPt dedupes against
+   every point in the job, which here would let a KML vertex silently adopt an
+   observed point that happened to fall within tolerance — and a later scoped
+   shift would then drag that observation along with the import. A KML vertex
+   may only ever reuse a point this same import created. */
+function _kmlVertPoint(v,desc,made){
+  const tol=(units==="m")?0.003:0.01;
+  const hit=made.find(m=>Math.hypot(m.E-v.E,m.N-v.N)<tol);
+  if(hit)return hit.num;
+  let n=pointCounter; while(_ptExists(n))n++;
+  points.push({Point:n,Northing:v.N,Easting:v.E,Elevation:v.Z||0,
+    Type:"KML",Flag:"",Description:desc||"KML",kmlBatch:made.batch});
+  pointCounter=Math.max(pointCounter,n+1);
+  made.push({E:v.E,N:v.N,num:n});
+  return n;
 }
 function importKML(){
   if(!requirePro("KML import")) return;
@@ -2712,26 +2728,37 @@ function importKML(){
     if(!lines.length&&!pts.length){alert("That KML has no lines or points ChainLink can use.");return;}
     const totalV=lines.reduce((a,l)=>a+l.coords.length,0);
     const busy=totalV>400;
-    openModal((m,close)=>{
+    let mkPts=false;
+    const build=(m,close)=>{
       m.innerHTML="<h2>\ud83c\udf0d Import KML</h2><p class='info'><b>"+_esc(fname||"file")+"</b><br>"+
-        lines.length+" line"+(lines.length===1?"":"s")+" ("+totalV+" vertices), "+pts.length+" point"+(pts.length===1?"":"s")+"</p>"+
-        "<p class='info'>Lines come in as polylines with azimuths and distances on every segment. Points come in as stored points."+
+        lines.length+" line"+(lines.length===1?"":"s")+" ("+totalV+" vertices), "+pts.length+" placemark point"+(pts.length===1?"":"s")+"</p>"+
+        "<p class='info'>Lines come in as polylines with azimuths and distances on every segment."+
         (busy?" <b style='color:#e0a03f'>This file is dense \u2014 simplifying is recommended or the plot will be buried in labels.</b>":"")+"</p>";
       const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
-      const run=tol=>{close();_kmlDoImport(lines,pts,tol,fname);};
+      /* Stored points at every vertex make the import inversable, stakeable and
+         exportable like any other point — but a traced creek can carry hundreds,
+         so it is opt-in and the count is shown before committing. Vertex points
+         are created AFTER simplification, so the tolerance controls how many. */
+      mk("Vertex points: "+(mkPts?"ON \u2014 a stored point at every vertex":"OFF \u2014 polylines only"),
+        mkPts?"ok":"",()=>{mkPts=!mkPts;build(m,close);});
+      if(mkPts&&totalV>200)m.insertAdjacentHTML("beforeend",
+        "<p class='info' style='color:#e0a03f'>Up to "+totalV+" points at this tolerance. Simplify first unless you need every one.</p>");
+      const run=tol=>{close();_kmlDoImport(lines,pts,tol,fname,mkPts);};
       const u=units==="m"?"m":"ft";
       mk("Import as drawn ("+totalV+" vertices)",busy?"":"ok",()=>run(0));
       mk("Simplify \u2014 "+(units==="m"?"0.3 m":"1 ft")+" tolerance",busy?"ok":"",()=>run(units==="m"?0.3:1));
       mk("Simplify \u2014 "+(units==="m"?"1.5 m":"5 "+u)+" tolerance","",()=>run(units==="m"?1.5:5));
       mk("Cancel","",close);
-    });
+    };
+    openModal(build);
   });
 }
-function _kmlDoImport(lines,pts,tol,fname){
+function _kmlDoImport(lines,pts,tol,fname,mkPts){
   _takeSnapshot("Import KML");
   const batch=_kmlBatchSeq++;
   const src=(fname||"KML").replace(/\.kml$/i,"");
   let nLines=0,nPts=0,vIn=0,vOut=0,dropped=0;
+  const made=[]; made.batch=batch;
   lines.forEach((L,idx)=>{
     let verts=[];
     for(const c of L.coords){const q=_kmlLLtoJob(c);if(q)verts.push(q);}
@@ -2747,24 +2774,23 @@ function _kmlDoImport(lines,pts,tol,fname){
     vOut+=verts.length;
     const segs=[];
     for(let i=0;i<verts.length-1;i++)segs.push({type:"line"});
-    _polylines.push({name:(L.name||"KML")+(lines.length>1?" "+(idx+1):""),verts,segs,
-      kmlBatch:batch,kmlSrc:src});
+    const plName=(L.name||"KML")+(lines.length>1?" "+(idx+1):"");
+    if(mkPts)verts.forEach((v,vi)=>_kmlVertPoint(v,(L.name||"KML").slice(0,24)+" "+(vi+1),made));
+    _polylines.push({name:plName,verts,segs,kmlBatch:batch,kmlSrc:src});
     nLines++;
   });
   pts.forEach(P=>{
     const q=_kmlLLtoJob(P.c);
     if(!q)return;
-    let num=pointCounter; while(_ptExists(num))num++;
-    points.push({Point:num,Northing:q.N,Easting:q.E,Elevation:0,
-      Type:"KML",Flag:"",Description:(P.name||"KML").slice(0,32),kmlBatch:batch});
-    pointCounter=Math.max(pointCounter,num+1);
+    _kmlVertPoint(q,(P.name||"KML").slice(0,32),made);
     nPts++;
   });
+  const vertPts=made.length-nPts;
   saveData();plotPoints();
   const rows=[
     {lbl:"Source:",val:_esc(src)},
     {lbl:"Polylines:",val:String(nLines)},
-    {lbl:"Points:",val:String(nPts)},
+    {lbl:"Points:",val:mkPts?(made.length+"  ("+vertPts+" from line vertices, "+nPts+" placemark)"):String(nPts)},
     {lbl:"Vertices:",val:tol?(vIn+" \u2192 "+vOut+"  (simplified at "+tol+" "+units+")"):String(vOut)}];
   if(dropped)rows.push({lbl:"Skipped:",val:dropped+" feature"+(dropped===1?"":"s")+" with too few usable coordinates"});
   rows.push({lbl:"Labels:",val:"azimuth and distance draw on every segment \u2014 use LBL to hide them"});
