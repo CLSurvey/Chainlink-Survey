@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.8">
+<meta name="application-name" content="ChainLink-v4.7.9">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.8</title>
+<title>ChainLink Survey v4.7.9</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.8";
+const APP_VERSION = "4.7.9";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -2729,26 +2729,29 @@ function importKML(){
     if(!lines.length&&!pts.length){alert("That KML has no lines or points ChainLink can use.");return;}
     const totalV=lines.reduce((a,l)=>a+l.coords.length,0);
     const busy=totalV>400;
-    let mkPts=false;
+    /* 4.7.9 — vertex points were behind an OFF-by-default toggle that read
+       like just another import option, so the common case (wanting points)
+       required noticing and flipping it first. Both outcomes are now their
+       own button and the only toggle left is detail level. */
+    let tol=busy?(units==="m"?0.3:1):0;
     const build=(m,close)=>{
       m.innerHTML="<h2>\ud83c\udf0d Import KML</h2><p class='info'><b>"+_esc(fname||"file")+"</b><br>"+
         lines.length+" line"+(lines.length===1?"":"s")+" ("+totalV+" vertices), "+pts.length+" placemark point"+(pts.length===1?"":"s")+"</p>"+
         "<p class='info'>Lines come in as polylines with azimuths and distances on every segment."+
         (busy?" <b style='color:#e0a03f'>This file is dense \u2014 simplifying is recommended or the plot will be buried in labels.</b>":"")+"</p>";
       const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
-      /* Stored points at every vertex make the import inversable, stakeable and
-         exportable like any other point — but a traced creek can carry hundreds,
-         so it is opt-in and the count is shown before committing. Vertex points
-         are created AFTER simplification, so the tolerance controls how many. */
-      mk("Vertex points: "+(mkPts?"ON \u2014 a stored point at every vertex":"OFF \u2014 polylines only"),
-        mkPts?"ok":"",()=>{mkPts=!mkPts;build(m,close);});
-      if(mkPts&&totalV>200)m.insertAdjacentHTML("beforeend",
-        "<p class='info' style='color:#e0a03f'>Up to "+totalV+" points at this tolerance. Simplify first unless you need every one.</p>");
-      const run=tol=>{close();_kmlDoImport(lines,pts,tol,fname,mkPts);};
       const u=units==="m"?"m":"ft";
-      mk("Import as drawn ("+totalV+" vertices)",busy?"":"ok",()=>run(0));
-      mk("Simplify \u2014 "+(units==="m"?"0.3 m":"1 ft")+" tolerance",busy?"ok":"",()=>run(units==="m"?0.3:1));
-      mk("Simplify \u2014 "+(units==="m"?"1.5 m":"5 "+u)+" tolerance","",()=>run(units==="m"?1.5:5));
+      const tolLbl=tol===0?("full detail \u2014 "+totalV+" vertices"):("simplified at "+tol+" "+u);
+      mk("\u2699 Detail: "+tolLbl+"  \u2014 tap to change","blue",()=>{
+        const steps=units==="m"?[0,0.3,1.5]:[0,1,5];
+        tol=steps[(steps.indexOf(tol)+1)%steps.length]; build(m,close);
+      });
+      /* Vertex points are created AFTER simplification, so the detail setting
+         above is what decides how many you get. */
+      mk("\u2713 Import lines + a point at every vertex","ok",()=>{close();_kmlDoImport(lines,pts,tol,fname,true);});
+      mk("Import lines only (no points)","",()=>{close();_kmlDoImport(lines,pts,tol,fname,false);});
+      if(tol===0&&totalV>200)m.insertAdjacentHTML("beforeend",
+        "<p class='info' style='color:#e0a03f'>At full detail that is up to "+totalV+" points. Change the detail setting first unless you need every one.</p>");
       mk("Cancel","",close);
     };
     openModal(build);
@@ -11281,18 +11284,22 @@ function _waybackUrl(z,y,x){
   return "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/"
     +(_waybackRel||0)+"/"+z+"/"+y+"/"+x;
 }
-/* maxZ is the deepest level the service is ASKED for, not a promise that the
-   level exists everywhere. Through 4.7.x this was pinned at 19 while Esri
-   serves 20-21 over most of the US, so close-in work was drawing a stretched
-   z19 tile instead of the sharper one sitting right there. The draw loop
-   already falls back to a parent tile when a level is missing, so asking
-   deeper costs a 404 in thin coverage and gains real detail everywhere else. */
+/* maxZ is the deepest level REQUESTED. 4.7.8 raised Esri from 19 to 21 on the
+   theory that a missing level would 404 into the parent-tile fallback. It does
+   not: past its cache depth Esri returns a real, successfully-loading JPEG that
+   reads "Map data not yet available", so the tile is drawn and the fallback
+   never fires. Zooming in lost the picture instead of softening it.
+   These caps are therefore set to what the caches actually hold. Beyond maxZ
+   the draw loop clamps and stretches the deepest real tile — blurrier, but
+   never blank, which is the correct failure direction for a field tool.
+   (Asking deeper safely would need the service tilemap endpoint to be checked
+   before requesting a level; that is a bigger change than it looks.) */
 const _BASEMAPS={
   esri:{url:(z,y,x)=>"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"+z+"/"+y+"/"+x,
-        maxZ:21, attr:"Imagery: Esri, Maxar, Earthstar Geographics", label:"Aerial (Esri)"},
+        maxZ:19, attr:"Imagery: Esri, Maxar, Earthstar Geographics", label:"Aerial (Esri)"},
   usgs:{url:(z,y,x)=>"https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/"+z+"/"+y+"/"+x,
-        maxZ:18, attr:"Imagery: USGS The National Map (NAIP)", label:"Aerial (USGS / NAIP)"},
-  wayback:{url:_waybackUrl, maxZ:21, label:"Aerial — historical",
+        maxZ:16, attr:"Imagery: USGS The National Map (NAIP)", label:"Aerial (USGS / NAIP)"},
+  wayback:{url:_waybackUrl, maxZ:19, label:"Aerial — historical",
         attr:()=>"Imagery: Esri World Imagery Wayback"+(_waybackLabel?" \u2014 "+_waybackLabel:"")},
   topo:{url:(z,y,x)=>"https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/"+z+"/"+y+"/"+x,
         maxZ:16, attr:"Map: USGS The National Map", label:"USGS Topo"}
