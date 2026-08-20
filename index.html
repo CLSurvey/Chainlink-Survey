@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.9">
+<meta name="application-name" content="ChainLink-v4.7.12">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.9</title>
+<title>ChainLink Survey v4.7.12</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.9";
+const APP_VERSION = "4.7.12";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1453,6 +1453,7 @@ function jobNew(){
         mk("📡 GPS Start (State Plane)","ok",()=>{close();_gpsStartFlow(name,false);});
         mk("📡 GPS Start + tap exact spot on imagery","ok",()=>{close();_gpsStartFlow(name,true);});
         mk("📜 Plot a deed first (no start point)","blue",()=>{close();_gpsStartFlow(name,"deed");});
+        mk("🌐 Paste Lat / Lon (Google Maps)","blue",()=>{close();_latLonStartFlow(name);});
         mk("🎯 Known Grid Coordinate (SPC / UTM)","blue",()=>{close();_gridStartFlow(name);});
         mk("⌨ Manual / Assumed (10000,10000)","blue",()=>{close();jobNewManual(name);});
       });
@@ -2790,7 +2791,13 @@ function _kmlDoImport(lines,pts,tol,fname,mkPts){
     nPts++;
   });
   const vertPts=made.length-nPts;
-  saveData();plotPoints();
+  saveData();
+  /* Fit to what just arrived rather than leaving the view wherever it was. */
+  try{
+    const all=[];
+    (_polylines||[]).forEach(pl=>{if(pl.kmlBatch===batch)(pl.verts||[]).forEach(v=>all.push({E:v.E,N:v.N}));});
+    if(all.length>1)zoomToPoints(all); else plotPoints();
+  }catch(e){ plotPoints(); }
   const rows=[
     {lbl:"Source:",val:_esc(src)},
     {lbl:"Polylines:",val:String(nLines)},
@@ -8465,6 +8472,32 @@ function _viewTransform(w,h){
   const offY=(h-rng*scale)/2-minN*scale+pad+viewOffsetY;
   return{scale,offX,offY,base,minE,maxE,minN,maxN,rng};
 }
+/* Zoom limits are expressed in GROUND resolution, not as a multiplier.
+   viewScale is relative to the data bounding box (scale = base * viewScale,
+   base = px / bbox range), so a flat ceiling of 100 meant the bigger the job,
+   the less you could zoom in. Two sites 50 miles apart put the hard stop at
+   ~8 ft per pixel — close work on either one was impossible, with nothing on
+   screen to explain why. The limits below are absolute: roughly 0.02 ft per
+   pixel at the deepest and ~5000 ft per pixel at the widest, whatever the
+   extent of the job. The fitted view (viewScale 1) is always permitted, so a
+   tiny job is never forced to zoom in. */
+function _zoomLimits(base){
+  if(!isFinite(base)||base<=0)return{lo:.000002,hi:100};
+  const m=(typeof units!=="undefined"&&units==="m");
+  const maxPx=m?200:60;        // deepest px per world unit
+  const minPx=m?0.00065:0.0002;// widest px per world unit
+  return{lo:Math.min(minPx/base,1),hi:Math.max(maxPx/base,1)};
+}
+function _clampZoom(vs,base){
+  if(!isFinite(vs)||vs<=0)return 1;
+  const L=_zoomLimits(base);
+  return Math.min(Math.max(vs,L.lo),L.hi);
+}
+function _curBase(){
+  const c=document.getElementById("plotCanvas"); if(!c)return null;
+  const T=_viewTransform(c.clientWidth,c.clientHeight);
+  return T?T.base:null;
+}
 function _niceStep(approx){
   const mag=Math.pow(10,Math.floor(Math.log10(Math.max(approx,1e-9))));
   const n=approx/mag;
@@ -12347,16 +12380,8 @@ function _satSetupFlow(){
       mk("🎯 Enter Grid Coords (SPC/UTM)","blue",()=>{close();
         _gridCoordEntry((lat,lon)=>{_satAfterFix(pt,lat,lon,null);});
       });
-      mk("⌨ Enter Lat / Lon","blue",()=>{close();
-        calculatorInput("Latitude (decimal deg, N+):","",la=>{
-          if(la===null||la==="")return;
-          calculatorInput("Longitude (decimal deg, W is −):","",lo=>{
-            if(lo===null||lo==="")return;
-            const lat=parseFloat(la),lon=parseFloat(lo);
-            if(isNaN(lat)||isNaN(lon)||Math.abs(lat)>85||Math.abs(lon)>180){alert("Invalid lat/lon.");return;}
-            _satAfterFix(pt,lat,lon,null);
-          });
-        });
+      mk("🌐 Paste Lat / Lon (Google Maps)","blue",()=>{close();
+        _latLonEntry("Anchor Position",(lat,lon)=>_satAfterFix(pt,lat,lon,null));
       });
       mk("Cancel","",close);
     });
@@ -12653,6 +12678,149 @@ function _gridCoordEntry(cb){
 }
 
 /* — Start a new job from a known grid coordinate — */
+
+/* ── LAT / LON ENTRY ────────────────────────────────────────────────────
+   Anchoring a job you are not standing on. Phone GPS is no help for a site
+   across the county, and hunting for it on unlabelled aerial is worse — so
+   this takes a position pasted straight out of Google Maps (or anywhere
+   else) and puts the job there.
+
+   Deliberately a real text field rather than calculatorInput or alphaInput:
+   both are on-screen tap grids with no clipboard, and the whole point here
+   is pasting. */
+function _llNorm(s){
+  return String(s||"")
+    .replace(/[\u00B0\u00BA]/g," ")            // degree signs
+    .replace(/[\u2032\u2019']/g," ")           // minutes
+    .replace(/[\u2033\u201D"]/g," ")           // seconds
+    .replace(/[,;]/g," ")
+    .replace(/\s+/g," ").trim();
+}
+/* Accepts: decimal pairs, hemisphere letters, degrees-minutes,
+   degrees-minutes-seconds, and Google Maps URLs. */
+function _parseLatLon(raw){
+  const s=String(raw||"").trim();
+  if(!s)return null;
+  // Maps URLs: !3d/!4d is the place itself, @ is only the viewport centre,
+  // so the place wins when both are present.
+  const d3=s.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+  if(d3)return _llCheck(+d3[1],+d3[2]);
+  const qq=s.match(/[?&](?:q|ll|sll|daddr|destination)=(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
+  if(qq)return _llCheck(+qq[1],+qq[2]);
+  const at=s.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+  if(at)return _llCheck(+at[1],+at[2]);
+
+  const toks=_llNorm(s).split(" ").filter(Boolean);
+  const groups=[]; let cur={nums:[],hemi:null};
+  for(const t of toks){
+    const h=t.match(/^([NSEW])$/i);
+    if(h){ cur.hemi=h[1].toUpperCase(); groups.push(cur); cur={nums:[],hemi:null}; continue; }
+    const m=t.match(/^([+-]?\d+(?:\.\d+)?)([NSEW])?$/i);
+    if(!m)continue;
+    cur.nums.push(parseFloat(m[1]));
+    if(m[2]){ cur.hemi=m[2].toUpperCase(); groups.push(cur); cur={nums:[],hemi:null}; }
+  }
+  if(cur.nums.length)groups.push(cur);
+  let g=groups.filter(x=>x.nums.length);
+  // No hemisphere letters: one run of numbers has to be split down the middle
+  if(g.length===1&&g[0].nums.length%2===0&&g[0].nums.length<=6){
+    const n=g[0].nums, half=n.length/2;
+    g=[{nums:n.slice(0,half),hemi:null},{nums:n.slice(half),hemi:null}];
+  }
+  if(g.length!==2)return null;
+  const val=x=>{
+    const n=x.nums;
+    if(!n.length||n.length>3)return null;
+    const sign=(n[0]<0?-1:1)*((x.hemi==="S"||x.hemi==="W")?-1:1);
+    return sign*(Math.abs(n[0])+(n[1]||0)/60+(n[2]||0)/3600);
+  };
+  let a=val(g[0]), b=val(g[1]);
+  if(a==null||b==null||!isFinite(a)||!isFinite(b))return null;
+  // Hemisphere letters decide which is which; otherwise lat comes first,
+  // unless the first value is out of latitude range.
+  const ha=g[0].hemi, hb=g[1].hemi;
+  let lat,lon;
+  if(ha==="E"||ha==="W"||hb==="N"||hb==="S"){ lat=b; lon=a; }
+  else { lat=a; lon=b; }
+  if(Math.abs(lat)>90&&Math.abs(lon)<=90){const t=lat;lat=lon;lon=t;}
+  return _llCheck(lat,lon);
+}
+function _llCheck(lat,lon){
+  if(!isFinite(lat)||!isFinite(lon))return null;
+  if(Math.abs(lat)>90||Math.abs(lon)>180)return null;
+  if(lat===0&&lon===0)return null;
+  return{lat,lon};
+}
+function _llFmt(lat,lon){
+  return lat.toFixed(6)+", "+lon.toFixed(6);
+}
+/* cb(lat,lon) on accept. */
+function _latLonEntry(title,cb){
+  openModal((m,close)=>{
+    m.innerHTML="<h2>\ud83c\udf10 "+(title||"Enter Latitude / Longitude")+"</h2>"+
+      "<p class='info'>Paste from Google Maps \u2014 long-press the spot, tap the coordinates to copy, paste here. "+
+      "Decimal, degrees-minutes-seconds and full Maps links all work.</p>";
+    const wrap=document.createElement("div");
+    wrap.innerHTML="<div class='input-label'>Latitude, Longitude</div>";
+    const inp=document.createElement("input");
+    inp.type="text"; inp.autocapitalize="off"; inp.autocomplete="off"; inp.spellcheck=false;
+    inp.placeholder="34.014300, -86.006600";
+    inp.style.cssText="width:100%;background:#111;color:var(--accent,#d9a13c);border:1px solid #444;border-radius:6px;padding:12px;font-family:'Courier New',monospace;font-size:1.05em";
+    wrap.appendChild(inp); m.appendChild(wrap);
+    const out=document.createElement("div"); out.className="result-box";
+    out.innerHTML="<span class='lbl'>Reads as:</span> <span class='val'>\u2014</span>";
+    m.appendChild(out);
+    const show=()=>{
+      const r=_parseLatLon(inp.value);
+      out.innerHTML=r
+        ? "<span class='lbl'>Reads as:</span> <span class='val'>"+_llFmt(r.lat,r.lon)+"</span>"
+          +"<br><span class='lbl'>Zone:</span> <span class='val'>"
+          +_esc(((_spcCandidates(r.lat,r.lon)[0])||_utmZoneFor(r.lat,r.lon)||{name:"none"}).name)+"</span>"
+        : "<span class='lbl'>Reads as:</span> <span class='val' style='color:var(--warn,#e0a03f)'>"
+          +(inp.value.trim()?"not a position yet":"\u2014")+"</span>";
+    };
+    inp.oninput=show; inp.onpaste=()=>setTimeout(show,0);
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
+    mk("\ud83d\udccb Paste from clipboard","blue",()=>{
+      try{
+        navigator.clipboard.readText().then(v=>{inp.value=v;show();})
+          .catch(()=>alert("Clipboard blocked \u2014 long-press the field and paste instead."));
+      }catch(e){ alert("Clipboard blocked \u2014 long-press the field and paste instead."); }
+    });
+    mk("\u2713 Use this position","ok",()=>{
+      const r=_parseLatLon(inp.value);
+      if(!r){alert("Could not read a position from that.\n\nTry: 34.014300, -86.006600");return;}
+      close(); cb(r.lat,r.lon);
+    });
+    mk("Cancel","",close);
+    setTimeout(()=>{try{inp.focus();}catch(e){}},60);
+  });
+}
+/* — New-job start from a pasted position — */
+function _latLonStartFlow(jn){
+  _latLonEntry("Start Position",(lat,lon)=>{
+    const zone=_spcCandidates(lat,lon)[0]||_utmZoneFor(lat,lon);
+    if(!zone){alert("No coordinate zone covers that position.");return;}
+    const p=_projForward(lat,lon,zone), u=_m2u();
+    const Nu=p.N*u, Eu=p.E*u;
+    _fetchGroundElev(lat,lon,(ge,src)=>{
+      const def=ge!=null?ge.toFixed(1):"100";
+      calculatorInput("Start Elev"+(src?" ("+src+")":"")+":",def,ev=>{
+        const Z=parseFloat(ev===null||ev===""?def:ev);
+        _startNewJob(jn,Nu,Eu,isNaN(Z)?100:Z);
+        _setAnchor(lat,lon,zone,Eu,Nu);
+        satOn=true;saveData();_syncSatBtn();
+        _zoomToGround(units==="ft"?300:100);
+        showResult("\u2713 Started at pasted position",[
+          {lbl:"Position:",val:_llFmt(lat,lon)},
+          {lbl:"Zone:",val:zone.name},
+          {lbl:"Point 1:",val:"N "+Nu.toFixed(2)+" E "+Eu.toFixed(2)},
+          {lbl:"Imagery:",val:"ON \u2014 check it is the right piece of ground before you work"}]);
+      });
+    });
+  });
+}
+
 function _gridStartFlow(jn){
   _gridCoordEntry((lat,lon,zone,Nu,Eu)=>{
     _fetchGroundElev(lat,lon,(ge,src)=>{
@@ -12723,7 +12891,7 @@ function _zoomToGround(unitsAcross){
     const w=(c&&c.clientWidth)||(wrap&&wrap.clientWidth)||360;
     const h=(c&&c.clientHeight)||(wrap&&wrap.clientHeight)||480;
     const T=_viewTransform(w,h); if(!T)return;
-    viewScale=Math.max(.000002,Math.min(100,(w/unitsAcross)/T.base));
+    viewScale=_clampZoom((w/unitsAcross)/T.base,T.base);
     viewOffsetX=0;viewOffsetY=0;plotPoints();
   };
   apply();
@@ -12791,13 +12959,31 @@ function plotPoints(extCtx,extW,extH){
   if(!extCtx){
     const pv=window._pvState;
     if(pv&&pv.w===w&&pv.h===h&&(pv.minE!==T.minE||pv.minN!==T.minN||pv.rng!==T.rng)){
-      const prevScale=pv.base*viewScale;
-      viewScale=Math.max(.000002,Math.min(100,prevScale/T.base));
-      const sc=T.base*viewScale;
-      viewOffsetX+=sc*((T.rng-pv.rng)/2+(T.minE-pv.minE));
-      viewOffsetY+=sc*((T.rng-pv.rng)/2+(T.minN-pv.minN));
+      /* Compensation is bounded. viewScale is expressed RELATIVE to the data
+         bbox, so holding apparent scale constant means multiplying viewScale
+         by however much the bbox grew. That is right for adding a shot; it is
+         badly wrong for a bulk change. Importing a KML a few thousand feet
+         away multiplies the range ~30x in one repaint, which drove viewScale
+         to 30 (and to the 100 ceiling on anything larger) — the view ended up
+         buried at an absurd zoom that took twenty presses to climb out of.
+         Beyond an 8x range change the view is left alone: the job simply
+         re-fits to the new data, which is what you want to see after an
+         import anyway. */
+      const want=pv.base*viewScale/T.base;
+      const growth=pv.rng?T.rng/pv.rng:1;
+      if(isFinite(want)&&want>0&&growth>0.125&&growth<8){
+        viewScale=_clampZoom(want,T.base);
+        const sc=T.base*viewScale;
+        viewOffsetX+=sc*((T.rng-pv.rng)/2+(T.minE-pv.minE));
+        viewOffsetY+=sc*((T.rng-pv.rng)/2+(T.minN-pv.minN));
+      } else {
+        viewScale=1;viewOffsetX=0;viewOffsetY=0;
+      }
       T=_viewTransform(w,h);
     }
+    /* A non-finite viewScale makes every transform NaN and nothing on the
+       canvas can recover from it — belt and braces. */
+    if(!isFinite(viewScale)||viewScale<=0){viewScale=1;viewOffsetX=0;viewOffsetY=0;T=_viewTransform(w,h);}
     window._pvState={w,h,minE:T.minE,minN:T.minN,rng:T.rng,base:T.base};
   }
   const{scale,offX,offY}=T;
@@ -13618,7 +13804,7 @@ function plotPoints(extCtx,extW,extH){
 }
 
 /* ── PLOT CONTROLS ── */
-function zoomBy(f){viewScale=Math.max(.000002,Math.min(100,viewScale*f));plotPoints()}
+function zoomBy(f){viewScale=_clampZoom(viewScale*f,_curBase());plotPoints()}
 function panBy(px,py){viewOffsetX+=px;viewOffsetY+=py;plotPoints()}
 function resetPlot(){_resetViewState();viewScale=1;viewOffsetX=0;viewOffsetY=0;plotPoints()}
 function _applyLightMode(){
@@ -13718,7 +13904,7 @@ function zoomToOccupied(){
     const T = _viewTransform(w, h);
     if(!T) return;
 
-    const newScale = Math.max(.000002, Math.min(100, viewScale * factor));
+    const newScale = _clampZoom(viewScale * factor, T.base);
     if(newScale === viewScale) return;
 
     // World coords of the finger/pointer position under current transform
