@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.12">
+<meta name="application-name" content="ChainLink-v4.7.14">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.12</title>
+<title>ChainLink Survey v4.7.14</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.12";
+const APP_VERSION = "4.7.14";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -8627,6 +8627,13 @@ function _deedNormalize(t){
   return (t||"")
     // invisible characters PDF copy loves to smuggle in
     .replace(/[\u00AD\u200B\u200C\u200D\u2060\uFEFF]/g,"")
+    /* Misspelt / unspaced "degrees" is normalised HERE rather than only in the
+       bearing parser, because the distance parser skips numbers that belong to
+       a bearing — and it can only recognise them once the degree word is
+       readable. Left unnormalised, "86 degres30' West ... 297.32'" parsed the
+       minutes value as the distance: a 30 ft course where the deed said
+       297.32 ft. */
+    .replace(/\bDEG(?:REES|REEE|REE|RES|RE|R|S)?\.?(?![A-Za-z])/gi," DEGREES ")
     // a line break that starts a new course (next line begins with a bearing,
     // DUE, DEFLECT, or a list number) becomes a THENCE sentinel before the
     // whitespace collapse erases the break
@@ -8722,7 +8729,19 @@ function _deedNormalize(t){
 }
 
 /* Bearing: returns {q1:'N'|'S', deg, min, sec, q2:'E'|'W'} or cardinal {card:'N'} */
+/* Recorded deeds are typed by hand and "degrees" is the most misspelt word
+   in them. This deed carried "86 degres30' West" — misspelt AND with no space
+   before the minutes — which no degree pattern matched, so the bearing fell
+   through to the cardinal reading and published a due-north course of 30 ft
+   from a call that actually read N 86°30' W, 297.32 ft. Normalising the word
+   first costs nothing and removes a whole family of these. The trailing
+   (?![A-Z]) stops it eating the front of an unrelated word. */
+function _deedFixDegWord(seg){
+  return String(seg||"").replace(/\bDEG(?:REES|REEE|REE|RES|RE|R|S)?\.?(?![A-Z])/g," DEGREES ")
+                        .replace(/\s{2,}/g," ");
+}
 function _deedParseBearing(seg){
+  seg=_deedFixDegWord(seg);
   // DUE NORTH / NORTH etc. as a whole call direction
   const dueAbbr=seg.match(/\bDUE\s+(N|S|E|W)\b(?![A-Z])/);
   const due=seg.match(/\bDUE\s+(NORTH|SOUTH|EAST|WEST)\b/) ||
@@ -8754,7 +8773,29 @@ function _deedParseBearing(seg){
     if(deg>90||(deg===90&&(min>0||sec>0))||min>=60||sec>=60) return null;
     return{q1:m[1][0], deg, min, sec, q2:m[6][0]};
   }
-  if(due) return {card:due[1][0], idx:due._idx, due:/^DUE\s/.test(due[0])};
+  if(due){
+    /* Guard for anything the patterns above still could not read. If a
+       north/south word is followed by a number that is plainly DEGREES (a
+       degree symbol, a degree word, or a minutes mark follows it) and an
+       east/west word comes soon after, this is a bearing that failed to
+       parse — not a due-north call. Publishing it as a cardinal is how a
+       wrong direction reaches the plot with no warning, so it becomes a
+       loud partial instead. "North 100 feet ... West line" is untouched:
+       there the number is followed by a distance unit, not degrees. */
+    // whole number, not the 3-digit bearing cap — the guard needs to see what
+    // follows the COMPLETE value (1168.9' is a distance, 86 is not)
+    const mb=seg.match(/\b(?:N|S|NORTH|SOUTH)\s{0,2}\d+(?:\.\d+)?/);
+    if(mb){
+      const after=seg.slice(mb.index+mb[0].length);
+      // The number is a DISTANCE if a unit follows, or a foot mark that ends
+      // the value ("North 1168.9' to a point in the West line"). Anything else
+      // followed by an east/west word is a bearing that failed to parse.
+      const isDist=/^\s*(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|PERCHES?|PERCH|VARAS?|LINKS?|METERS?|METRES?|M)\b/.test(after)
+                 || /^\s*['\u2032]\s*(?:TO|AND|THENCE|MORE|[;,.]|$)/.test(after);
+      if(!isDist && /\b(?:E|W|EAST|WEST)\b/.test(after.slice(0,50))) return null;
+    }
+    return {card:due[1][0], idx:due._idx, due:/^DUE\s/.test(due[0])};
+  }
   return null;
 }
 
@@ -8767,6 +8808,17 @@ function _deedBearingToAz(b){
   if(b.q1==="S"&&b.q2==="W")return 180+a;
   return 360-a;
 }
+/* Splitting a decimal degree into d/m/s rounds the seconds, and rounding can
+   carry: 1 + 54/60 is 1.8999999999999999 in binary, so the naive split gives
+   53 minutes and 60 seconds. Every bearing whose minutes ended in a value the
+   float could not represent exactly printed as (m-1)'60" — 54' read back as
+   53'60". Carries are resolved here so the display always matches the deed. */
+function _dmsParts(a){
+  let d=Math.floor(a), m=Math.floor((a-d)*60), s=Math.round(((a-d)*60-m)*60);
+  if(s>=60){s-=60;m+=1;}
+  if(m>=60){m-=60;d+=1;}
+  return{d,m,s};
+}
 function _deedAzToBearingStr(az){
   az=((az%360)+360)%360;
   let q1,q2,a;
@@ -8774,8 +8826,8 @@ function _deedAzToBearingStr(az){
   else if(az<=180){q1="S";q2="E";a=180-az;}
   else if(az<=270){q1="S";q2="W";a=az-180;}
   else{q1="N";q2="W";a=360-az;}
-  const d=Math.floor(a), m=Math.floor((a-d)*60), sc=Math.round(((a-d)*60-m)*60);
-  return q1+" "+d+"°"+String(m).padStart(2,"0")+"'"+String(sc).padStart(2,"0")+"\" "+q2;
+  const t=_dmsParts(a);
+  return q1+" "+t.d+"°"+String(t.m).padStart(2,"0")+"'"+String(t.s).padStart(2,"0")+"\" "+q2;
 }
 
 /* Distance: first "number unit" in segment (skipping numbers that belong to bearings/radius) */
@@ -9689,10 +9741,24 @@ function _deedSyncPoints(){
   const elev=(currentPoint?currentPoint.Elevation:100)||100;
   _deedPlot.figures.forEach((f,fi)=>{
     if(!f.computed)return;
-    // Closed figures: the last vertex is the return to the POB — same corner,
-    // apart only by the closure error. It gets no point of its own.
+    /* The last vertex is dropped ONLY when it really is the return to the POB
+       — same corner, apart only by the closure error. That was assumed
+       unconditionally, which silently swallowed the final corner of any deed
+       whose closing call cannot be run: a description ending "...386.00 feet
+       to an iron pin; thence North 61°15' East to the point of beginning"
+       has no distance on the last call, so the traverse stops AT the iron
+       pin. That pin is a real, distinct corner — and the one you need in
+       order to close the figure by hand — but it got no point.
+       Two signals say the run returns to the POB: the last usable call is
+       marked as arriving at the point of beginning, or the figure closes
+       tightly on its own. Otherwise the last vertex is kept and labelled as
+       an open end. */
     const vsAll=f.computed.verts;
-    const vs=(f.kind==="easement")?vsAll:vsAll.slice(0,Math.max(1,vsAll.length-1));
+    const _us=f.computed.usable||[];
+    const _lastCall=_us[_us.length-1];
+    const _tol=Math.max(units==="m"?0.6:2,0.02*(f.computed.perim||0));
+    const returnsToPob=!!(_lastCall&&_lastCall._pob)||(f.computed.closeDist<=_tol);
+    const vs=(f.kind==="easement"||!returnsToPob)?vsAll:vsAll.slice(0,Math.max(1,vsAll.length-1));
     if(!f.ptNums)f.ptNums=[];
     // multiple parcels / carve-outs: points carry their figure's name so
     // "POB" and "crn 1" are never ambiguous in exports or on screen
@@ -9708,7 +9774,8 @@ function _deedSyncPoints(){
         f.ptNums[i]=num;
         points.push({Point:num,Northing:vv.N,Easting:vv.E,Elevation:elev,
           Type:"Deed",Flag:"",ih:0,
-          Description:i===0?(tag+" POB"):(tag+" crn "+i)});
+          Description:i===0?(tag+" POB")
+                     :(tag+" crn "+i+((!returnsToPob&&i===vs.length-1)?" (open end)":""))});
       }else{pt.Northing=vv.N;pt.Easting=vv.E;}
     });
     if(f.ptNums.length>vs.length){
@@ -10132,8 +10199,8 @@ function parseDeedFigures(txt){
 
 function _deedCallLabel(c,i){
   if(c&&c.type==="line"&&c.defl){
-    const a=c.defl.ang, d0=Math.floor(a), m0=Math.floor((a-d0)*60), s0=Math.round(((a-d0)*60-m0)*60);
-    const at=(a===0)?"continue straight":("deflect "+d0+"\u00b0"+String(m0).padStart(2,"0")+"'"+String(s0).padStart(2,"0")+'" '+(c.defl.dir==="R"?"RIGHT":"LEFT"));
+    const a=c.defl.ang, t0=_dmsParts(a);
+    const at=(a===0)?"continue straight":("deflect "+t0.d+"\u00b0"+String(t0.m).padStart(2,"0")+"'"+String(t0.s).padStart(2,"0")+'" '+(c.defl.dir==="R"?"RIGHT":"LEFT"));
     return (i+1)+". "+(c.tie?"TIE \u2192 POB (excluded): ":"")+at+" \u2014 "+c.dist.toFixed(2)+" ft";
   }
   if(c&&c.type==="line"&&c.compassAz!=null&&!c.bearing){
