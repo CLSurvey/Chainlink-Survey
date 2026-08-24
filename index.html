@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.14">
+<meta name="application-name" content="ChainLink-v4.7.15">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.14</title>
+<title>ChainLink Survey v4.7.15</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1157,7 +1157,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.14";
+const APP_VERSION = "4.7.15";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -10251,24 +10251,150 @@ function _deedReview(calls,opts){
     mk(opts.onDone?"Back to figures":"Cancel","",()=>{close();if(opts.onDone)opts.onDone();});
   });
 }
+
+/* ── SURVEYOR KEYPAD ────────────────────────────────────────────────────
+   The system keyboard has no degree sign, buries the apostrophe and quote,
+   and gives you a full alphabet to hunt through for four letters. Bearings
+   are typed constantly and always from the same tiny alphabet:
+   N S E W, ten digits, and three marks. So the field gets its own pad.
+
+   inputmode="none" suppresses the system keyboard while leaving the caret,
+   selection and paste intact — the field is a normal text input, not a
+   fake one, so anything the pad cannot express can still be typed with the
+   ⌨ toggle. */
+function _padKey(row,label,cls,fn,wide){
+  const b=document.createElement("button");
+  b.type="button"; b.textContent=label;
+  b.style.cssText="flex:"+(wide||1)+" 1 0;min-width:0;padding:11px 2px;margin:2px;"+
+    "background:"+(cls==="act"?"#1d3a2a":cls==="dim"?"#20242c":"#2a2f3a")+";"+
+    "color:"+(cls==="act"?"#9ff0b5":cls==="dim"?"#8c98a8":"#e8eef7")+";"+
+    "border:1px solid #3a4150;border-radius:7px;font-family:'Courier New',monospace;"+
+    "font-size:1.05em;font-weight:bold;touch-action:manipulation;-webkit-user-select:none;user-select:none";
+  b.onmousedown=e=>e.preventDefault();   // never steal the caret
+  b.ontouchstart=e=>{e.preventDefault();};
+  b.onclick=e=>{e.preventDefault();fn();};
+  row.appendChild(b); return b;
+}
+function _padRow(host){
+  const r=document.createElement("div");
+  r.style.cssText="display:flex;width:100%";
+  host.appendChild(r); return r;
+}
+/* Insert at the caret rather than appending, so corrections mid-string work. */
+function _padIns(inp,txt){
+  const s=inp.selectionStart, e=inp.selectionEnd;
+  if(s==null){inp.value+=txt;}
+  else{
+    inp.value=inp.value.slice(0,s)+txt+inp.value.slice(e);
+    const p=s+txt.length;
+    try{inp.setSelectionRange(p,p);}catch(err){}
+  }
+  inp.dispatchEvent(new Event("input",{bubbles:true}));
+}
+function _padDel(inp){
+  const s=inp.selectionStart, e=inp.selectionEnd;
+  if(s==null||s!==e){ _padIns(inp,""); return; }
+  if(s>0){
+    inp.value=inp.value.slice(0,s-1)+inp.value.slice(s);
+    try{inp.setSelectionRange(s-1,s-1);}catch(err){}
+    inp.dispatchEvent(new Event("input",{bubbles:true}));
+  }
+}
+/* kind: "bearing" | "distance" */
+function _attachKeypad(inp,host,kind){
+  inp.setAttribute("inputmode","none");
+  inp.autocapitalize="characters"; inp.autocomplete="off"; inp.spellcheck=false;
+  const pad=document.createElement("div");
+  pad.style.cssText="margin:4px 0 8px;padding:4px;background:#12161d;border:1px solid #2c323d;border-radius:9px";
+  host.appendChild(pad);
+  const build=()=>{
+    pad.innerHTML="";
+    if(kind==="bearing"){
+      let r=_padRow(pad);
+      ["N","S","E","W"].forEach(k=>_padKey(r,k,"act",()=>_padIns(inp,k)));
+      r=_padRow(pad);
+      _padKey(r,"\u00b0","",()=>_padIns(inp,"\u00b0"));
+      _padKey(r,"'","",()=>_padIns(inp,"'"));
+      _padKey(r,'"',"",()=>_padIns(inp,'"'));
+      _padKey(r,"\u2423","dim",()=>_padIns(inp," "));
+      [["7","8","9"],["4","5","6"],["1","2","3"]].forEach(g=>{
+        const rr=_padRow(pad); g.forEach(d=>_padKey(rr,d,"",()=>_padIns(inp,d)));
+        if(g[0]==="7")_padKey(rr,"\u232b","dim",()=>_padDel(inp));
+        if(g[0]==="4")_padKey(rr,"CLR","dim",()=>{inp.value="";inp.dispatchEvent(new Event("input",{bubbles:true}));});
+        if(g[0]==="1")_padKey(rr,"\u2328","dim",()=>{
+          inp.setAttribute("inputmode","text");pad.style.display="none";
+          try{inp.blur();inp.focus();}catch(e){}
+        });
+      });
+      r=_padRow(pad);
+      _padKey(r,"0","",()=>_padIns(inp,"0"));
+      _padKey(r,".","",()=>_padIns(inp,"."));
+      _padKey(r,"CURVE L","dim",()=>{inp.value="CURVE L R= ARC=";inp.dispatchEvent(new Event("input",{bubbles:true}));},2);
+      _padKey(r,"CURVE R","dim",()=>{inp.value="CURVE R R= ARC=";inp.dispatchEvent(new Event("input",{bubbles:true}));},2);
+    } else {
+      [["7","8","9"],["4","5","6"],["1","2","3"]].forEach(g=>{
+        const rr=_padRow(pad); g.forEach(d=>_padKey(rr,d,"",()=>_padIns(inp,d)));
+        if(g[0]==="7")_padKey(rr,"\u232b","dim",()=>_padDel(inp));
+        if(g[0]==="4")_padKey(rr,"CLR","dim",()=>{inp.value="";inp.dispatchEvent(new Event("input",{bubbles:true}));});
+        if(g[0]==="1")_padKey(rr,"\u2328","dim",()=>{
+          inp.setAttribute("inputmode","text");pad.style.display="none";
+          try{inp.blur();inp.focus();}catch(e){}
+        });
+      });
+      let r=_padRow(pad);
+      _padKey(r,"0","",()=>_padIns(inp,"0"));
+      _padKey(r,".","",()=>_padIns(inp,"."));
+      _padKey(r,"00","",()=>_padIns(inp,"00"));
+      r=_padRow(pad);
+      // Old descriptions are still written in chains, poles and rods.
+      ["CHAINS","POLES","RODS","VARAS"].forEach(u=>
+        _padKey(r,u.slice(0,2)+u.slice(2,3).toLowerCase(),"dim",()=>_padIns(inp," "+u)));
+    }
+  };
+  build();
+  return pad;
+}
+/* Reads back what the pad has produced so a mistyped bearing is visible
+   before it is saved, not after it is plotted. */
+function _bearingEcho(inp,host){
+  const box=document.createElement("div");
+  box.className="result-box";
+  box.style.cssText="margin:2px 0 6px";
+  host.appendChild(box);
+  const upd=()=>{
+    const t=_deedNormalize(inp.value||"");
+    if(!t.trim()){box.innerHTML="<span class='lbl'>Reads as:</span> <span class='val'>\u2014</span>";return;}
+    if(/^(CURVE|SPIRAL)/.test(t)){box.innerHTML="<span class='lbl'>Reads as:</span> <span class='val'>"+_esc(t)+"</span>";return;}
+    const b=_deedParseBearing(t);
+    box.innerHTML=b
+      ? "<span class='lbl'>Reads as:</span> <span class='val'>"+_esc(_deedAzToBearingStr(_deedBearingToAz(b)))
+        +"  (az "+_deedBearingToAz(b).toFixed(4).replace(/\.?0+$/,"")+"\u00b0)</span>"
+      : "<span class='lbl'>Reads as:</span> <span class='val' style='color:var(--warn,#e0a03f)'>not a bearing yet</span>";
+  };
+  inp.addEventListener("input",upd); upd();
+  return box;
+}
+
 function _deedEditCall(calls,i){
   const c=calls[i];
   openModal((modal,close)=>{
     modal.innerHTML="<h2>Call "+(i+1)+"</h2>"+(c.raw?"<p class='info' style='font-size:.75em'>from deed: “"+c.raw.slice(0,110)+"”</p>":"");
-    const fld=(label,val)=>{
+    const fld=(label,val,kind)=>{
       const w=document.createElement("div");
       w.innerHTML="<div class='input-label'>"+label+"</div>";
       const inp=document.createElement("input");
       inp.type="text";inp.value=val||"";
       inp.style.cssText="width:100%;background:#111;color:var(--accent,#d9a13c);border:1px solid #444;border-radius:6px;padding:10px;font-family:'Courier New',monospace;font-size:1em";
-      w.appendChild(inp);modal.appendChild(w);return inp;
+      w.appendChild(inp);modal.appendChild(w);
+      if(kind){ if(kind==="bearing")_bearingEcho(inp,w); _attachKeypad(inp,w,kind); }
+      return inp;
     };
     const bIn=fld("Bearing (e.g. N 47°23'10\" E — or CURVE L/R R=250 ARC=130.9)",
       c.type==="line"?_deedAzToBearingStr(_deedBearingToAz(c.bearing)):
       c.type==="curve"?("CURVE "+c.dir+(c.radius?" R="+c.radius:"")+(c.arc?" ARC="+c.arc:"")+(c.chordD?" CH="+c.chordD:"")):
-      c.type==="spiral"?("SPIRAL "+c.dir+" "+(c.transition||"AUTO").toUpperCase()+(c.length?" L="+c.length:"")+(c.radius?" R="+c.radius:"")):"");
+      c.type==="spiral"?("SPIRAL "+c.dir+" "+(c.transition||"AUTO").toUpperCase()+(c.length?" L="+c.length:"")+(c.radius?" R="+c.radius:"")):"","bearing");
     const dIn=fld("Distance ("+units+", or e.g. '12 chains')",
-      c.type==="line"?(c.rawVal!=null?c.rawVal+" "+(c.unit||""):c.dist):"");
+      c.type==="line"?(c.rawVal!=null?c.rawVal+" "+(c.unit||""):c.dist):"","distance");
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     mk("Save call","ok",()=>{
       const bt=_deedNormalize(bIn.value), dt=_deedNormalize(dIn.value);
