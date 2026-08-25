@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.15">
+<meta name="application-name" content="ChainLink-v4.7.20">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.15</title>
+<title>ChainLink Survey v4.7.20</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -905,11 +905,34 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 #jobScreen{background:radial-gradient(circle at 50% 18%,rgba(115,199,210,.10),transparent 32%),linear-gradient(150deg,#0b1316,#050809 72%)!important}
 #jobScreen::before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.016) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.016) 1px,transparent 1px);background-size:44px 44px}
 #jobScreen>*{position:relative}
-#prevJobCard{max-width:410px!important;padding:20px!important;border-radius:20px!important;background:linear-gradient(145deg,rgba(20,31,35,.94),rgba(12,19,22,.94))!important;border:1px solid var(--border2)!important;border-left:0!important;box-shadow:var(--shadow-card),inset 0 1px rgba(255,255,255,.04)}
-#prevJobCard::before{content:"ACTIVE JOB";display:inline-flex;padding:4px 8px;border-radius:99px;background:var(--accent-lo);color:var(--accent);font-size:.58rem;font-weight:800;letter-spacing:.12em;margin-bottom:10px}
+#jobScreen{justify-content:flex-start!important;overflow-y:auto!important}
+#jobList{width:100%;max-width:410px;display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+.job-empty{display:none;width:100%;max-width:410px;text-align:center;color:var(--muted);font-family:var(--font-ui);font-size:.85em;line-height:1.45;padding:18px 12px 20px}
+.job-card{position:relative;width:100%;max-width:410px;padding:16px 44px 14px 18px;border-radius:20px;background:linear-gradient(145deg,rgba(20,31,35,.94),rgba(12,19,22,.94));border:1px solid var(--border2);box-shadow:var(--shadow-card),inset 0 1px rgba(255,255,255,.04);cursor:pointer;text-align:left;color:var(--text)}
+.job-card.is-active{border-color:rgba(230,183,95,.55);box-shadow:var(--shadow-card),0 0 0 1px rgba(230,183,95,.28)}
+.job-card-badge{display:inline-flex;padding:4px 8px;border-radius:99px;background:var(--surface2);color:var(--muted);font-size:.58rem;font-weight:800;letter-spacing:.12em;margin-bottom:8px}
+.job-card.is-active .job-card-badge{background:var(--accent-lo);color:var(--accent)}
+.job-card-name{font-family:var(--font-ui);font-size:1.15em;font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job-card-meta{font-family:var(--font-data);font-size:.72em;color:var(--text2);margin-top:5px;line-height:1.4}
+.job-card-del{position:absolute;top:12px;right:10px;width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:1em;line-height:1}
+.job-card-del:active{color:var(--danger);border-color:var(--danger)}
 .job-btn{max-width:410px;min-height:56px;padding:0 18px;border-radius:15px;background:linear-gradient(145deg,rgba(24,37,42,.95),rgba(15,23,27,.95));border:1px solid var(--border2);color:var(--text2);box-shadow:0 8px 24px rgba(0,0,0,.18);font-weight:700}
 .job-btn-ok{background:linear-gradient(135deg,#9ce0ad,#67bc7c)!important;color:#07130a!important;border:0!important}
 .job-btn-blue{background:linear-gradient(145deg,rgba(115,199,210,.15),rgba(15,23,27,.95))!important;color:var(--accent2)!important;border-color:rgba(115,199,210,.35)!important}
+
+#saveFailBanner{display:none;position:fixed;left:0;right:0;top:0;z-index:9000;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;
+  padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top));
+  background:#5a1408;color:#ffe8c8;border-bottom:2px solid var(--warn);
+  font-family:var(--font-ui);box-shadow:0 12px 28px rgba(0,0,0,.45)}
+#saveFailBanner.show{display:flex}
+#saveFailBanner .save-fail-msg{flex:1 1 180px;font-size:.82rem;font-weight:800;letter-spacing:.04em;line-height:1.35;text-align:left}
+#saveFailBanner button{min-height:44px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,217,138,.45);
+  font-family:var(--font-ui);font-weight:800;letter-spacing:.06em;cursor:pointer}
+#saveFailBanner .save-fail-csv{background:var(--warn);color:#1a1004}
+#saveFailBanner .save-fail-dismiss{background:transparent;color:#ffe8c8}
+
+/* setup strip removed 4.7.19 — HI/Prism/CSF live under Field + Settings */
+#setupStrip{display:none!important}
 
 /* Header */
 #appHeader{min-height:68px;padding:9px 12px;background:linear-gradient(180deg,rgba(16,25,29,.96),rgba(10,16,19,.94));border-bottom:1px solid var(--border2);box-shadow:0 10px 36px rgba(0,0,0,.24);backdrop-filter:blur(18px);position:relative;z-index:120}
@@ -1063,16 +1086,18 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
   <div id="splashVersion">v3.8.0 · Built for total station work</div>
 </div>
 
+<div id="saveFailBanner" role="alert">
+  <div class="save-fail-msg">SAVE FAILED — storage full. Last good copy kept. Export CSV now.</div>
+  <button type="button" class="save-fail-csv" onclick="saveToFile()">Export CSV</button>
+  <button type="button" class="save-fail-dismiss" onclick="_saveFailHide()">Dismiss</button>
+</div>
 <!-- ══ JOB SCREEN ════════════════════════════════════════ -->
-<div id="jobScreen" style="position:fixed;inset:0;z-index:8000;background:radial-gradient(ellipse at 50% 35%,#1a1408 0%,#0a0905 75%);display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px">
+<div id="jobScreen" style="position:fixed;inset:0;z-index:8000;background:radial-gradient(ellipse at 50% 35%,#1a1408 0%,#0a0905 75%);display:none;flex-direction:column;align-items:center;justify-content:flex-start;padding:28px 24px 32px;overflow-y:auto">
   <div style="font-family:var(--font-ui);font-size:1.15em;font-weight:700;letter-spacing:.22em;color:var(--accent);text-transform:uppercase;margin-bottom:4px;text-shadow:var(--glow-amber)">CHAINLINK</div>
-  <div style="font-family:var(--font-ui);font-size:.72em;letter-spacing:.18em;color:var(--muted);text-transform:uppercase;margin-bottom:30px">Job Manager</div>
-  <div id="prevJobCard" style="display:none;width:100%;max-width:360px;background:linear-gradient(135deg,#0e1828 0%,#131f32 100%);border:1px solid var(--border2);border-left:3px solid var(--accent);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;cursor:pointer" onclick="jobContinue()">
-    <div style="font-family:var(--font-ui);font-size:.70em;font-weight:700;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">▶ Continue Previous Job</div>
-    <div id="prevJobName" style="font-family:var(--font-ui);font-size:1.3em;font-weight:700;color:var(--accent)"></div>
-    <div id="prevJobMeta" style="font-family:var(--font-data);font-size:.72em;color:var(--text2);margin-top:5px"></div>
-  </div>
-  <div style="width:100%;max-width:360px;display:flex;flex-direction:column;gap:8px">
+  <div style="font-family:var(--font-ui);font-size:.72em;letter-spacing:.18em;color:var(--muted);text-transform:uppercase;margin-bottom:18px">Job Manager</div>
+  <div id="jobEmpty" class="job-empty">No saved jobs yet. Start a new one — it stays here until you delete it.</div>
+  <div id="jobList"></div>
+  <div style="width:100%;max-width:410px;display:flex;flex-direction:column;gap:8px;margin-top:6px">
     <button class="job-btn job-btn-ok"   onclick="jobNew()">＋ Start New Job</button>
     <button class="job-btn job-btn-blue" onclick="jobLoad()">📥 Load Job from File</button>
     <button class="job-btn"              onclick="jobSettings()">⚙ Settings</button>
@@ -1094,7 +1119,6 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
   </div>
   <div id="statusBar">—</div>
 </div>
-
 <div id="drawerShade" onclick="closeProjectDrawer()"></div>
 <aside id="projectDrawer" aria-label="Project explorer">
   <div class="drawer-head"><div class="drawer-brand"><strong>PROJECT EXPLORER</strong><small id="drawerJobName">No job</small></div><button class="drawer-close" onclick="closeProjectDrawer()">×</button></div>
@@ -1151,13 +1175,51 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
   <button data-workspace="project" onclick="openWorkspace('project')" aria-label="Project"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v12H4z"/><path d="M8 12h8M8 16h5"/></svg></span><span class="tab-label">Project</span></button>
 </div>
 
+</style>
+
+<style id="chainlink-plot-first">
+/* 4.7.18 — sheets sit on the plot; overlay does not steal map gestures */
+.modal-overlay{
+  pointer-events:none !important;
+  background:transparent !important;
+  align-items:flex-end !important;
+}
+.modal{
+  pointer-events:auto !important;
+  max-height:min(48vh, 430px) !important;
+}
+.modal.modal-shot{
+  max-height:min(52vh, 470px) !important;
+  padding:8px 10px 8px !important;
+}
+.modal.modal-shot h2{min-height:auto;margin:0 0 6px;padding:0 0 6px;font-size:.72rem}
+.modal.modal-shot .sf-val{min-height:40px;padding:6px 10px;font-size:.95rem}
+.modal.modal-shot .sf-numpad,.modal.modal-shot .calc-grid{gap:5px;margin-top:6px}
+.modal.modal-shot .sf-numpad button,.modal.modal-shot .calc-grid button,.modal.modal-shot .sf-quad-numrow button{min-height:40px;padding:6px 3px}
+.modal.modal-shot > .btn{min-height:40px;margin:4px 0}
+.modal.modal-shot .sf-line-row button{min-height:34px}
+.sf-off-toggle{width:100%;min-height:34px;margin:2px 0 6px;border-radius:10px;border:1px dashed var(--border2);
+  background:transparent;color:var(--muted);font-family:var(--font-ui);font-size:.68rem;font-weight:700;letter-spacing:.08em;cursor:pointer}
+.sf-off-toggle.on{border-style:solid;color:var(--accent2);border-color:rgba(115,199,210,.4)}
+#workspaceShade{background:transparent !important}
+/* transparent but receives taps so Field/etc dismiss on plot tap */
+#workspaceShade.open{opacity:0 !important;pointer-events:auto !important}
+#workspacePanel{max-height:min(44vh, 380px) !important}
+@media(min-width:700px){
+  .modal{max-height:min(56vh, 520px) !important}
+  .modal.modal-shot{max-height:min(60vh, 560px) !important}
+  #workspacePanel{max-height:min(56vh, 520px) !important}
+}
+</style>
+
 <script>
+
 /* ════════════════════════════════════════════════════════════════
    CHAINLINK SURVEY ASSISTANT  v2.4
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.15";
+const APP_VERSION = "4.7.20";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1271,8 +1333,39 @@ document.addEventListener("DOMContentLoaded",()=>{
 
 // Safe localStorage wrapper — returns null on any error
 function _lsGet(key){ try{ return localStorage.getItem(key); }catch(e){ return null; } }
-function _lsSet(key,val){ try{ localStorage.setItem(key,val); }catch(e){} }
+function _lsSet(key,val){
+  try{ localStorage.setItem(key,val); return true; }
+  catch(e){
+    const name=(e&&e.name)||"";
+    const msg=String((e&&e.message)||e||"");
+    const full=name==="QuotaExceededError"||name==="NS_ERROR_DOM_QUOTA_REACHED"||/quota|full/i.test(name+" "+msg);
+    try{ if(typeof _saveFailShow==="function") _saveFailShow(full?"full":"blocked"); }catch(x){}
+    return false;
+  }
+}
 function _lsRemove(key){ try{ localStorage.removeItem(key); }catch(e){} }
+let _saveFailKind=null;
+function _saveFailShow(kind){
+  _saveFailKind=kind||"full";
+  const el=document.getElementById("saveFailBanner");
+  if(!el) return;
+  const msg=el.querySelector(".save-fail-msg");
+  if(msg){
+    msg.textContent = _saveFailKind==="blocked"
+      ? "SAVE FAILED — storage blocked (private browsing?). Last good copy kept. Export CSV now."
+      : "SAVE FAILED — storage full. Last good copy kept. Export CSV now.";
+  }
+  el.classList.add("show");
+}
+function _saveFailClear(){
+  _saveFailKind=null;
+  const el=document.getElementById("saveFailBanner");
+  if(el) el.classList.remove("show");
+}
+function _saveFailHide(){
+  const el=document.getElementById("saveFailBanner");
+  if(el) el.classList.remove("show");
+}
 
 /* ── 1. STATE ──────────────────────────────────────────────────── */
 let orientationOffset = 0;
@@ -1413,22 +1506,338 @@ function enterApp() {
   sp.classList.add("hide");
   setTimeout(()=>{ sp.style.display="none"; _showJobScreen(); }, 500);
 }
+
+/* ── JOB LIBRARY (4.7.16) ───────────────────────────────────────── */
+let _activeJobId  = null;   // id of the job currently in RAM / cl_activeJob
+let _jobRamLive   = false;  // RAM matches a stored job (do not commit splash defaults)
+let _jobPendingNew= false;  // next saveData() creates a new library slot
+let _jobFileAsNew = false;  // Job Manager → Load File becomes its own job
+let _jobSaveOk    = true;
+
+function _jobNewId(){
+  let id;
+  do{ id="j"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+  while(_jobReadBlob(id));
+  return id;
+}
+function _jobIndex(){
+  try{ const a=JSON.parse(_lsGet("cl_jobs")||"[]"); return Array.isArray(a)?a:[]; }
+  catch(e){ return []; }
+}
+function _jobIndexSet(list){ return _lsSet("cl_jobs", JSON.stringify(list||[]))!==false; }
+function _jobBlobKey(id){ return "cl_job_"+id; }
+function _jobReadBlob(id){
+  if(!id) return null;
+  try{ const j=JSON.parse(_lsGet(_jobBlobKey(id))||"null"); return j&&j.id?j:null; }
+  catch(e){ return null; }
+}
+function _jobWhen(ts){
+  if(!ts) return "";
+  const d=new Date(ts), n=new Date();
+  if(d.toDateString()===n.toDateString())
+    return d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+  return d.toLocaleDateString([], {month:"short", day:"numeric", year:d.getFullYear()===n.getFullYear()?undefined:"numeric"});
+}
+function _jobSummaryFrom(blob){
+  const figs=(blob&&blob.deedPlot&&blob.deedPlot.figures)||[];
+  const recs=new Set(figs.map(f=>f.recordId).filter(Boolean));
+  return {
+    id: blob.id,
+    name: blob.name||"survey",
+    updatedAt: blob.updatedAt||Date.now(),
+    pts: (blob.points||[]).length,
+    conns: (blob.plotConnections||[]).length,
+    units: blob.units||"ft",
+    records: recs.size
+  };
+}
+function _jobWriteBlob(blob){
+  if(!blob||!blob.id) return false;
+  try{
+    localStorage.setItem(_jobBlobKey(blob.id), JSON.stringify(blob));
+  }catch(e){
+    console.warn("[ChainLink] job save failed", e&&e.message);
+    try{ if(typeof _saveFailShow==="function") _saveFailShow("full"); }catch(x){}
+    return false;
+  }
+  const idx=_jobIndex().filter(j=>j.id!==blob.id);
+  idx.push(_jobSummaryFrom(blob));
+  idx.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  if(!_jobIndexSet(idx)) return false;
+  if(_lsSet("cl_activeJob", blob.id)===false) return false;
+  _activeJobId=blob.id;
+  return true;
+}
+function _jobCapture(){
+  let deed=null;
+  if(typeof _deedPlot!=="undefined" && _deedPlot){
+    deed={v:2, rot:_deedPlot.rot||0, figures:_deedPlot.figures.map(_deedFigSerialize)};
+  }
+  return {
+    v:1,
+    id:_activeJobId,
+    name:jobName||"survey",
+    updatedAt:Date.now(),
+    points: JSON.parse(JSON.stringify(points||[])),
+    plotConnections: JSON.parse(JSON.stringify(plotConnections||[])),
+    polylines: JSON.parse(JSON.stringify((typeof _polylines!=="undefined"&&_polylines)||[])),
+    areaLabels: JSON.parse(JSON.stringify(((typeof _areaLabels!=="undefined"&&_areaLabels)||[]).map(l=>({E:l.E,N:l.N,label:l.label,ptNums:l.ptNums,u:l.u,arcSigs:l.arcSigs||[]})))),
+    deedPlot: deed,
+    geoAnchor: (typeof geoAnchor!=="undefined"&&geoAnchor)?JSON.parse(JSON.stringify(geoAnchor)):null,
+    satOn: !!satOn,
+    satOpacity: typeof satOpacity==="number"?satOpacity:0.85,
+    satRotNudge: typeof satRotNudge==="number"?satRotNudge:0,
+    satBasemap: typeof satBasemap==="string"?satBasemap:"esri",
+    units: units||"ft",
+    surveyMode: surveyMode||"2D",
+    distMode: distMode||"SD",
+    prismConstant: prismConstant||0,
+    combinedScaleFactor: combinedScaleFactor||1,
+    orientationOffset: orientationOffset||0,
+    occupied: currentPoint?currentPoint.Point:null,
+    ngsMarks: JSON.parse(JSON.stringify((typeof _ngsMarks!=="undefined"&&_ngsMarks)||[])),
+    ngsShow: (typeof _ngsShow==="undefined")?true:!!_ngsShow,
+    ppmEnabled: !!_ppmEnabled,
+    ppmValue: _ppmValue||0,
+    atmTempC: _atmTempC,
+    atmPressHPa: _atmPressHPa
+  };
+}
+function _jobApply(blob){
+  if(!blob) return;
+  points=Array.isArray(blob.points)?blob.points:[];
+  pointCounter=points.length?points.reduce((m,p)=>p.Point>m?p.Point:m,0)+1:1;
+  plotConnections=Array.isArray(blob.plotConnections)?blob.plotConnections:[];
+  if(typeof _polylines!=="undefined") _polylines=Array.isArray(blob.polylines)?blob.polylines:[];
+  if(typeof _areaLabels!=="undefined") _areaLabels=Array.isArray(blob.areaLabels)?blob.areaLabels:[];
+  jobName=blob.name||"survey";
+  units=blob.units||"ft";
+  surveyMode=blob.surveyMode||"2D";
+  distMode=blob.distMode||"SD";
+  prismConstant=typeof blob.prismConstant==="number"?blob.prismConstant:0;
+  combinedScaleFactor=blob.combinedScaleFactor>0?blob.combinedScaleFactor:1;
+  orientationOffset=blob.orientationOffset||0;
+  if(typeof geoAnchor!=="undefined") geoAnchor=blob.geoAnchor||null;
+  if(typeof satOn!=="undefined"){
+    satOn=!!blob.satOn && !!blob.geoAnchor;
+    satOpacity=blob.satOpacity||0.85;
+    satRotNudge=blob.satRotNudge||0;
+    if(typeof _BASEMAPS!=="undefined" && _BASEMAPS[blob.satBasemap]) satBasemap=blob.satBasemap;
+  }
+  if(typeof _deedPlot!=="undefined"){
+    const raw=blob.deedPlot;
+    try{
+      if(raw&&raw.v===2) _deedPlot=_mkDeed(raw.figures, raw.rot);
+      else if(raw&&raw.calls) _deedPlot=_mkDeed([{kind:"boundary",name:"Boundary",calls:raw.calls,pobE:raw.pobE,pobN:raw.pobN,ptNums:raw.ptNums||[]}], raw.rot||0);
+      else _deedPlot=null;
+      if(_deedPlot){
+        _deedPlot.figures.forEach(f=>{f.recordId=f.recordId||"deed-1";f.recordName=f.recordName||"Deed 1";f.recordRot=f.recordRot||0;});
+        _deedRecompute();
+      }
+    }catch(e){ _deedPlot=null; }
+  }
+  if(typeof _ngsMarks!=="undefined"){
+    _ngsMarks=Array.isArray(blob.ngsMarks)?blob.ngsMarks:[];
+    _ngsShow=blob.ngsShow!==false;
+    try{ _ngsSave(); }catch(e){}
+  }
+  if(typeof blob.ppmEnabled==="boolean") _ppmEnabled=blob.ppmEnabled;
+  if(typeof blob.ppmValue==="number") _ppmValue=blob.ppmValue;
+  if(typeof blob.atmTempC==="number") _atmTempC=blob.atmTempC;
+  if(typeof blob.atmPressHPa==="number") _atmPressHPa=blob.atmPressHPa;
+  const occ=blob.occupied;
+  currentPoint=(occ!=null&&points.find(p=>p.Point===occ))||points[0]||null;
+  orientationChosen=points.length>0||!!(typeof geoAnchor!=="undefined"&&geoAnchor);
+  _snapshots=[]; _redoStack=[]; undoStack=[];
+  recentShots=[]; tempGeom=[]; tempIntersections=[];
+  selectedPoint=null; selectedConn=null;
+  _activeJobId=blob.id||_activeJobId;
+  _jobRamLive=true;
+}
+function _jobCommitActive(){
+  if(!_jobRamLive || !_activeJobId) return true;
+  const blob=_jobCapture();
+  blob.id=_activeJobId;
+  return _jobWriteBlob(blob);
+}
+function _jobPersistFromRam(){
+  const id=_jobPendingNew?_jobNewId():(_activeJobId||_jobNewId());
+  const blob=_jobCapture();
+  blob.id=id;
+  if(!_jobWriteBlob(blob)){
+    if(_jobSaveOk){
+      _jobSaveOk=false;
+      try{ alert("Couldn't save this job — phone storage looks full. Export a CSV now so the work is not lost."); }catch(e){}
+    }
+    try{ if(typeof _saveFailShow==="function") _saveFailShow(_saveFailKind||"full"); }catch(e){}
+    return false;
+  }
+  _jobPendingNew=false;
+  _jobRamLive=true;
+  _jobSaveOk=true;
+  try{ if(typeof _saveFailClear==="function") _saveFailClear(); }catch(e){}
+  return true;
+}
+function _jobMigrateFromLegacy(){
+  if(_jobIndex().length) return;
+  let pts=null;
+  try{ pts=JSON.parse(_lsGet("cl_points")||"null"); }catch(e){ pts=null; }
+  const name=_lsGet("cl_jobName")||"";
+  if(!(Array.isArray(pts)&&pts.length) && !name) return;
+  let conns=[]; try{ conns=JSON.parse(_lsGet("cl_connections")||"[]"); }catch(e){}
+  let polys=[]; try{ polys=JSON.parse(_lsGet("cl_polylines")||"[]"); }catch(e){}
+  let areas=[]; try{ areas=JSON.parse(_lsGet("cl_areaLabels")||"[]"); }catch(e){}
+  let ga=null; try{ const g=_lsGet("cl_geoAnchor"); ga=g?JSON.parse(g):null; }catch(e){}
+  let deed=null; try{ const d=_lsGet("cl_deedPlot"); deed=d?JSON.parse(d):null; }catch(e){}
+  let ngs=[]; try{ ngs=JSON.parse(_lsGet("cl_ngsMarks")||"[]"); }catch(e){}
+  const id=_jobNewId();
+  const blob={
+    v:1, id, name:name||"survey", updatedAt:Date.now(),
+    points:pts||[], plotConnections:conns, polylines:polys, areaLabels:areas,
+    deedPlot:deed, geoAnchor:ga,
+    satOn:_lsGet("cl_satOn")==="true",
+    satOpacity:parseFloat(_lsGet("cl_satOpacity")||"0.85")||0.85,
+    satRotNudge:parseFloat(_lsGet("cl_satRot")||"0")||0,
+    satBasemap:_lsGet("cl_satBase")||"esri",
+    units:_lsGet("cl_units")||"ft",
+    surveyMode:_lsGet("cl_surveyMode")||"2D",
+    distMode:_lsGet("cl_distMode")||"SD",
+    prismConstant:parseFloat(_lsGet("cl_prismK")||"0")||0,
+    combinedScaleFactor:parseFloat(_lsGet("cl_csf")||"1")||1,
+    orientationOffset:parseFloat(_lsGet("cl_orientOffset")||"0")||0,
+    occupied:null, ngsMarks:ngs, ngsShow:_lsGet("cl_ngsShow")!=="false"
+  };
+  _jobWriteBlob(blob);
+}
+function _jobOpen(id){
+  if(!id) return;
+  if(id===_activeJobId && _jobRamLive){ _hideJobScreen(); return; }
+  if(_jobRamLive && _activeJobId && _activeJobId!==id) _jobCommitActive();
+  const blob=_jobReadBlob(id);
+  if(!blob){ alert("That job is no longer in storage."); _showJobScreen(); return; }
+  _jobPendingNew=false;
+  _jobApply(blob);
+  _activeJobId=id;
+  _lsSet("cl_activeJob", id);
+  _resetViewState(); viewScale=1; viewOffsetX=0; viewOffsetY=0;
+  try{ _applyLightMode(); }catch(e){}
+  try{ _ensureLiveGps(); }catch(e){}
+  try{ _syncSatBtn(); }catch(e){}
+  try{ _recomputeAreaLabels(); }catch(e){}
+  _hideJobScreen();
+  updateStatus(); plotPoints(); _updateUndoBtn();
+}
+function _jobDelete(id){
+  const row=_jobIndex().find(j=>j.id===id);
+  const name=(row&&row.name)||"this job";
+  const safe=String(name).replace(/[&<>]/g,ch=>({"&":"&","<":"<",">":">"}[ch]));
+  confirmDialog("Delete \""+safe+"\"? This cannot be undone. Export a CSV first if you might need it.", yes=>{
+    if(!yes) return;
+    _lsRemove(_jobBlobKey(id));
+    _jobIndexSet(_jobIndex().filter(j=>j.id!==id));
+    if(_activeJobId===id){
+      _activeJobId=null; _jobRamLive=false; _lsRemove("cl_activeJob");
+      const next=_jobIndex()[0];
+      if(next){
+        const blob=_jobReadBlob(next.id);
+        if(blob){ _jobApply(blob); _lsSet("cl_activeJob", next.id); }
+      } else {
+        _stageNewJobScratch();
+        _defaultState();
+      }
+    }
+    _showJobScreen();
+  });
+}
+function _jobAbortNew(){
+  _jobPendingNew=false;
+  const id=_lsGet("cl_activeJob")||(_jobIndex()[0]||{}).id;
+  if(id){
+    const blob=_jobReadBlob(id);
+    if(blob){ _jobApply(blob); }
+  } else {
+    _stageNewJobScratch();
+    _jobRamLive=false;
+  }
+  _showJobScreen();
+}
+function _stageNewJobScratch(){
+  _clearTransientMapSelections(false);
+  points=[];plotConnections=[];
+  if(typeof _polylines!=="undefined") _polylines=[];
+  if(typeof _areaLabels!=="undefined") _areaLabels=[];
+  tempGeom=[];tempIntersections=[];recentShots=[];
+  selectedPoint=null;currentPoint=null;
+  if(typeof selectedConn!=="undefined")selectedConn=null;
+  if(typeof geoAnchor!=="undefined") geoAnchor=null;
+  if(typeof satOn!=="undefined"){ satOn=false; satRotNudge=0; }
+  if(typeof _deedPlot!=="undefined") _deedPlot=null;
+  try{ stopLiveGps(); }catch(e){}
+  try{ _syncSatBtn(); }catch(e){}
+  _resetViewState();viewScale=1;viewOffsetX=0;viewOffsetY=0;
+}
+function _jobWriteLegacyKeys(){
+  /* Optional one-shot mirror for pre-4.7.16 readers. Not called from saveData
+     (4.7.20+) — active job lives only in cl_job_<id> + cl_jobs index. */
+  _lsSet("cl_version",     APP_VERSION);
+  _lsSet("cl_points",      JSON.stringify(points||[]));
+  _lsSet("cl_connections", JSON.stringify(plotConnections||[]));
+  _lsSet("cl_polylines",   JSON.stringify((typeof _polylines!=="undefined"?_polylines:[])));
+  _lsSet("cl_orientOffset",String(orientationOffset||0));
+  _lsSet("cl_surveyMode",  surveyMode||"2D");
+  _lsSet("cl_distMode",    distMode||"SD");
+  _lsSet("cl_prismK",      String(prismConstant||0));
+  _lsSet("cl_csf",         String(combinedScaleFactor||1));
+  _lsSet("cl_jobName",     jobName||"survey");
+  _lsSet("cl_units",       units||"ft");
+  _lsSet("cl_showLabels",  String(showLabels));
+  _lsSet("cl_showElev",    String(showElevations));
+  _lsSet("cl_lightMode",   String(lightMode));
+  _lsSet("cl_bearingMode", bearingMode);
+  _lsSet("cl_areaLabels",  JSON.stringify(((typeof _areaLabels!=="undefined"?_areaLabels:[])||[]).map(l=>({E:l.E,N:l.N,label:l.label,ptNums:l.ptNums,u:l.u,arcSigs:l.arcSigs||[]}))));
+  _lsSet("cl_geoAnchor",   (typeof geoAnchor!=="undefined"&&geoAnchor)?JSON.stringify(geoAnchor):"");
+  _lsSet("cl_satOn",       String(!!satOn));
+  _lsSet("cl_satOpacity",  String(typeof satOpacity==="number"?satOpacity:0.85));
+  _lsSet("cl_satRot",      String(typeof satRotNudge==="number"?satRotNudge:0));
+  _lsSet("cl_satBase",     typeof satBasemap==="string"?satBasemap:"esri");
+  _lsSet("cl_deedPlot",    (typeof _deedPlot!=="undefined"&&_deedPlot)?JSON.stringify({v:2,rot:_deedPlot.rot||0,figures:_deedPlot.figures.map(_deedFigSerialize)}):"");
+  _lsSet("cl_occupied",    currentPoint?String(currentPoint.Point):"");
+}
+function _jobRenderList(){
+  const host=document.getElementById("jobList");
+  const empty=document.getElementById("jobEmpty");
+  if(!host) return;
+  host.innerHTML="";
+  _jobMigrateFromLegacy();
+  const idx=_jobIndex();
+  const active=_lsGet("cl_activeJob")||_activeJobId;
+  if(empty) empty.style.display=idx.length?"none":"block";
+  idx.forEach(j=>{
+    const card=document.createElement("div");
+    card.className="job-card"+(j.id===active?" is-active":"");
+    card.setAttribute("role","button");
+    const rec=j.records?(" · "+j.records+" record"+(j.records===1?"":"s")):"";
+    const badge=document.createElement("div"); badge.className="job-card-badge";
+    badge.textContent=j.id===active?"ACTIVE":"SAVED";
+    const nm=document.createElement("div"); nm.className="job-card-name";
+    nm.textContent=j.name||"survey";
+    const meta=document.createElement("div"); meta.className="job-card-meta";
+    meta.textContent=(j.pts||0)+" pts · "+(j.conns||0)+" lines · "+(j.units||"ft")+rec+" · "+_jobWhen(j.updatedAt);
+    const del=document.createElement("button"); del.type="button"; del.className="job-card-del";
+    del.setAttribute("aria-label","Delete job"); del.textContent="✕";
+    del.onclick=ev=>{ ev.stopPropagation(); _jobDelete(j.id); };
+    card.appendChild(badge); card.appendChild(nm); card.appendChild(meta); card.appendChild(del);
+    card.onclick=()=>_jobOpen(j.id);
+    host.appendChild(card);
+  });
+}
+/* ── /JOB LIBRARY ───────────────────────────────────────────────── */
+
 function _showJobScreen(){
   const js=document.getElementById("jobScreen");
   js.style.display="flex";
-  const prevName=_lsGet("cl_jobName")||"";
-  const prevPts=_lsGet("cl_points");
-  const card=document.getElementById("prevJobCard");
-  if(prevName&&prevPts){
-    try{
-      const pts=JSON.parse(prevPts);
-      const conns=JSON.parse(_lsGet("cl_connections")||"[]");
-      document.getElementById("prevJobName").textContent=prevName;
-      document.getElementById("prevJobMeta").textContent=
-        pts.length+" pts · "+conns.length+" lines · "+(_lsGet("cl_units")||"ft");
-      card.style.display="block";
-    }catch(e){card.style.display="none";}
-  }else{card.style.display="none";}
+  if(_jobRamLive && _activeJobId) _jobCommitActive();
+  _jobRenderList();
 }
 function _hideJobScreen(){
   document.getElementById("jobScreen").style.display="none";
@@ -1446,7 +1855,7 @@ function jobNew(){
       if(jn===null){ _showJobScreen(); return; } // cancelled — go back
       if(!jn.trim()){ alert("Please enter a job name."); _showJobScreen(); return; }
       const name=jn.trim();
-      _stageNewJob(); // old job off-screen immediately (still saved — Job Manager restores it if you back out)
+      _stageNewJob(); // commits the previous job first; Cancel restores it
       openModal((modal,close)=>{
         modal.innerHTML="<h2>Start Point</h2><p class='info'>Locate Point 1 by phone GPS on the State Plane grid, or use assumed/manual coordinates.</p>";
         const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
@@ -1456,6 +1865,7 @@ function jobNew(){
         mk("🌐 Paste Lat / Lon (Google Maps)","blue",()=>{close();_latLonStartFlow(name);});
         mk("🎯 Known Grid Coordinate (SPC / UTM)","blue",()=>{close();_gridStartFlow(name);});
         mk("⌨ Manual / Assumed (10000,10000)","blue",()=>{close();jobNewManual(name);});
+        mk("Cancel","",()=>{close();_jobAbortNew();});
       });
     });
   },100);
@@ -1491,7 +1901,7 @@ function _startNewJob(jn,N,E,Z,deferSetup,noStart){
   if(deferSetup) window._deferredJobSetup=_setupChain;
   else _setupChain();
 }
-function jobLoad(){ _hideJobScreen(); setTimeout(()=>{loadData();loadFromFile();},200); }
+function jobLoad(){ _hideJobScreen(); setTimeout(()=>{loadData();loadFromFile(true);},200); }
 function jobSettings(){ _hideJobScreen(); loadData(); setTimeout(settingsMenu,300); }
 
 /* ── 3. PERSIST ────────────────────────────────────────────────── */
@@ -1499,44 +1909,55 @@ function loadData() {
   if(typeof _clearTransientMapSelections==="function") _clearTransientMapSelections(false);
   _resetViewState();
   viewScale=1;viewOffsetX=0;viewOffsetY=0; // a loaded job starts at its fitted view
-  try { const s=_lsGet("cl_points"); if(s){ points=JSON.parse(s); pointCounter=points.length?points.reduce((m,p)=>p.Point>m?p.Point:m,0)+1:1; currentPoint=points[0]||null; orientationChosen=true; } else _defaultState(); } catch(e){ _defaultState(); }
-  try { plotConnections=JSON.parse(_lsGet("cl_connections")||"[]"); } catch(e){ plotConnections=[]; }
-  try { _polylines=JSON.parse(_lsGet("cl_polylines")||"[]"); } catch(e){ _polylines=[]; }
-  try { _waybackRestore(); } catch(e){}
-  if(typeof _ngsLoad==="function")_ngsLoad();
-  try { _orientationOffset_unused=parseFloat(_lsGet("cl_orientOffset")||"0"); } catch(e){ _orientationOffset_unused=0; }
-  try { surveyMode=_lsGet("cl_surveyMode")||"2D"; } catch(e){ surveyMode="2D"; }
-  try { distMode=_lsGet("cl_distMode")||"SD"; } catch(e){ distMode="SD"; }
-  try { prismConstant=parseFloat(_lsGet("cl_prismK")||"0")||0; } catch(e){ prismConstant=0; }
-  try { combinedScaleFactor=parseFloat(_lsGet("cl_csf")||"1")||1; } catch(e){ combinedScaleFactor=1; }
-  try { jobName=_lsGet("cl_jobName")||"survey"; } catch(e){ jobName="survey"; }
-  try { units=_lsGet("cl_units")||"ft"; } catch(e){ units="ft"; }
   try { showLabels=_lsGet("cl_showLabels")!=="false"; } catch(e){ showLabels=true; }
   try { showElevations=_lsGet("cl_showElev")==="true"; } catch(e){ showElevations=false; }
   try { lightMode=_lsGet("cl_lightMode")==="true"; } catch(e){ lightMode=false; }
   try { bearingMode=_lsGet("cl_bearingMode")||"az"; } catch(e){ bearingMode="az"; }
-  _applyLightMode(); // dark by default
-  tempIntersections=[]; tempGeom=[]; recentShots=[];
-  try { _areaLabels=JSON.parse(_lsGet("cl_areaLabels")||"[]"); if(!Array.isArray(_areaLabels)) _areaLabels=[]; } catch(e){ _areaLabels=[]; }
-  _recomputeAreaLabels(); // drop labels whose points no longer exist
-  try { const ga=_lsGet("cl_geoAnchor"); geoAnchor=ga?JSON.parse(ga):null; } catch(e){ geoAnchor=null; }
-  /* 4.7.1 — the online GIS parcel feature was removed; drop its storage so
-     old jobs stop carrying dead reference geometry around. */
+  _applyLightMode();
+  try { _waybackRestore(); } catch(e){}
   try { _lsRemove("cl_gisParcels"); _lsRemove("cl_parcelSources"); } catch(e){}
-  try { satOn=_lsGet("cl_satOn")==="true"&&!!geoAnchor; } catch(e){ satOn=false; }
-  try { satOpacity=parseFloat(_lsGet("cl_satOpacity")||"0.85")||0.85; } catch(e){ satOpacity=0.85; }
-  try { satRotNudge=parseFloat(_lsGet("cl_satRot")||"0")||0; } catch(e){ satRotNudge=0; }
-  try { satBasemap=_BASEMAPS[_lsGet("cl_satBase")]?_lsGet("cl_satBase"):"esri"; } catch(e){ satBasemap="esri"; }
-  try {
-    const dp=_lsGet("cl_deedPlot");
-    if(dp){
-      const raw=JSON.parse(dp);
-      if(raw.v===2)_deedPlot=_mkDeed(raw.figures,raw.rot);
-      if(_deedPlot)_deedPlot.figures.forEach(f=>{f.recordId=f.recordId||"deed-1";f.recordName=f.recordName||"Deed 1";f.recordRot=f.recordRot||0;});
-      else _deedPlot=_mkDeed([{kind:"boundary",name:"Boundary",calls:raw.calls,pobE:raw.pobE,pobN:raw.pobN,ptNums:raw.ptNums||[]}],raw.rot||0);
-      _deedRecompute();
-    } else _deedPlot=null;
-  } catch(e){ _deedPlot=null; }
+  _jobMigrateFromLegacy();
+  const _jid=_lsGet("cl_activeJob")||(_jobIndex()[0]||{}).id||null;
+  const _blob=_jid?_jobReadBlob(_jid):null;
+  if(_blob){
+    _jobApply(_blob);
+    _activeJobId=_jid;
+    _jobRamLive=true;
+  } else {
+    try { const s=_lsGet("cl_points"); if(s){ points=JSON.parse(s); pointCounter=points.length?points.reduce((m,p)=>p.Point>m?p.Point:m,0)+1:1; currentPoint=points[0]||null; orientationChosen=true; _jobRamLive=true; } else { _defaultState(); _jobRamLive=false; } } catch(e){ _defaultState(); _jobRamLive=false; }
+    try { plotConnections=JSON.parse(_lsGet("cl_connections")||"[]"); } catch(e){ plotConnections=[]; }
+    try { _polylines=JSON.parse(_lsGet("cl_polylines")||"[]"); } catch(e){ _polylines=[]; }
+    if(typeof _ngsLoad==="function")_ngsLoad();
+    try { _orientationOffset_unused=parseFloat(_lsGet("cl_orientOffset")||"0"); } catch(e){ _orientationOffset_unused=0; }
+    try { surveyMode=_lsGet("cl_surveyMode")||"2D"; } catch(e){ surveyMode="2D"; }
+    try { distMode=_lsGet("cl_distMode")||"SD"; } catch(e){ distMode="SD"; }
+    try { prismConstant=parseFloat(_lsGet("cl_prismK")||"0")||0; } catch(e){ prismConstant=0; }
+    try { combinedScaleFactor=parseFloat(_lsGet("cl_csf")||"1")||1; } catch(e){ combinedScaleFactor=1; }
+    try { jobName=_lsGet("cl_jobName")||"survey"; } catch(e){ jobName="survey"; }
+    try { units=_lsGet("cl_units")||"ft"; } catch(e){ units="ft"; }
+    tempIntersections=[]; tempGeom=[]; recentShots=[];
+    try { _areaLabels=JSON.parse(_lsGet("cl_areaLabels")||"[]"); if(!Array.isArray(_areaLabels)) _areaLabels=[]; } catch(e){ _areaLabels=[]; }
+    try { const ga=_lsGet("cl_geoAnchor"); geoAnchor=ga?JSON.parse(ga):null; } catch(e){ geoAnchor=null; }
+    try { satOn=_lsGet("cl_satOn")==="true"&&!!geoAnchor; } catch(e){ satOn=false; }
+    try { satOpacity=parseFloat(_lsGet("cl_satOpacity")||"0.85")||0.85; } catch(e){ satOpacity=0.85; }
+    try { satRotNudge=parseFloat(_lsGet("cl_satRot")||"0")||0; } catch(e){ satRotNudge=0; }
+    try { satBasemap=_BASEMAPS[_lsGet("cl_satBase")]?_lsGet("cl_satBase"):"esri"; } catch(e){ satBasemap="esri"; }
+    try {
+      const dp=_lsGet("cl_deedPlot");
+      if(dp){
+        const raw=JSON.parse(dp);
+        if(raw.v===2)_deedPlot=_mkDeed(raw.figures,raw.rot);
+        if(_deedPlot)_deedPlot.figures.forEach(f=>{f.recordId=f.recordId||"deed-1";f.recordName=f.recordName||"Deed 1";f.recordRot=f.recordRot||0;});
+        else _deedPlot=_mkDeed([{kind:"boundary",name:"Boundary",calls:raw.calls,pobE:raw.pobE,pobN:raw.pobN,ptNums:raw.ptNums||[]}],raw.rot||0);
+        _deedRecompute();
+      } else _deedPlot=null;
+    } catch(e){ _deedPlot=null; }
+    try{
+      const occ=parseInt(_lsGet("cl_occupied")||"");
+      if(occ) currentPoint=points.find(p=>p.Point===occ)||currentPoint;
+    }catch(e){}
+  }
+  try { _recomputeAreaLabels(); } catch(e){}
   try { _ensureLiveGps(); } catch(e){}
   try { _syncSatBtn(); } catch(e){}
   updateStatus(); plotPoints(); _updateUndoBtn();
@@ -1549,31 +1970,19 @@ function _defaultState() {
 }
 
 function saveData() {
-  _lsSet("cl_version",     APP_VERSION);
-  _lsSet("cl_points",      JSON.stringify(points));
-  _lsSet("cl_connections", JSON.stringify(plotConnections));
-  _lsSet("cl_polylines",   JSON.stringify(typeof _polylines!=="undefined"?_polylines:[]));
-  _lsSet("cl_orientOffset",String(orientationOffset));
-  _lsSet("cl_surveyMode",  surveyMode);
-  _lsSet("cl_distMode",    distMode);
-  _lsSet("cl_prismK",      String(prismConstant));
-  _lsSet("cl_csf",         String(combinedScaleFactor));
-  _lsSet("cl_jobName",     jobName);
-  _lsSet("cl_units",       units);
-  _lsSet("cl_showLabels",  String(showLabels));
+  // 4.7.20: one job write only — blob is source of truth.
+  // Do not mirror the whole job into legacy cl_points/cl_deedPlot/etc on every shot
+  // (that tripled storage and JSON work). Global UI prefs stay small keys.
+  if(!_jobPersistFromRam()){
+    updateStatus(); plotPoints();
+    return;
+  }
+  _lsSet("cl_version",    APP_VERSION);
+  _lsSet("cl_showLabels", String(showLabels));
   _lsSet("cl_showElev",   String(showElevations));
   _lsSet("cl_lightMode",  String(lightMode));
   _lsSet("cl_bearingMode",bearingMode);
-  _lsSet("cl_areaLabels", JSON.stringify(_areaLabels.map(l=>({E:l.E,N:l.N,label:l.label,ptNums:l.ptNums,u:l.u,arcSigs:l.arcSigs||[]}))));
-  _lsSet("cl_geoAnchor",  geoAnchor?JSON.stringify(geoAnchor):"");
-  _lsSet("cl_satOn",      String(satOn));
-  _lsSet("cl_satOpacity", String(satOpacity));
-  _lsSet("cl_satRot",     String(satRotNudge));
-  _lsSet("cl_satBase",    satBasemap);
-  _lsSet("cl_deedPlot",   _deedPlot?JSON.stringify({v:2,rot:_deedPlot.rot||0,
-    figures:_deedPlot.figures.map(_deedFigSerialize)}):"");
   updateStatus(); plotPoints();
-  // Auto-save to file if we have a directory handle
   _autoSaveToFile();
 }
 
@@ -1665,6 +2074,7 @@ function updateStatus() {
     }
   }
   _updateTicker();
+  try{ if(typeof _syncSetupStrip==="function") _syncSetupStrip(); }catch(e){}
 }
 
 function _updateTicker() {
@@ -3030,7 +3440,7 @@ async function saveToFile(){
   });
 }
 
-async function loadFromFile(){
+async function loadFromFile(asNew){
   // Use standard <input type=file> — most reliable on Android Chrome for local files.
   // showOpenFilePicker restricts the Android picker and hides locally saved files.
   const inp = document.createElement("input");
@@ -3040,6 +3450,7 @@ async function loadFromFile(){
   inp.style.display = "none";
   inp.onchange = e => {
     const f = e.target.files[0]; if(!f) return;
+    if(asNew) _jobFileAsNew=true;
     const r = new FileReader();
     r.onload = ev => _parseCSV(ev.target.result, f.name);
     r.readAsText(f);
@@ -3173,6 +3584,11 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
       return rec;
     }).filter(Boolean);
     if(!newPts.length){alert("No valid points found. Check column mapping.");return}
+    if(_jobFileAsNew){
+      _jobCommitActive();
+      _jobPendingNew=true;
+      _jobFileAsNew=false;
+    }
     points=newPts;
     pointCounter=points.reduce((m,p)=>p.Point>m?p.Point:m,0)+1;
     undoStack=[];currentPoint=points[0];orientationChosen=true;
@@ -3733,7 +4149,6 @@ function _nearest(sols,x,y){
 
 function _showOrientationExplainer(onDone){
   openModal((modal,close)=>{
-    modal.style.maxHeight="92vh";
     modal.style.overflowY="auto";
     modal.innerHTML=`
 <h2>⌖ One Thing to Know</h2>
@@ -3942,7 +4357,20 @@ function takeShot(){
 
 function _doTakeShot(){
   if(!currentPoint){return}
-  // In 3D mode, if HI has never been set for this occupation, ask now
+  const _goShot=()=>{
+    const _lastDesc=recentShots.length?recentShots[recentShots.length-1].desc:"";
+    _shotForm(_lastDesc);
+  };
+  if(surveyMode==="3D" && !(currentPoint.ih>0)){
+    openModal((modal,close)=>{
+      modal.innerHTML="<h2>HI is 0.000</h2><p class='info'>Elevations will be wrong unless the instrument is at ground. Set HI before shooting.</p>";
+      const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+      mk("Set HI","ok",()=>{close();_setupTapHI(true);});
+      mk("Shoot anyway (HI = 0)","danger",()=>{close();currentPoint._hiSet=true;_goShot();});
+      mk("Cancel","",close);
+    });
+    return;
+  }
   if(surveyMode==="3D" && !currentPoint._hiSet){
     calculatorInput("Set Instrument Height HI for Pt #"+currentPoint.Point+" ("+units+"):",
       currentPoint.ih>0?currentPoint.ih.toFixed(3):"0.000", hiVal=>{
@@ -3950,13 +4378,11 @@ function _doTakeShot(){
       currentPoint.ih = parseFloat(hiVal)||0;
       currentPoint._hiSet = true;
       saveData();
-      const _lastDesc=recentShots.length?recentShots[recentShots.length-1].desc:"";
-      _shotForm(_lastDesc);
+      _goShot();
     });
-  } else {
-    const _lastDesc=recentShots.length?recentShots[recentShots.length-1].desc:"";
-    _shotForm(_lastDesc);
+    return;
   }
+  _goShot();
 }
 /* ── Single-screen shot entry form ─────────────────────── */
 function _shotForm(prefillDesc, autoLine, onStore){
@@ -3982,7 +4408,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
 
   openModal((modal, close)=>{
     const occ = currentPoint;
-    modal.style.maxHeight = "96vh";
+    modal.classList.add("modal-shot");
     modal.style.overflowY = "auto";
 
     function render(){
@@ -4081,8 +4507,16 @@ function _shotForm(prefillDesc, autoLine, onStore){
         form.appendChild(r4);
       }
 
-      // ── Offset row ───────────────────────────────────────
+      // ── Offset row (collapsed so the plot stays on screen) ─
+      const offOn = fields._offOpen || fields.offLat!=="0" || (is3D && fields.offVert!=="0");
+      const offToggle=document.createElement("button");
+      offToggle.type="button";
+      offToggle.className="sf-off-toggle"+(offOn?" on":"");
+      offToggle.textContent=offOn?"Offsets ▾":"Offsets ▸  (lat / vert)";
+      offToggle.onclick=()=>{fields._offOpen=!offOn;render();};
+      form.appendChild(offToggle);
       const offRow = document.createElement("div"); offRow.className="sf-row";
+      if(!offOn){ offRow.style.display="none"; }
 
       const offLatF = document.createElement("div"); offLatF.className="sf-field";
       offLatF.innerHTML=`<div class="sf-label">Lat Offset ${units} (+R /−L)</div>`;
@@ -4258,9 +4692,77 @@ function _changeIH(){
     _takeSnapshot("Change HI"); currentPoint.ih = newIH;
     currentPoint._hiSet = true;
     saveData();
+    try{ _syncSetupStrip(); }catch(e){}
     // Re-render any open shot form by closing and reopening
     closeAllModals();
     _shotForm();
+  });
+}
+
+function _prismMmToUnits(mm){
+  const m=(+mm||0)/1000;
+  return (units==="m") ? m : m/0.3048;
+}
+function _prismPresetMm(){
+  const k=_prismMmToUnits(30);
+  if(Math.abs(prismConstant)<1e-6) return 0;
+  if(Math.abs(prismConstant+k)<5e-4) return -30;
+  if(Math.abs(prismConstant-k)<5e-4) return 30;
+  return null;
+}
+function _syncSetupStrip(){
+  /* 4.7.19: permanent strip removed; values live in Field / Settings menus */
+  return;
+}
+function _setupTapHI(thenShot){
+  if(!currentPoint){ alert("Occupy a point first."); return; }
+  calculatorInput("Instrument Height HI ("+units+"):", (currentPoint.ih||0).toFixed(3), val=>{
+    if(val===null) return;
+    const newIH=parseFloat(val);
+    if(isNaN(newIH)||newIH<0){ alert("Invalid HI"); return; }
+    _takeSnapshot("Change HI");
+    currentPoint.ih=newIH;
+    currentPoint._hiSet=true;
+    saveData();
+    _syncSetupStrip();
+    if(thenShot){
+      const _lastDesc=recentShots.length?recentShots[recentShots.length-1].desc:"";
+      _shotForm(_lastDesc);
+    }
+  });
+}
+function _setupTapPrism(){
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Prism Constant</h2><p class='info'>Added to every measured distance. -30 mm is a typical offset prism.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+(cls||"");b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    const applyMm=mm=>{
+      prismConstant=_prismMmToUnits(mm);
+      saveData(); _syncSetupStrip(); close();
+    };
+    mk("0 (none)","ok",()=>{prismConstant=0; saveData(); _syncSetupStrip(); close();});
+    mk("-30 mm","blue",()=>applyMm(-30));
+    mk("+30 mm","blue",()=>applyMm(30));
+    mk("Custom…","",()=>{
+      close();
+      calculatorInput("Prism constant ("+units+", e.g. -0.098 for -30mm):", String(prismConstant), val=>{
+        if(val===null)return;
+        prismConstant=parseFloat(val)||0;
+        saveData(); _syncSetupStrip();
+      });
+    });
+  });
+}
+function _setupTapCSF(){
+  calculatorInput("Combined scale factor — measured distances × this (1.00000000 = off):", (combinedScaleFactor>0?combinedScaleFactor:1).toFixed(8), val=>{
+    if(val===null)return;
+    const f=parseFloat(val);
+    if(isNaN(f)||f<=0){alert("Bad scale factor.");return}
+    const apply=()=>{ combinedScaleFactor=f; saveData(); _syncSetupStrip(); };
+    if(f<0.9||f>1.1){
+      confirmDialog("CSF "+f+" is far from 1 — typical values are 0.999… to 1.000…. Use it anyway?", yes=>{ if(yes) apply(); });
+      return;
+    }
+    apply();
   });
 }
 
@@ -5363,7 +5865,8 @@ function enterPointManually(){
   const freshFields = new Set(["pt","z"]);
 
   openModal((modal,close)=>{
-    modal.style.maxHeight="96vh";modal.style.overflowY="auto";
+    modal.classList.add("modal-shot");
+    modal.style.overflowY="auto";
 
     function render(){
       modal.innerHTML=`<h2>➕ Manual Point Entry</h2>`;
@@ -5694,8 +6197,16 @@ function settingsMenu(){
     // Instrument profile (only relevant in 3D)
     const profTitle=document.createElement("div");
     profTitle.style.cssText="font-family:var(--font-ui);font-size:.72em;font-weight:700;color:var(--accent2);letter-spacing:.1em;text-transform:uppercase;padding:10px 0 4px;border-top:1px solid var(--border);margin-top:6px";
-    profTitle.textContent="Instrument Profile (3D)";
+    profTitle.textContent="Instrument Profile";
     modal.appendChild(profTitle);
+
+    const hiRow=document.createElement("div"); hiRow.className="setting-row";
+    const hiLbl=document.createElement("label"); hiLbl.textContent="Instrument Height HI ("+units+")";
+    const hiBtn=document.createElement("button");
+    hiBtn.className="toggle-btn"+(surveyMode==="3D"&&!(currentPoint&&currentPoint.ih>0)?" on":"");
+    hiBtn.textContent=currentPoint?((currentPoint.ih||0).toFixed(3)):("— occupy first");
+    hiBtn.onclick=()=>{close();_setupTapHI();};
+    hiRow.appendChild(hiLbl); hiRow.appendChild(hiBtn); modal.appendChild(hiRow);
 
     mkRow("Distance Input",distMode,btn=>{
       distMode=distMode==="SD"?"HD":"SD";
@@ -5709,37 +6220,14 @@ function settingsMenu(){
     const pcLbl=document.createElement("label"); pcLbl.textContent="Prism Constant ("+units+")";
     const pcBtn=document.createElement("button");
     pcBtn.className="toggle-btn"; pcBtn.textContent=prismConstant.toFixed(4);
-    pcBtn.onclick=()=>{
-      calculatorInput("Prism constant ("+units+", e.g. -0.098 for -30mm):",String(prismConstant),val=>{
-        if(val===null)return;
-        prismConstant=parseFloat(val)||0;
-        pcBtn.textContent=prismConstant.toFixed(4);
-        saveData();
-      });
-    };
+    pcBtn.onclick=()=>{ close(); _setupTapPrism(); };
     pcRow.appendChild(pcLbl); pcRow.appendChild(pcBtn); modal.appendChild(pcRow);
 
     const sfRow=document.createElement("div"); sfRow.className="setting-row";
     const sfLbl=document.createElement("label"); sfLbl.textContent="Grid Scale Factor (CSF)";
     const sfBtn=document.createElement("button");
     sfBtn.className="toggle-btn"+(combinedScaleFactor!==1?" on":""); sfBtn.textContent=combinedScaleFactor.toFixed(8);
-    sfBtn.onclick=()=>{
-      calculatorInput("Combined scale factor — measured distances are multiplied by this (1 = off):",String(combinedScaleFactor),val=>{
-        if(val===null)return;
-        const f=parseFloat(val);
-        if(isNaN(f)||f<=0){alert("Bad scale factor.");return}
-        if(f<0.9||f>1.1){
-          confirmDialog("CSF "+f+" is far from 1 — typical values are 0.999… to 1.000…. Use it anyway?",yes=>{
-            if(!yes)return;
-            combinedScaleFactor=f; sfBtn.textContent=f.toFixed(8);
-            sfBtn.classList.toggle("on",f!==1); saveData();
-          });
-          return;
-        }
-        combinedScaleFactor=f; sfBtn.textContent=f.toFixed(8);
-        sfBtn.classList.toggle("on",f!==1); saveData();
-      });
-    };
+    sfBtn.onclick=()=>{ close(); _setupTapCSF(); };
     sfRow.appendChild(sfLbl); sfRow.appendChild(sfBtn); modal.appendChild(sfRow);
 
     // Version info
@@ -8431,16 +8919,17 @@ function deleteConnection(){
 }
 
 function clearAllData(){
-  confirmDialog("Clear ALL points, connections, and cache?",yes=>{
+  confirmDialog("Clear the current job? Other saved jobs are kept.",yes=>{
     if(!yes)return;
     _clearTransientMapSelections(false);
-    ["cl_points","cl_connections","cl_polylines","cl_orientOffset","cl_surveyMode","cl_jobName","cl_units","cl_showLabels","cl_areaLabels","cl_geoAnchor","cl_gisParcels","cl_satOn","cl_satRot","cl_deedPlot"]
-      .forEach(k=>_lsRemove(k));
     _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
-    surveyMode="2D";jobName="survey";_dirHandle=null;
+    surveyMode="2D";_dirHandle=null;
     plotConnections=[];_polylines=[];tempIntersections=[];tempGeom=[];undoStack=[];recentShots=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();_deedPlot=null;
-    _defaultState();saveData();
-    showResult("Cleared",[{lbl:"Status:",val:"Ready for new job"}]);
+    _defaultState();
+    // Keep the same library slot so this job is emptied, not deleted.
+    _jobRamLive=true;
+    saveData();
+    showResult("Cleared",[{lbl:"Status:",val:"Current job emptied. Other jobs are untouched."}]);
   });
 }
 
@@ -10595,8 +11084,9 @@ function _deedFindSnapCandidate(){
 
   // Point targets include ordinary job points AND corners of every other deed record.
   const pointTargets=[];
-  points.filter(p=>!movingNums.has(p.Point)&&p.Type!=="Deed").forEach(p=>
-    pointTargets.push({E:p.Easting,N:p.Northing,label:"Pt #"+p.Point,kind:"job-point"}));
+  const jobPts=points.filter(p=>!movingNums.has(p.Point)&&p.Type!=="Deed");
+  jobPts.forEach(p=>
+    pointTargets.push({E:p.Easting,N:p.Northing,label:"Pt #"+p.Point,kind:"job-point",ptNum:p.Point}));
   (_deedPlot.figures||[]).forEach(f=>{
     if(movingSet.has(f)||!f.computed)return;
     (f.computed.verts||[]).slice(0,-1).forEach((v,i)=>
@@ -10608,12 +11098,17 @@ function _deedFindSnapCandidate(){
     if(d<=pointTol&&(!bp||d<bp.d))bp={type:"point",d,source:x,target:t};
   }));
 
-  // Course targets include measured connections AND all courses from other deed records.
+  // Course targets: measured lines (plotConnections uses from/to, never a/b)
+  // plus all courses from other deed records.
   const ds=_deedSegments(figs), ts=[];
+  const linked=new Set();
   (plotConnections||[]).forEach(l=>{
-    const a=points.find(p=>p.Point===l.a),b=points.find(p=>p.Point===l.b);
-    if(a&&b&&!movingNums.has(a.Point)&&!movingNums.has(b.Point))
-      ts.push({a:{E:a.Easting,N:a.Northing},b:{E:b.Easting,N:b.Northing},label:"Pts "+a.Point+"-"+b.Point,kind:"job-line"});
+    if(l.type==="arc"||l.type==="spiral")return;
+    const a=points.find(pt=>pt.Point===l.from),b=points.find(pt=>pt.Point===l.to);
+    if(a&&b&&!movingNums.has(a.Point)&&!movingNums.has(b.Point)&&a.Type!=="Deed"&&b.Type!=="Deed"){
+      linked.add(a.Point+":"+b.Point);linked.add(b.Point+":"+a.Point);
+      ts.push({a:{E:a.Easting,N:a.Northing},b:{E:b.Easting,N:b.Northing},label:"Pts "+a.Point+"\u2013"+b.Point,kind:"job-line",explicit:true,pa:a.Point,pb:b.Point});
+    }
   });
   (_deedPlot.figures||[]).forEach(f=>{
     if(movingSet.has(f)||!f.computed)return;
@@ -10621,50 +11116,77 @@ function _deedFindSnapCandidate(){
   });
   const az=(a,b)=>Math.atan2(b.E-a.E,b.N-a.N)*180/Math.PI;
   const ad=(x,y)=>{let d=Math.abs(((x-y+180)%360+360)%360-180);return Math.min(d,Math.abs(180-d));};
+  const sdiff=(from,to)=>((to-from+180)%360+360)%360-180;
   const ptSeg=(p,a,b)=>{const vx=b.E-a.E,vy=b.N-a.N,L2=vx*vx+vy*vy||1;const u=Math.max(0,Math.min(1,((p.E-a.E)*vx+(p.N-a.N)*vy)/L2));const q={E:a.E+u*vx,N:a.N+u*vy};return {d:Math.hypot(p.E-q.E,p.N-q.N),q,u};};
   let bl=null;
   ds.forEach(sg=>ts.forEach(tg=>{
     const sm={E:(sg.a.E+sg.b.E)/2,N:(sg.a.N+sg.b.N)/2};
     const near=ptSeg(sm,tg.a,tg.b), da=ad(az(sg.a,sg.b),az(tg.a,tg.b));
     const sl=Math.hypot(sg.b.E-sg.a.E,sg.b.N-sg.a.N),tl=Math.hypot(tg.b.E-tg.a.E,tg.b.N-tg.a.N);
-    if(near.d<=lineTol&&da<=15&&Math.min(sl,tl)>0.01){
-      // Favor line alignment over point snap once a meaningful shared course is nearby.
+    const angLim=tg.kind==="job-line"?40:15;
+    if(near.d<=lineTol&&da<=angLim&&Math.min(sl,tl)>0.01){
       const score=near.d+da*(lineTol/12);
       if(!bl||score<bl.score)bl={type:"line",score,d:near.d,da,source:sg,target:tg,near};
     }
   }));
-  // If a close deed corner and matching incident courses are both available,
-  // solve them together as a rigid two-condition fit: corner coincidence + line direction.
-  // This prevents a corner-only translation from leaving the shared boundary rotated.
+  // Rigid two-condition fit: hold a corner and swing so an incident course matches.
   let br=null;
+  const same=(a,b)=>Math.hypot(a.E-b.E,a.N-b.N)<1e-5;
   if(bp&&bp.target.kind==="deed-corner"){
-    const same=(a,b)=>Math.hypot(a.E-b.E,a.N-b.N)<1e-5;
     const srcIncident=ds.filter(sg=>same(sg.a,bp.source.v)||same(sg.b,bp.source.v));
     const tgtIncident=ts.filter(tg=>tg.kind==="deed-line"&&(same(tg.a,bp.target)||same(tg.b,bp.target)));
     srcIncident.forEach(sg=>tgtIncident.forEach(tg=>{
       const so=same(sg.a,bp.source.v)?sg.b:sg.a;
       const to=same(tg.a,bp.target)?tg.b:tg.a;
       const saz=az(bp.source.v,so),taz=az(bp.target,to);
-      let dr=((taz-saz+180)%360+360)%360-180;
-      const da=Math.abs(dr);
+      const dr=sdiff(saz,taz), da=Math.abs(dr);
       if(da<=15){
         const score=bp.d+da*(lineTol/12);
         if(!br||score<br.score)br={type:"rigid",score,d:bp.d,da,dr,sourcePoint:bp.source.v,targetPoint:bp.target,sourceSeg:sg,targetSeg:tg};
       }
     }));
   }
+  // Ground fit: hold a deed corner on a measured point and swing the record
+  // so an incident course matches the bearing between two field shots.
+  // Distances stay on the record; the second monument misses by the residual.
+  if(bp&&bp.target.kind==="job-point"){
+    const srcIncident=ds.filter(sg=>same(sg.a,bp.source.v)||same(sg.b,bp.source.v));
+    const A=bp.target;
+    srcIncident.forEach(sg=>{
+      const so=same(sg.a,bp.source.v)?sg.b:sg.a;
+      const recAz=az(bp.source.v,so);
+      const recDist=Math.hypot(so.E-bp.source.v.E,so.N-bp.source.v.N);
+      if(recDist<0.01)return;
+      jobPts.forEach(B=>{
+        if(B.Point===A.ptNum)return;
+        const measDist=Math.hypot(B.Easting-A.E,B.Northing-A.N);
+        if(measDist<0.01)return;
+        const ratio=measDist/recDist;
+        if(ratio<0.4||ratio>2.5)return;
+        const dr=sdiff(recAz,az(A,{E:B.Easting,N:B.Northing})), da=Math.abs(dr);
+        if(da>90)return;
+        const explicit=linked.has(A.ptNum+":"+B.Point);
+        const score=bp.d+da*(lineTol/10)+Math.abs(measDist-recDist)/recDist*lineTol+(explicit?0:lineTol*0.25);
+        const tg={a:{E:A.E,N:A.N},b:{E:B.Easting,N:B.Northing},label:"Pts "+A.ptNum+"\u2013"+B.Point,kind:"job-line",explicit,pa:A.ptNum,pb:B.Point};
+        if(!br||score<br.score)br={type:"rigid",score,d:bp.d,da,dr,sourcePoint:bp.source.v,targetPoint:A,sourceSeg:sg,targetSeg:tg,recDist,measDist};
+      });
+    });
+  }
   if(br)return br;
-  // Otherwise prefer a course fit; use a corner-only snap only when no usable course pair exists.
   return bl||bp;
 }
 function _deedApplySnapCandidate(hit){
   if(!hit)return null;
   if(hit.type==="rigid"&&_deedAdjustScope==null){
     // Rotate about the moving shared corner, then translate that corner exactly
-    // onto the target corner. Distances and internal geometry remain unchanged.
+    // onto the target. Distances and internal geometry remain unchanged.
     _deedRotateAbout(hit.sourcePoint.E,hit.sourcePoint.N,hit.dr);
     _deedTranslate(hit.targetPoint.E-hit.sourcePoint.E,hit.targetPoint.N-hit.sourcePoint.N);
-    return "corner + course snapped to "+hit.targetPoint.label+"; rotated "+hit.dr.toFixed(3)+"°";
+    const resid=(hit.recDist!=null&&hit.measDist!=null)?Math.abs(hit.measDist-hit.recDist):null;
+    return "held on "+hit.targetPoint.label
+      +(hit.targetSeg?(", course aligned to "+hit.targetSeg.label):"")
+      +"; rotated "+hit.dr.toFixed(3)+"°"
+      +(resid!=null?("; residual "+resid.toFixed(2)+" "+units+" — record distance held"):"");
   }
   if(hit.type==="point"){
     _deedTranslate(hit.target.E-hit.source.v.E,hit.target.N-hit.source.v.N);
@@ -10843,11 +11365,13 @@ function _deedFitTwoPoint(){
           const B=points.find(p=>p.Point===parseInt(pb,10));
           if(!B){alert("Point "+pb+" not found.");return;}
           const vi=I.pt, vj=J.pt;
+          if(A.Type==="Deed"||B.Type==="Deed"){alert("Pick measured field points, not cyan deed points.");return;}
           const azRec=Math.atan2(vj.E-vi.E,vj.N-vi.N)*180/Math.PI;
           const azMeas=Math.atan2(B.Easting-A.Easting,B.Northing-A.Northing)*180/Math.PI;
-          const dTheta=azMeas-azRec;
+          const dTheta=((azMeas-azRec+180)%360+360)%360-180;
           // rotate the entire record (all figures) about corner I, then
-          // translate so corner I lands exactly on A
+          // translate so corner I lands exactly on A. Distances are not scaled.
+          try{_takeSnapshot("fit deed to 2 measured points");}catch(e){}
           _deedRotateAbout(vi.E,vi.N,dTheta);
           _deedTranslate(A.Easting-vi.E,A.Northing-vi.N);
           let vj2=null;
@@ -11257,7 +11781,7 @@ function _deedAdjustStart(){
   }catch(e){_deedAdjUndoMark=null;}
   if(!_deedPlot)return;
   _deedAdjSnap={rot:_deedPlot.rot||0,pobs:_deedPlot.figures.map(f=>({E:f.pobE,N:f.pobN,recordRot:f.recordRot||0}))};
-  _deedAdjust=true;_deedSnapPreview=null;_updateUndoBtn();plotPoints();
+  _deedAdjust=true;_deedSnapPreview=_deedAdjustScope==null?_deedFindSnapCandidate():null;_updateUndoBtn();plotPoints();
 }
 function _deedAdjustEnd(lock){
   if(!lock&&_deedAdjSnap){
@@ -11285,7 +11809,7 @@ function _deedTranslate(dE,dN){
     f.pobE+=dE;f.pobN+=dN;
   });
   _deedRecompute();
-  if(_deedAdjust&&_deedAdjustRecordId)_deedSnapPreview=_deedFindSnapCandidate();
+  if(_deedAdjust&&_deedAdjustScope==null)_deedSnapPreview=_deedFindSnapCandidate();
   plotPoints();
 }
 function _deedRotateAbout(pivotE,pivotN,dAdeg){
@@ -11301,7 +11825,7 @@ function _deedRotateAbout(pivotE,pivotN,dAdeg){
   });
   if(!_deedAdjustRecordId)_deedPlot.rot=(_deedPlot.rot||0)+dAdeg;
   _deedRecompute();
-  if(_deedAdjust&&_deedAdjustRecordId)_deedSnapPreview=_deedFindSnapCandidate();
+  if(_deedAdjust&&_deedAdjustScope==null)_deedSnapPreview=_deedFindSnapCandidate();
   plotPoints();
 }
 function _screenToWorld(sx,sy){
@@ -13095,14 +13619,10 @@ function _zoomToGround(unitsAcross){
   setTimeout(()=>{ if(viewScale===setAt) apply(); },350);
 }
 function _stageNewJob(){
-  _clearTransientMapSelections(false);
-  points=[];plotConnections=[];_polylines=[];_areaLabels=[];
-  tempGeom=[];tempIntersections=[];recentShots=[];
-  selectedPoint=null;currentPoint=null;
-  if(typeof selectedConn!=="undefined")selectedConn=null;
-  geoAnchor=null;satOn=false;satRotNudge=0;_deedPlot=null;
-  stopLiveGps();try{_syncSatBtn();}catch(e){}
-  _resetViewState();viewScale=1;viewOffsetX=0;viewOffsetY=0;
+  _jobCommitActive();
+  _jobPendingNew=true;
+  _jobRamLive=false;
+  _stageNewJobScratch();
   updateStatus();plotPoints();
 }
 function jobNewManual(jn){
@@ -13911,17 +14431,19 @@ function plotPoints(extCtx,extW,extH){
     ctx.save();
     ctx.font="bold 12px 'Courier New',monospace";ctx.textAlign="center";ctx.textBaseline="middle";
     const hint=_deedAdjustRecordId
-      ?("🧲 moving: "+_deedRecordLabel(_deedAdjustRecordId)+" — drag its corner or course near another deed to snap")
+      ?("🧲 moving: "+_deedRecordLabel(_deedAdjustRecordId)+" — drag a corner onto a found point to hold and align the course")
       :_deedAdjustScope!=null
       ?("🖐 moving: "+((_deedPlot.figures[_deedAdjustScope]||{}).name||"figure")+" — drag to position")
       :((window.matchMedia&&matchMedia("(pointer:fine)").matches)
-        ?"🖐 drag to slide · swing slider to rotate":"🖐 drag to slide · two fingers to rotate");
+        ?"🖐 drag a corner onto a found point — holds and swings to the course":"🖐 drag a corner onto a found point — holds and swings to the course");
     const hw=ctx.measureText(hint).width;
     ctx.fillStyle="rgba(10,90,100,.85)";ctx.fillRect(w/2-hw/2-12,10,hw+24,24);
     ctx.fillStyle="#bff3fa";ctx.fillText(hint,w/2,22);
     if(_deedSnapPreview){
       const ps=_deedSnapPreview.type==="rigid"
-        ?("SNAP CORNER + COURSE → "+_deedSnapPreview.targetPoint.label+"  Δ "+_deedSnapPreview.dr.toFixed(2)+"°")
+        ?("HOLD "+_deedSnapPreview.targetPoint.label
+          +(_deedSnapPreview.targetSeg?(" · ALIGN "+_deedSnapPreview.targetSeg.label):"")
+          +"  Δ "+_deedSnapPreview.dr.toFixed(2)+"°")
         :_deedSnapPreview.type==="line"
           ?("SNAP COURSE → "+_deedSnapPreview.target.label+"  Δ "+_deedSnapPreview.da.toFixed(2)+"°")
           :( "SNAP CORNER → "+_deedSnapPreview.target.label );
@@ -15120,20 +15642,20 @@ const HELP_TOPICS = [
     body:`<h3>Starting a New Job</h3>
 <p>When you open ChainLink you see the <strong>Job Manager</strong>. Tap <strong>+ Start New Job</strong> and enter a job name.</p>
 <p>You'll then be asked how to place your starting point: <strong>📡 GPS Start</strong> stands you at the point, reads your phone's GPS, puts the job on your state's official coordinate grid, fills in the real ground elevation, and turns on aerial imagery — all automatically. <strong>Manual / Assumed</strong> starts at simple round numbers (10000, 10000) with no location attached, which is the traditional way and fine for jobs where only relative positions matter.</p>
-<h3>Continuing a Previous Job</h3>
-<p>Tap <strong>Continue Previous Job</strong> to pick up where you left off. The card shows point count, connections, and units.</p>
+<h3>Opening a Saved Job</h3>
+<p>Every job you start is stored on the phone. Tap its card to open it. The current job is saved automatically before the switch, so starting a new job never overwrites the last one.</p>
 <h3>Loading from a File</h3>
-<p>Tap <strong>Load Job from File</strong> to restore a previously saved CSV. All points, connections, and settings are restored.</p>
+<p>Tap <strong>Load Job from File</strong> to add a previously saved CSV as <em>another</em> job. It does not replace the jobs already in the list.</p>
 <div class="tip">Always name jobs clearly — "Oak_St_Topo_May25" is better than "survey1".</div>`},
 
   { id:"jobs", section:"Getting Started", title:"Managing Multiple Jobs",
     preview:"Job Manager, switching jobs, renaming",
     body:`<h3>Job Manager</h3>
 <p>ChainLink stores multiple jobs on your phone. The Job Manager appears on launch, or any time via <strong>Project → Job Manager</strong>.</p>
-<p>Each job card shows its point count, connections, and units. Tapping a card swaps the active job — the current job is saved automatically first.</p>
+<p>Each job card shows its point count, connections, units, and when it was last saved. Tapping a card swaps the active job — the current job is saved automatically first. The ✕ on a card deletes that job only.</p>
 <h3>Renaming a Job</h3>
 <p>Tap <strong>Project → Rename Job</strong>. The CSV filename used by Save CSV follows the job name.</p>
-<div class="tip">Switching jobs never deletes data — every job keeps its own points, connections, polylines, and settings.</div>`},
+<div class="tip">Switching jobs never deletes data — every job keeps its own points, connections, polylines, records, and instrument settings.</div>`},
 
   { id:"units", section:"Getting Started", title:"Units, Survey Mode & Instrument Profile",
     preview:"Feet/meters, 2D/3D, bearing display, light/dark, SD/HD, prism constant",
@@ -15777,7 +16299,7 @@ const HELP_TOPICS = [
 <h3>Move / Snap a Deed Record</h3>
 <p><strong>Move / Snap a Deed Record</strong> lists the records; pick one and drag <em>just that deed</em> — everything else holds still. As it nears something snappable, the app finds it: your <strong>measured points</strong>, other deeds' <strong>corners</strong>, and other deeds' <strong>courses</strong>.</p>
 <h3>What LOCK IN Does</h3>
-<p>Corner near a point: the deed translates so the corner sits exactly on it. Course near a course: the deed <strong>rotates to match the line's bearing</strong> and seats on it — the classic shared-boundary fit between adjoining descriptions. Corner <em>and</em> course: the corner snaps and the deed swings rigid about it. A wrong lock is one <strong>↩ Undo</strong> from reversal, and a cancelled move leaves your undo history exactly as it was.</p>
+<p>Corner near a measured point: the deed <strong>holds on that point</strong> and, if a second field shot is in the same ballpark as an incident course, <strong>swings so the course matches the line between the two shots</strong>. Distances stay on the record — the second corner will miss by the residual, which is the honest paper-vs-ground disagreement. Course near a drawn line: the deed rotates to that bearing. Adjoining deeds still snap corner-to-corner and course-to-course. A wrong lock is one <strong>↩ Undo</strong> from reversal.</p>
 <div class="warn">Snapping is record-to-record assembly — it makes deeds agree with <em>each other</em>. Making the record agree with the <em>ground</em> is still the fit-to-measured-points step, and where the two disagree, the ground and the monuments win. That call is retracement judgment — a licensed surveyor's territory when it matters.</div>`},
 ];
 
@@ -16177,6 +16699,11 @@ function _wsGroup2(body,title){const d=document.createElement("div");d.className
 function openWorkspace(name){
   // Switching rooms must never carry a half-finished COGO/stake selection with it.
   if(typeof _clearTransientMapSelections==="function") _clearTransientMapSelections(false);
+  const panel=document.getElementById("workspacePanel");
+  if(panel&&panel.classList.contains("open")&&typeof _activeWorkspace!=="undefined"&&_activeWorkspace===name){
+    closeWorkspacePanel();
+    return;
+  }
   _activeWorkspace=name;_setWorkspaceActive(name);_hideContextDock();closeProjectDrawer();
   const meta={field:["F","Field","Collect observations and manage the occupied setup"],records:["R","Records","Import, assemble and fit deeds and record geometry"],cogo:["C","COGO","Coordinate geometry and computational tools"],stake:["S","Stake","Guide layout to points, lines and curves"],map:["M","Map","Imagery, GPS context and plot display"],project:["P","Project","Jobs, files, settings and help"]}[name];
   document.getElementById("workspaceIcon").textContent=meta[0];document.getElementById("workspaceTitle").textContent=meta[1];document.getElementById("workspaceSub").textContent=meta[2];
@@ -16184,6 +16711,7 @@ function openWorkspace(name){
   const add=(t,s,c,f,b)=>_wsCard2(body,t,s,c,f,b);
   if(name==="field"){
     _wsGroup2(body,"Observation");add("Take Shot","Store a 2D or 3D observation","primary",takeShot,currentPoint?"OCC "+currentPoint.Point:null);add("Occupy Point","Move the instrument setup","blue",occupyPoint);add("Set Station","Enter known station coordinates","",setKnownStation);add("Check Shot","Compare against a known point","",checkShot);add("Two-Face Shot","Reduce Face 1 and Face 2","",twoFaceShot);add("Atmospheric PPM","Temperature and pressure correction",_ppmEnabled?"primary":"",atmosphericSetup,_ppmEnabled?"ON":null);
+    _wsGroup2(body,"Instrument");add("Instrument Height HI",currentPoint?("Occupied #"+currentPoint.Point+" · "+(currentPoint.ih||0).toFixed(3)+" "+units):"Occupy a point first","",()=>_setupTapHI(),currentPoint&&!(currentPoint.ih>0)&&surveyMode==="3D"?"CHECK":null);add("Prism Constant",(_prismPresetMm()===0?"0":_prismPresetMm()===-30?"-30 mm":_prismPresetMm()===30?"+30 mm":(prismConstant||0).toFixed(4)+" "+units),"",()=>_setupTapPrism());add("Grid Scale CSF",(combinedScaleFactor>0?combinedScaleFactor:1).toFixed(8)+(combinedScaleFactor===1?" · off":""),"",()=>_setupTapCSF());
     _wsGroup2(body,"Field data");add("Point List","Review and edit stored points","",pointListMenu,points.length+" PTS");add("Shift Elevations","Tie assumed elevations to a benchmark","",elevationShift);add("Flag Point","Mark control or questionable shots","",flagPoint);
   } else if(name==="records"){
     const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
