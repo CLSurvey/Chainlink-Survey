@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.20">
+<meta name="application-name" content="ChainLink-v4.7.23">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.20</title>
+<title>ChainLink Survey v4.7.23</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1219,7 +1219,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.20";
+const APP_VERSION = "4.7.23";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -6315,10 +6315,275 @@ function projectExportMenu(){
     _wsButton(modal,"Back","",()=>{close();projectWorkspaceMenu();});
   });
 }
+
+/* ── COORDINATE LIST IMPORT (paste / photo OCR) ─────────────────
+   Never overwrites. Source point numbers are kept only as a note.
+   New numbers start after the highest existing Point in the job. */
+function _coordListNextNum(){
+  let n=1;
+  (points||[]).forEach(p=>{const v=Number(p.Point); if(isFinite(v)&&v>=n) n=v+1;});
+  if(typeof pointCounter==="number" && pointCounter>n) n=pointCounter;
+  while(typeof _ptExists==="function" && _ptExists(n)) n++;
+  return n;
+}
+/* Is a comma inside "5,000.00" a thousands separator or a field delimiter?
+   Both are real: "1,5000,1000,100,IP" is five fields, and "1,5,000.00,1,000.00,
+   100,IP" is the same record with separators. Splitting first and stripping
+   commas afterwards (as 4.7.21 did) turned "5,000.00" into the fragments "5"
+   and "000.00" — the first parsed as NaN and was dropped, the second parsed as
+   0 — so the row imported silently as N 0, E 0. A point at the origin is miles
+   from any real job and wrecks the plot extent, with nothing to say why.
+
+   Resolved by field count, which is unambiguous: a coordinate record holds at
+   most P,N,E,Z,D. If splitting on commas yields more than that AND merging
+   3-digit groups brings it back into range, the commas were separators inside
+   numbers. Quoted fields and tab/semicolon delimiters settle it outright.
+   Anything still doubtful is flagged on the row rather than guessed at, and
+   the preview offers an explicit override. */
+/* Merge grouped numbers ("1,234,567.89" -> "1234567.89") without touching the
+   commas that separate fields. The group must be a COMPLETE number: 1-3 digits
+   followed by one or more ",ddd" runs, not preceded by a digit or a decimal
+   point, and not followed by a digit. That last part matters — a naive
+   "digit,3-digits" rule happily ate the elevation out of
+   "...,1000.00,100,IP", since ".00,100" looks like a thousands group. A
+   separator never appears after a decimal point, and never mid-number. */
+function _coordListMergeThousands(line){
+  let s=String(line||"");
+  for(let i=0;i<4;i++){
+    const n=s.replace(/(^|[^\d.])(\d{1,3}(?:,\d{3})+)(?!\d)/g,
+      (m,pre,num)=>pre+num.replace(/,/g,""));
+    if(n===s)break; s=n;
+  }
+  return s;
+}
+function _coordListSepMode(text){
+  const lines=String(text||"").split(/\r?\n/).map(l=>l.trim())
+    .filter(l=>l&&!l.startsWith("#")&&!l.startsWith("//"));
+  if(!lines.length)return"delimiter";
+  // A quoted field settles it by itself; stripping the quotes removes the
+  // separators, and merging afterwards would corrupt the real delimiters.
+  if(/"[^"]*,[^"]*"/.test(text))return"quoted";
+  let vote=0,seen=0;
+  for(const l of lines){
+    if(!/,/.test(l))continue;
+    seen++;
+    const rawN=l.split(",").length;
+    const merged=_coordListMergeThousands(l);
+    const mergedN=merged.split(",").length;
+    // More fields than P,N,E,Z,D can hold, brought back into range by merging
+    if(rawN>5&&mergedN<=5){vote++;continue;}
+    // Or the real delimiter is whitespace/tab and every comma was a separator
+    if(mergedN===1&&/\s/.test(merged.trim()))vote++;
+  }
+  if(!seen)return"delimiter";
+  return vote>seen/2?"thousands":"delimiter";
+}
+function _coordListParse(raw, order, sep){
+  // order: "PNEZD" (default) or "PENZD"
+  let text=String(raw||"").replace(/\u00a0/g," ");
+  const sepMode=(sep==="thousands"||sep==="delimiter")?sep:_coordListSepMode(text);
+  // Quoted fields: the quotes themselves carry no data once separators are out.
+  text=text.replace(/"([^"]*)"/g,(m,inner)=>inner.replace(/,/g,""));
+  if(sepMode==="thousands")
+    text=text.split(/\r?\n/).map(_coordListMergeThousands).join("\n");
+  const lines=text.split(/\r?\n/);
+  const out=[], skipped=[];
+  let mode=order||"PNEZD";
+  const hdr=lines.slice(0,8).join(" ").toUpperCase();
+  if(/\bEAST(?:ING)?\b/.test(hdr) && /\bNORTH(?:ING)?\b/.test(hdr)){
+    const ei=hdr.search(/\bEAST/), ni=hdr.search(/\bNORTH/);
+    if(ei>=0 && ni>=0 && ei<ni) mode="PENZD";
+    else mode="PNEZD";
+  }
+  const headerish=/^(?:pt|point|pnts?|#|north|nort|easting|east|elev|desc|code|pnezd|penzd)\b/i;
+  for(const line0 of lines){
+    let line=line0.replace(/[|]/g," ").trim();
+    if(!line || line.startsWith("#") || line.startsWith("//")) continue;
+    if(headerish.test(line) && (line.match(/[a-zA-Z]/g)||[]).length>6 && !/\d+\.\d+/.test(line)) continue;
+    // "N 1234.5 E 6789.0" style
+    const tagged=line.match(/^(?:(\d+)\s+)?(?:N(?:ORTHING)?\s*[:=]?\s*)?([-+]?\d[\d,]*\.?\d*)\s*(?:E(?:ASTING)?\s*[:=]?\s*)([-+]?\d[\d,]*\.?\d*)(?:\s*(?:Z|ELEV(?:ATION)?)\s*[:=]?\s*([-+]?\d[\d,]*\.?\d*))?(?:\s+(.+))?$/i);
+    let pt=null,N=NaN,E=NaN,Z=0,desc="";
+    const parts=line.split(/[,;\t]+/).map(x=>x.trim()).filter(Boolean);
+    const ws=line.split(/\s+/);
+    const nums=[];
+    // A bare "5000.00,1000.00" pair is two fields, not three — comma-split it
+    // as well, or the whitespace fallback sees one token and drops the row.
+    const take=parts.length>=2?parts:ws;
+    for(const tok of take){
+      const v=parseFloat(String(tok).replace(/,/g,""));
+      if(!isNaN(v) && /[-+]?\d/.test(tok)) nums.push({tok,v});
+    }
+    if(tagged && !isNaN(parseFloat(tagged[2])) && !isNaN(parseFloat(tagged[3])) && /[NE]/.test(line.toUpperCase()) && /E(?:ASTING)?/i.test(line)){
+      pt=tagged[1]?parseInt(tagged[1],10):null;
+      N=parseFloat(tagged[2].replace(/,/g,""));
+      E=parseFloat(tagged[3].replace(/,/g,""));
+      Z=tagged[4]?parseFloat(tagged[4].replace(/,/g,"")):0;
+      desc=(tagged[5]||"").trim();
+    } else if(nums.length>=2){
+      let i=0;
+      if(nums.length>=3 && Number.isInteger(nums[0].v) && nums[0].v>0 && nums[0].v<1e7 &&
+         String(nums[0].tok).indexOf(".")<0){
+        pt=nums[0].v; i=1;
+      }
+      const a=nums[i].v, b=nums[i+1].v;
+      const z = (nums[i+2] && Math.abs(nums[i+2].v)<100000)?nums[i+2].v:0;
+      if(mode==="PENZD"){ E=a; N=b; } else { N=a; E=b; }
+      Z=isNaN(z)?0:z;
+      const used=new Set(nums.slice(0,i+2+(nums[i+2]?1:0)).map(x=>x.tok));
+      desc=take.filter(t=>!used.has(t) && !used.has(t.replace(/,/g,""))).join(" ").trim();
+      if(pt!=null && String(pt)===desc) desc="";
+    } else {
+      skipped.push(line0);
+      continue;
+    }
+    if(!isFinite(N)||!isFinite(E)){ skipped.push(line0); continue; }
+    out.push({src:pt,N,E,Z:isFinite(Z)?Z:0,desc,raw:line0});
+  }
+  return {rows:out, skipped, mode, sepMode};
+}
+function _coordListCommit(rows){
+  if(!rows||!rows.length){ alert("No coordinate rows to import."); return; }
+  _takeSnapshot("Import coordinate list");
+  let next=_coordListNextNum();
+  const added=[];
+  rows.forEach(r=>{
+    while(_ptExists(next)) next++;
+    const note=[];
+    if(r.src!=null && r.src!==next) note.push("was #"+r.src);
+    if(r.desc) note.push(r.desc);
+    points.push({
+      Point:next, Northing:r.N, Easting:r.E, Elevation:r.Z||0,
+      Type:"Import", Flag:"", Description:note.join(" · ")
+    });
+    added.push(next);
+    next++;
+  });
+  pointCounter=next;
+  saveData(); plotPoints();
+  try{
+    const pts=points.filter(p=>added.includes(p.Point)).map(p=>({E:p.Easting,N:p.Northing}));
+    if(pts.length>1 && typeof zoomToPoints==="function") zoomToPoints(pts);
+  }catch(e){}
+  showResult("Coordinate list imported",[
+    {lbl:"Added:",val:String(added.length)+" points"},
+    {lbl:"Numbers:",val:added[0]+(added.length>1?(" – "+added[added.length-1]):"")},
+    {lbl:"Note:",val:"Existing points were not overwritten. Original list numbers are in the description."}
+  ]);
+}
+function _coordListPreview(modal, close, raw, order, sep){
+  const parsed=_coordListParse(raw, order, sep);
+  let next=_coordListNextNum();
+  modal.innerHTML="<h2>Review Import</h2>";
+  const info=document.createElement("p"); info.className="info";
+  info.textContent=(parsed.rows.length? (parsed.rows.length+" points · order "+parsed.mode+" · commas: "
+      +(parsed.sepMode==="delimiter"?"field separators":"inside numbers")
+      +" · new numbers start at #"+next) : "No points found.")
+    +(parsed.skipped.length? (" · "+parsed.skipped.length+" lines skipped") : "");
+  modal.appendChild(info);
+  if(parsed.rows.length){
+    const wrap=document.createElement("div"); wrap.className="tbl-wrap"; wrap.style.maxHeight="36vh";
+    const tbl=document.createElement("table"); tbl.className="data-tbl";
+    tbl.innerHTML="<thead><tr><th>New #</th><th>Was</th><th>N</th><th>E</th><th>Z</th><th>Desc</th></tr></thead>";
+    const tb=document.createElement("tbody");
+    parsed.rows.forEach((r,i)=>{
+      const num=next+i;
+      const tr=document.createElement("tr");
+      tr.innerHTML="<td>"+num+"</td><td>"+(r.src!=null?r.src:"—")+"</td><td>"+r.N.toFixed(3)+"</td><td>"+r.E.toFixed(3)+"</td><td>"+(r.Z||0).toFixed(3)+"</td><td>"+(r.desc||"")+"</td>";
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb); wrap.appendChild(tbl); modal.appendChild(wrap);
+  }
+  const orderBtn=document.createElement("button");
+  orderBtn.className="btn";
+  orderBtn.textContent="Swap N/E order (now "+parsed.mode+")";
+  orderBtn.onclick=()=>_coordListPreview(modal, close, raw, parsed.mode==="PNEZD"?"PENZD":"PNEZD", sep);
+  modal.appendChild(orderBtn);
+  /* "5,000.00" is one number; "5000,100" is two fields. The detector reads the
+     field count, but a short or unusual list can be genuinely ambiguous, so the
+     reading is stated above and can be flipped here rather than guessed at. */
+  const sepBtn=document.createElement("button");
+  sepBtn.className="btn";
+  sepBtn.textContent="Read commas as "+(parsed.sepMode==="delimiter"?"part of numbers (1,234.56)":"field separators");
+  sepBtn.onclick=()=>_coordListPreview(modal, close, raw, order,
+    parsed.sepMode==="delimiter"?"thousands":"delimiter");
+  modal.appendChild(sepBtn);
+  if(parsed.rows.length){
+    const go=document.createElement("button"); go.className="btn ok";
+    go.textContent="Import "+parsed.rows.length+" as #"+next+"–#"+(next+parsed.rows.length-1);
+    go.onclick=()=>{ close(); _coordListCommit(parsed.rows); };
+    modal.appendChild(go);
+  }
+  const back=document.createElement("button"); back.className="btn"; back.textContent="Back";
+  back.onclick=()=>{ close(); importCoordList(raw); };
+  modal.appendChild(back);
+}
+function _coordListOcr(file, ta, status){
+  if(!file || !status || !ta) return;
+  status.textContent="Reading photo…";
+  const run=()=>{
+    if(typeof Tesseract==="undefined"){
+      status.textContent="OCR library didn't load. Use Google Lens, then paste the text.";
+      return;
+    }
+    Tesseract.recognize(file,"eng",{logger:m=>{
+      if(m&&m.status==="recognizing text"&&typeof m.progress==="number")
+        status.textContent="Reading photo… "+Math.round(m.progress*100)+"%";
+    }}).then(res=>{
+      const txt=(res&&res.data&&res.data.text)||"";
+      if(!txt.trim()){ status.textContent="No text in that photo. Try a closer shot or paste from Lens."; return; }
+      ta.value=(ta.value?ta.value.replace(/\s+$/,"")+"\n":"")+txt;
+      status.textContent="Text added from photo. Check it, then Review.";
+    }).catch(()=>{ status.textContent="Couldn't read that photo. Paste from Google Lens instead."; });
+  };
+  if(typeof Tesseract!=="undefined"){ run(); return; }
+  const sc=document.createElement("script");
+  sc.src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+  sc.onload=run;
+  sc.onerror=()=>{ status.textContent="OCR needs a data signal once. Or paste from Google Lens."; };
+  document.head.appendChild(sc);
+}
+function importCoordList(prefill){
+  openModal((modal,close)=>{
+    modal.classList.add("modal-shot");
+    modal.innerHTML="<h2>Import Coordinate List</h2>"
+      +"<p class='info'>Paste a point list, or snap a photo of one. Points are always given the next free numbers so nothing in the job is overwritten. Original numbers stay in the description.</p>";
+    const ta=document.createElement("textarea");
+    ta.className="csv-out";
+    ta.style.height="28vh"; ta.style.textAlign="left"; ta.style.fontSize=".78em";
+    ta.placeholder="1  10000.000  5000.000  100.000  IP\n2  10120.440  4988.210  100.150  CP";
+    if(prefill) ta.value=prefill;
+    modal.appendChild(ta);
+    const status=document.createElement("p"); status.className="info"; status.id="coordListStatus";
+    status.textContent="Accepts PNEZD / comma / tab lists. Swap N/E on the next screen if needed.";
+    modal.appendChild(status);
+    const photo=document.createElement("input");
+    photo.type="file"; photo.accept="image/*"; photo.capture="environment";
+    photo.style.display="none";
+    photo.onchange=()=>{ if(photo.files&&photo.files[0]) _coordListOcr(photo.files[0], ta, status); };
+    modal.appendChild(photo);
+    const shot=document.createElement("button"); shot.className="btn blue";
+    shot.textContent="Photo of list (OCR)";
+    shot.onclick=()=>photo.click();
+    modal.appendChild(shot);
+    const rev=document.createElement("button"); rev.className="btn ok";
+    rev.textContent="Review numbers";
+    rev.onclick=()=>{
+      const raw=ta.value||"";
+      if(!raw.trim()){ alert("Paste a list or read a photo first."); return; }
+      close();
+      openModal((m2,c2)=>_coordListPreview(m2,c2,raw,"PNEZD"));
+    };
+    modal.appendChild(rev);
+    const can=document.createElement("button"); can.className="btn"; can.textContent="Cancel"; can.onclick=close;
+    modal.appendChild(can);
+  });
+}
+
 function projectImportMenu(){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>Import</h2>";
     _wsButton(modal,"Load ChainLink CSV","ok",()=>{close();loadFromFile()});
+    _wsButton(modal,"Import Coordinate List","ok",()=>{close();importCoordList()});
     _wsButton(modal,"Import DXF","blue",()=>{close();importDXF()});
     _wsButton(modal,"Import LandXML","blue",()=>{close();importLandXML()});
     _wsButton(modal,"Import KML","blue",()=>{close();importKML()});
@@ -13194,6 +13459,14 @@ function cacheAreaOffline(){
   }
   const total=Math.min(urls.length,350);
   let done=0,fail=0;
+  /* Mark the run so the service worker stores these tiles in the pinned cache
+     rather than the size-capped browsing one. Deliberately cached ground
+     should not be the first thing evicted when you pan somewhere else. */
+  const _pin=on=>{try{
+    if(navigator.serviceWorker&&navigator.serviceWorker.controller)
+      navigator.serviceWorker.controller.postMessage({type:"PIN_TILES",on:!!on});
+  }catch(e){}};
+  _pin(true);
   const {close}=openModal((modal)=>{
     modal.innerHTML="<h2>⬇ Caching Tiles</h2><p class='info' id='tileProg'>0 / "+total+"</p>"+
       "<p class='info'>Tiles stay available offline once loaded. Zoom out further and repeat to cover more ground.</p>";
@@ -13204,9 +13477,12 @@ function cacheAreaOffline(){
     const im=new Image();im.crossOrigin="anonymous";
     const tick=()=>{done++;const el=document.getElementById("tileProg");
       if(el)el.textContent=done+" / "+total+(fail?" ("+fail+" failed)":"");};
-    im.onload=tick;im.onerror=()=>{fail++;tick();};
+    im.onload=()=>{tick();if(done+fail>=total)_pin(false);};
+    im.onerror=()=>{fail++;tick();if(done+fail>=total)_pin(false);};
     im.src=u;
   });
+  // Safety net: never leave pinning on if some tiles never settle.
+  setTimeout(()=>_pin(false),120000);
 }
 
 /* — Combined plot-button toggle: imagery + live GPS together — */
