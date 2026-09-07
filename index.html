@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.23">
+<meta name="application-name" content="ChainLink-v4.7.24">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.23</title>
+<title>ChainLink Survey v4.7.24</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1219,7 +1219,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.23";
+const APP_VERSION = "4.7.24";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -6543,6 +6543,7 @@ function _coordListOcr(file, ta, status){
   document.head.appendChild(sc);
 }
 function importCoordList(prefill){
+  _helpContext="import-coords";
   openModal((modal,close)=>{
     modal.classList.add("modal-shot");
     modal.innerHTML="<h2>Import Coordinate List</h2>"
@@ -11130,6 +11131,7 @@ function _bearingEcho(inp,host){
 }
 
 function _deedEditCall(calls,i){
+  _helpContext="deed-keypad";
   const c=calls[i];
   openModal((modal,close)=>{
     modal.innerHTML="<h2>Call "+(i+1)+"</h2>"+(c.raw?"<p class='info' style='font-size:.75em'>from deed: “"+c.raw.slice(0,110)+"”</p>":"");
@@ -15917,7 +15919,16 @@ const HELP_TOPICS = [
     preview:"Job setup, naming, and first steps",
     body:`<h3>Starting a New Job</h3>
 <p>When you open ChainLink you see the <strong>Job Manager</strong>. Tap <strong>+ Start New Job</strong> and enter a job name.</p>
-<p>You'll then be asked how to place your starting point: <strong>📡 GPS Start</strong> stands you at the point, reads your phone's GPS, puts the job on your state's official coordinate grid, fills in the real ground elevation, and turns on aerial imagery — all automatically. <strong>Manual / Assumed</strong> starts at simple round numbers (10000, 10000) with no location attached, which is the traditional way and fine for jobs where only relative positions matter.</p>
+<p>You'll then be asked how to place your starting point. There are six ways in:</p>
+<ul>
+<li><strong>📡 GPS Start (State Plane)</strong> — stand at the point. The phone's GPS puts the job on your state's official coordinate grid, fills in the real ground elevation, and turns on aerial imagery, all automatically.</li>
+<li><strong>📡 GPS Start + tap exact spot on imagery</strong> — same thing, but you place the point by eye on the photo instead of trusting the fix. Useful when you can see the corner you're standing on and the GPS is drifting.</li>
+<li><strong>📜 Plot a deed first (no start point)</strong> — skips the start point entirely and opens the Deed Plotter. For office work: read the record in, then go find it.</li>
+<li><strong>🌐 Paste Lat / Lon (Google Maps)</strong> — paste a coordinate copied out of Google Maps or a text message. The job lands on the grid without you being on site.</li>
+<li><strong>🎯 Known Grid Coordinate (SPC / UTM)</strong> — type a published State Plane or UTM northing and easting. This is the one to use when you have real control to start from.</li>
+<li><strong>⌨ Manual / Assumed</strong> — starts at round numbers (10000, 10000) with no location attached. The traditional way, and fine for jobs where only relative positions matter.</li>
+</ul>
+<div class="tip">Anything started assumed can be put on the grid later — see <em>Satellite Imagery — What It Is &amp; Setup</em>. Nothing about the shape of your work changes when you do.</div>
 <h3>Opening a Saved Job</h3>
 <p>Every job you start is stored on the phone. Tap its card to open it. The current job is saved automatically before the switch, so starting a new job never overwrites the last one.</p>
 <h3>Loading from a File</h3>
@@ -15928,7 +15939,8 @@ const HELP_TOPICS = [
     preview:"Job Manager, switching jobs, renaming",
     body:`<h3>Job Manager</h3>
 <p>ChainLink stores multiple jobs on your phone. The Job Manager appears on launch, or any time via <strong>Project → Job Manager</strong>.</p>
-<p>Each job card shows its point count, connections, units, and when it was last saved. Tapping a card swaps the active job — the current job is saved automatically first. The ✕ on a card deletes that job only.</p>
+<p>Each job card shows its point count, connections, units, imported deed records, and when it was last saved, with the one you're in marked <strong>ACTIVE</strong>. Tapping a card swaps the active job — the current job is saved automatically first. The ✕ on a card deletes that job only.</p>
+<p>Each job is stored in its own slot on the phone, so jobs never bleed into each other: points, connections, polylines, deed records, undo history, and instrument settings all belong to the job that made them.</p>
 <h3>Renaming a Job</h3>
 <p>Tap <strong>Project → Rename Job</strong>. The CSV filename used by Save CSV follows the job name.</p>
 <div class="tip">Switching jobs never deletes data — every job keeps its own points, connections, polylines, records, and instrument settings.</div>`},
@@ -15957,7 +15969,7 @@ const HELP_TOPICS = [
     body:`<h3>Auto-Save</h3>
 <p>ChainLink saves to your phone's local storage after every action. You won't lose data if the app closes — and saved jobs survive app updates to new versions.</p>
 <h3>CSV Backup</h3>
-<p>Tap <strong>Project → Export → Save CSV to Folder</strong>. The CSV includes all points plus an embedded metadata line that restores connections, settings, flags, and raw observation data (instrument readings, slope distances, zenith angles, HI/TH) when loaded back. Descriptions containing commas are quoted properly.</p>
+<p>Tap <strong>Project → Export → CSV to Folder</strong>. The CSV includes all points plus an embedded metadata line that restores connections, settings, flags, and raw observation data (instrument readings, slope distances, zenith angles, HI/TH) when loaded back. Descriptions containing commas are quoted properly.</p>
 <h3>DXF Export</h3>
 <p>Tap <strong>Project → Export → DXF</strong>. On the installed app your phone's <strong>share sheet</strong> opens — send it to Drive, Files, or email; in a desktop browser it downloads directly. Points on POINTS layer, labels on LABELS, solid lines on LINES, dashed on DASHED. Readable by AutoCAD, Civil 3D, and most CAD software.</p>
 <h3>LandXML Export</h3>
@@ -15965,7 +15977,7 @@ const HELP_TOPICS = [
 <h3>PDF Plot, SVG, GeoJSON</h3>
 <p><strong>Export PDF Plot (A4)</strong> prints the entire job with all labels fitted to an A4 sheet with a title block and north arrow. <strong>Export SVG</strong> gives vector linework in world units. <strong>Export GeoJSON</strong> gives points and linework for GIS tools (local grid coordinates, not lon/lat).</p>
 <h3>Fieldbook & Importing</h3>
-<p><strong>Export Fieldbook</strong> writes a chronological observation log grouped by station — raw readings, azimuths, distances, zenith angles, IH/TH and reduced coordinates — as PDF or CSV. <strong>Import DXF</strong> and <strong>Import LandXML</strong> merge points and linework from office software into the current job, de-duplicating coincident points.</p>
+<p><strong>Export Fieldbook</strong> writes a chronological observation log grouped by station — raw readings, azimuths, distances, zenith angles, IH/TH and reduced coordinates — as PDF or CSV. <strong>Import DXF</strong> and <strong>Import LandXML</strong> merge points and linework from office software into the current job, de-duplicating coincident points. <strong>Import KML</strong> brings in anything traced in Google Earth, and <strong>Import Coordinate List</strong> takes a plain point list — pasted or photographed. All of it lives under <strong>Project → Import</strong>.</p>
 <div class="tip">CSV is your primary backup. The other formats are for sharing with office software.</div>`},
 
   // ── FIELD ───────────────────────────────────────────────────
@@ -16402,8 +16414,15 @@ const HELP_TOPICS = [
 <p>The US is divided into named map grids — every state has one or a few. It's how professionals state exactly where something is using plain X/Y numbers instead of latitude/longitude. The app picks your zone automatically from the GPS fix and shows nearby alternatives in case you're close to a boundary.</p>
 <h3>The 🛰 Button</h3>
 <p>The 🛰 button on the right side of the plot turns the photo (and the blue GPS dot) on and off with one tap. Bright = on, dim = off.</p>
-<h3>Aerial vs Topo</h3>
-<p>In Map → Imagery / GPS, <strong>Basemap</strong> switches between the aerial photo and a <strong>USGS topographic map</strong> — the classic government map style with contour lines, roads, and section lines.</p>
+<h3>Choosing a Basemap</h3>
+<p>In Map → Imagery / GPS, <strong>Basemap</strong> offers four sources:</p>
+<ul>
+<li><strong>Aerial (Esri)</strong> — the default, usually the sharpest.</li>
+<li><strong>Aerial (USGS / NAIP)</strong> — the federal agricultural imagery program. A different provider on a different flight schedule, so it is worth trying when Esri is soft or cloudy over your site.</li>
+<li><strong>USGS Topo</strong> — the classic government map style with contour lines, roads, and section lines.</li>
+<li><strong>🕓 Historical (Wayback)</strong> — the same aerial view as it looked in past years. See <em>Historical Imagery</em>.</li>
+</ul>
+<p>Resolution and flight date differ between them. If one is soft over your site, try another.</p>
 <div class="warn">The photo is a visual reference only. Phone GPS is accurate to roughly 10–30 ft, and aerial photos have their own small alignment errors. Never measure or set anything off the photo — your instrument measurements are the truth; the photo is just context.</div>
 <div class="tip">If the photo looks slightly rotated against your linework, the <strong>Rotation nudge</strong> slider in Map → Imagery / GPS lets you true it up by eye.</div>`},
 
@@ -16446,6 +16465,8 @@ const HELP_TOPICS = [
 <p>While you're on WiFi, open the job, position the view over the property, and tap <strong>Map → Imagery / GPS → ⬇ Cache visible area for offline</strong>. The app downloads and saves the photo tiles for that view at several zoom levels. Zoom out and repeat to cover a wider area.</p>
 <h3>Also Automatic</h3>
 <p>Any part of the photo you've simply <em>looked at</em> gets saved too. The deliberate button just makes sure the whole site is covered instead of only where you happened to scroll.</p>
+<h3>Why the Button Still Matters</h3>
+<p>Casually-viewed tiles go in a pool that is capped — browse far enough and the oldest ones are dropped to make room. Tiles from a deliberate <strong>⬇ Cache visible area</strong> run are <strong>pinned</strong>: they go in a separate store that the cap never evicts, so the site you cached last night is still there after a week of panning around other jobs.</p>
 <div class="tip">Everything else in ChainLink already works offline — measurements, calculations, saving. Only fresh photo areas and the elevation lookup need a connection.</div>`},
 
   // ── DEED PLOTTER ─────────────────────────────────────────────
@@ -16542,9 +16563,10 @@ const HELP_TOPICS = [
 <h3>Clear All Data</h3>
 <p><strong>Project → Clear All Data</strong> wipes the current job's points and connections after confirmation. This also resets the undo history.</p>
 <h3>Change Save Folder</h3>
-<p><strong>Project → Export → Change Save Folder</strong> re-prompts the folder picker so the next CSV save goes where you want it.</p>
-<h3>Force Reload App</h3>
-<p><strong>Project → Settings → Force Reload App</strong> reloads from the server to pick up a new version. Auto-saved data is kept, but anything mid-entry is lost.</p>
+<p><strong>Project → Change Save Folder</strong> re-prompts the folder picker so the next CSV save goes where you want it.</p>
+<h3>Getting a New Version</h3>
+<p>ChainLink updates itself. Every time you open it with a connection it asks the server for the current version first and falls back to the installed copy only if the network doesn't answer within a couple of seconds — so a new release is normally picked up the next time you open the app in signal. Your jobs and settings survive the update; they are stored separately from the app itself.</p>
+<p>If you're offline, you keep running the version already on the phone, which is the point. Nothing is lost — open it once back in coverage to move up.</p>
 <div class="warn">Save a CSV before Clear All Data — it cannot be undone once the undo history resets.</div>`},
 
   { id:"ws-overview", section:"Getting Started", title:"The Six Workspaces",
@@ -16577,6 +16599,89 @@ const HELP_TOPICS = [
 <h3>What LOCK IN Does</h3>
 <p>Corner near a measured point: the deed <strong>holds on that point</strong> and, if a second field shot is in the same ballpark as an incident course, <strong>swings so the course matches the line between the two shots</strong>. Distances stay on the record — the second corner will miss by the residual, which is the honest paper-vs-ground disagreement. Course near a drawn line: the deed rotates to that bearing. Adjoining deeds still snap corner-to-corner and course-to-course. A wrong lock is one <strong>↩ Undo</strong> from reversal.</p>
 <div class="warn">Snapping is record-to-record assembly — it makes deeds agree with <em>each other</em>. Making the record agree with the <em>ground</em> is still the fit-to-measured-points step, and where the two disagree, the ground and the monuments win. That call is retracement judgment — a licensed surveyor's territory when it matters.</div>`},
+
+  { id:"import-coords", section:"Points & Data", title:"Importing a Coordinate List",
+    preview:"Paste a point list — or photograph one off a plan sheet",
+    body:`<h3>Two Ways In</h3>
+<p><strong>Project → Import → Import Coordinate List</strong>. Either <strong>paste</strong> a list into the box, or tap <strong>Photo of list (OCR)</strong> and shoot the coordinate table off a plan sheet, a plat, or a printout. The photo is read on the phone and dropped into the same box, where you can fix anything it misread before importing.</p>
+<h3>What It Reads</h3>
+<p>Point, Northing, Easting, Elevation, Description — separated by commas, tabs, semicolons, or plain spaces. Quoted descriptions are handled, blank lines and <code>#</code> or <code>//</code> comment lines are ignored, and a header row is recognized and skipped. Tagged lines like <strong>N 1234.50 E 6789.00</strong> read too.</p>
+<p>If the header says Easting before Northing, the app switches to that order on its own. Otherwise it assumes <strong>PNEZD</strong> and you can flip it on the review screen.</p>
+<h3>The Review Screen</h3>
+<p>Nothing is imported until you have seen it as a table: the number each point <em>will</em> get, the number it had in the list, and its N, E, Z and description. Two things can be corrected there:</p>
+<ul>
+<li><strong>Swap N/E order</strong> — if northings and eastings came in reversed.</li>
+<li><strong>Read commas as …</strong> — whether a comma in <strong>5,000.00</strong> is part of the number or a field separator. The app decides by counting fields and states which reading it used; this button overrides it. Worth a glance whenever a list is written with thousands separators.</li>
+</ul>
+<h3>Nothing Is Ever Overwritten</h3>
+<p>Imported points always take the next free numbers in the job — an imported #1 becomes #47 if that is what's free. The original number is preserved in the description as <strong>was #1</strong>, so the tie back to the source list is never lost. Points already in the job are untouched.</p>
+<div class="tip">The import is one undo step. If the whole list came in wrong, ↩ Undo removes all of it at once rather than point by point.</div>`},
+
+  { id:"job-move", section:"Points & Data", title:"Move / Shift the Whole Job",
+    preview:"Drag stored work onto the imagery — and when not to",
+    body:`<h3>The Gesture, Pointed the Other Way</h3>
+<p>A deed record can be dragged onto found monuments. This is the same drag aimed at your own work: <strong>COGO → Open COGO Tools → 🖐 Move / Shift Job (drag)</strong> picks the stored job up and slides it — points and every piece of geometry hung off them — onto the imagery or onto a plotted deed.</p>
+<h3>Slide, or Slide and Rotate</h3>
+<p><strong>Slide only</strong> is the default and preserves rotation. Every bearing and distance in the job survives it untouched, because a translation is only a change of origin — which is what an imagery mismatch usually is.</p>
+<p><strong>Slide and rotate</strong> asks first, and should. Observed coordinates carry a basis of bearings from your backsight; spinning the job silently rewrites every one of them.</p>
+<h3>What Holds Still</h3>
+<p>A plotted deed never moves here — it is the thing being fitted to. NGS monuments never move either: they are published control in the job's own coordinate system, and dragging your control along with the job would hide the very error you're correcting.</p>
+<h3>Shifting One Import</h3>
+<p>A KML traced in Google Earth carries Google's imagery registration, which differs from this basemap by a few feet. That import can be slid <em>by itself</em>, leaving observed points, deed geometry and other imports exactly where they are — usually the right correction for a traced creek or fence that lands a few feet off.</p>
+<div class="warn">Aerial imagery is a picture, not control, and is commonly several feet off. Before you move good observations to match a photo, consider whether the photo is the thing that's wrong.</div>`},
+
+  { id:"sat-wayback", section:"Satellite & GPS", title:"Historical Imagery — Look Back in Time",
+    preview:"The same aerial view, as it looked in past years",
+    body:`<h3>What It Is</h3>
+<p><strong>Map → Imagery / GPS → Basemap → 🕓 Historical (Wayback)</strong> swaps the aerial photo for an archived one. The archive goes back years, so you can watch a site change: the fence line before the subdivision went in, the pond before it was filled, the tree line an old deed calls for, the driveway that explains an occupation line.</p>
+<h3>Picking a Year</h3>
+<p>Releases are grouped by year with a count beside each. Tap a year to use it — or, where a year holds several releases, to choose among them. A ✓ marks the one you're on. <strong>Refresh release list</strong> re-reads the archive when you're back in signal.</p>
+<h3>It Works Offline — Partly</h3>
+<p>The list of available years comes from the imagery service itself, so it stays current without an app update, and it is remembered on the phone after the first successful fetch. That means the picker still opens with no signal. The <em>tiles</em> are another matter: a year you have never viewed has to be downloaded. Cache the historical view before you leave WiFi, the same way you cache the current one.</p>
+<div class="tip">Retracement use: an old aerial showing the fence, lane or hedgerow where it stood when the deed was written is evidence of occupation. It is not a survey, but it tells you where to go look.</div>`},
+
+  { id:"deed-aliquot", section:"Deed Plotter", title:"Aliquot & PLSS Descriptions",
+    preview:"“The SW Quarter of Section 34” — plotted, then calibrated to found corners",
+    body:`<h3>A Description With No Geometry In It</h3>
+<p>“The West Half of the Southwest Quarter of Section 34” contains no bearings and no distances. It is an instruction to compute against the PLSS fabric. The Deed Plotter recognizes those descriptions and plots them for you — no metes-and-bounds needed.</p>
+<h3>Plotted at Nominal Dimensions</h3>
+<p>The figure is drawn at <strong>nominal GLO dimensions</strong> — section 5280', quarter 2640', forty 1320' — and labeled as such. That is a labeled approximation, exactly like any other record: you seat it and fit it to what you find on the ground. Compound descriptions are read innermost-first, each term cutting one dimension of the parent.</p>
+<h3>⌖ Calibrate to Measured Corners</h3>
+<p>This is where it stops being an approximation. Once you have the four corners of the <strong>parent tract</strong> — the forty or quarter the deed subdivides — open the deed and tap <strong>⌖ Calibrate … to measured corners</strong>, then enter those four point numbers (SW, SE, NE, NW).</p>
+<p>The fractional parcel is re-derived by <strong>proportional measurement along the actual lines</strong> — the GLO method. A parent that is 40 feet short on its south line and skewed on its east gives you the correspondingly lopsided parcel, not a clean rectangle in the wrong place. The parcel lands on the measured parent with no seating needed.</p>
+<h3>When It Declines</h3>
+<p>The reader deliberately fails safe and hands the description back to you rather than guessing. It stands down on metes-and-bounds text, on government lots and fractional or riparian language, on directionless fractions (“the 9/20ths of the southern half” — by area or by frontage? the deed doesn't say), and on strips wider than the parent they're cut from.</p>
+<div class="warn">Nominal geometry is the record's arithmetic, not a boundary. In PLSS country the corners as monumented control, however far they sit from where the math puts them — which is exactly what calibration is for.</div>`},
+
+  { id:"deed-blunder", section:"Deed Plotter", title:"Diagnostics: Why It Doesn't Close",
+    preview:"The app reads the misclosure and names the likely cause",
+    body:`<h3>Where It Is</h3>
+<p>Open the plotted deed: <strong>🔎 Diagnostics</strong> sits at the top, showing the number of flagged items or the word <strong>clear</strong>. Geometry is always plotted whether it closes or not — this layer explains the misclosure rather than hiding it.</p>
+<h3>What It Checks</h3>
+<ul>
+<li><strong>Courses that couldn't be read</strong> — reported first, because they bound everything else. A dropped course makes every other finding provisional.</li>
+<li><strong>Assumed angles</strong> — a bare “angle of 87°” with no word saying interior, exterior or deflection is read as interior, and flagged so you check the record.</li>
+<li><strong>Unstated turn direction</strong> — resolved by whichever reading closes better, and it tells you what the other reading missed by. When the two are too close to call, it says so.</li>
+<li><strong>Distance blunders</strong> — a misclosure parallel to one course means that course's length is wrong, because only a length error leaves the direction alone.</li>
+<li><strong>Angle blunders</strong> — a misclosure whose perpendicular bisector passes through a station means everything after that station is rotated about it.</li>
+<li><strong>Repairs</strong> — a brute-force search over the ways a written course is commonly mistyped or misread: a flipped quadrant (N↔S, E↔W), transposed digits (132.45 for 123.45), a dropped or doubled leading digit (320 for 1320). Anything that would close the figure is reported with the exact correction and the misclosure before and after. The three biggest improvements are shown.</li>
+<li><strong>Stated acreage</strong> — an independent check on the whole read. A figure that <em>closes</em> but disagrees with the recited acreage by more than a few percent usually means a course was dropped or duplicated, which closure alone can never see.</li>
+</ul>
+<h3>Nothing Is Applied For You</h3>
+<p>Every finding is a candidate with the correction that would close the figure — shown, never made. Neither the distance rule nor the angle rule is conclusive on its own, and a deed that closes on a repaired course is evidence about the <em>transcription</em>, not proof about the boundary. Check the candidate against the paper, then edit the call yourself if the record agrees.</p>
+<div class="tip">A closing deed is not a correct deed, and a misclosing one is not necessarily a wrong one — old descriptions misclose honestly. Diagnostics tells you which kind you're holding.</div>`},
+
+  { id:"deed-keypad", section:"Deed Plotter", title:"The Bearing Keypad",
+    preview:"N S E W, degrees, minutes, seconds — and chains, without hunting",
+    body:`<h3>Why It Exists</h3>
+<p>The phone keyboard has no degree sign, buries the apostrophe and quote two screens deep, and hands you a full alphabet when a bearing needs exactly four letters. Tap any call in the deed review list and you get a pad built for the job instead.</p>
+<h3>The Bearing Pad</h3>
+<p><strong>N S E W</strong> across the top, then <strong>°</strong>, <strong>'</strong>, <strong>"</strong> and a space key, over a number pad. <strong>⌫</strong> deletes a character, <strong>CLR</strong> empties the field. <strong>CURVE L</strong> and <strong>CURVE R</strong> drop in a curve template ready for the radius and arc length.</p>
+<h3>Read It Back Before You Save</h3>
+<p>Under the bearing field, a <strong>Reads as</strong> line shows what the app made of what you typed, with the azimuth in decimal degrees beside it. A mistyped bearing shows up there — before it is plotted, rather than after.</p>
+<h3>The Distance Pad</h3>
+<p>Numbers, a <strong>00</strong> key, and one-tap <strong>CHAINS</strong>, <strong>POLES</strong>, <strong>RODS</strong> and <strong>VARAS</strong>, because old descriptions are written in them and the app converts on the way in.</p>
+<div class="tip">The <strong>⌨</strong> key hands the field back to the system keyboard for anything the pad can't express. These are ordinary text fields — selection, caret and paste all still work, so you can paste a bearing in from elsewhere.</div>`},
 ];
 
 
