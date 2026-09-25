@@ -118,9 +118,14 @@ async function trimTiles(cache) {
    behaviour you do not want at the end of a dirt road. The network copy is
    still written to the cache if it arrives after the fallback. */
 function navigate(req) {
+  /* Only a good response replaces the cached shell. A Cloudflare error page
+     or a 404 during a deploy used to overwrite the working offline copy —
+     then the app would not open in the field. */
   const net = fetch(req).then(res => {
-    const copy = res.clone();
-    caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+    if (res && res.ok && res.type === "basic") {
+      const copy = res.clone();
+      caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+    }
     return res;
   });
 
@@ -137,7 +142,12 @@ function navigate(req) {
     let settled = false;
     const done = r => { if (!settled) { settled = true; resolve(r); } };
     const timer = setTimeout(() => fallback().then(done), NAV_TIMEOUT);
-    net.then(res => { clearTimeout(timer); done(res); })
+    // an error response from the server loses to a good cached copy
+    net.then(res => {
+      clearTimeout(timer);
+      if (res && res.ok) done(res);
+      else fallback().then(hit => done(hit && hit.ok ? hit : res));
+    })
        .catch(() => { clearTimeout(timer); fallback().then(done); });
   });
 }
