@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.24">
+<meta name="application-name" content="ChainLink-v4.7.25">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.24</title>
+<title>ChainLink Survey v4.7.25</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1219,7 +1219,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.24";
+const APP_VERSION = "4.7.25";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1462,6 +1462,29 @@ function _convertLinearUnits(f){
     (pl.segs||[]).forEach(s=>{if(s.type==="arc"){s.centerE*=f; s.centerN*=f; s.R*=f;}});
   });
   prismConstant*=f;
+  // 4.7.25: these were left in the old units and drifted off the points
+  plotConnections.forEach(c=>{
+    if(c.type==="spiral"){
+      ["startE","startN","L","R"].forEach(k=>{if(typeof c[k]==="number")c[k]*=f;});
+    }
+  });
+  if(typeof _deedPlot!=="undefined"&&_deedPlot){
+    _deedPlot.figures.forEach(fg=>{
+      if(fg.pobE!=null){fg.pobE*=f;fg.pobN*=f;}
+      (fg.calls||[]).forEach(c=>["dist","radius","arc","chordD","length"].forEach(k=>{if(typeof c[k]==="number")c[k]*=f;}));
+      if(typeof fg.width==="number")fg.width*=f;
+    });
+    try{_deedRecompute();}catch(e){}
+  }
+  if(typeof _areaLabels!=="undefined"&&_areaLabels){
+    _areaLabels.forEach(l=>{l.E*=f;l.N*=f;l.u=(f<1?"m":"ft");});
+  }
+  if(typeof geoAnchor!=="undefined"&&geoAnchor){
+    geoAnchor.E*=f; geoAnchor.N*=f;
+    if(typeof geoAnchor.m2u==="number")geoAnchor.m2u*=f;
+    if(typeof _jobZoneCache!=="undefined")_jobZoneCache=null;
+  }
+  if(typeof _lastTHValue==="number")_lastTHValue*=f;
   // Transient geometry is in old units — wipe it
   tempGeom=[]; tempIntersections=[]; recentShots=[];
 }
@@ -2579,12 +2602,40 @@ function exportLandXML(){
   let xml=`<?xml version="1.0" encoding="UTF-8"?>\n`;
   xml+=`<LandXML version="1.2" date="${now.split("T")[0]}" time="${now.split("T")[1].split(".")[0]}" xmlns="http://www.landxml.org/schema/LandXML-1.2">\n`;
   xml+=`  <Project name="${jn}"/>\n`;
-  xml+=`  <Units linearUnit="${units==="ft"?"foot":"meter"}" areaUnit="${units==="ft"?"squareFoot":"squareMeter"}"/>\n`;
+  // 4.7.25: the app's foot is the US survey foot (GPS/state plane use 3937/1200).
+  // Plain "foot" means international foot to most importers — 2 ppm off.
+  xml+=units==="ft"
+    ?`  <Units><Imperial linearUnit="USSurveyFoot" areaUnit="squareFoot" volumeUnit="cubicFeet" temperatureUnit="fahrenheit" pressureUnit="inHG" angularUnit="decimal degrees" directionUnit="decimal degrees"/></Units>\n`
+    :`  <Units><Metric linearUnit="meter" areaUnit="squareMeter" volumeUnit="cubicMeter" temperatureUnit="celsius" pressureUnit="HPA" angularUnit="decimal degrees" directionUnit="decimal degrees"/></Units>\n`;
   xml+=`  <CgPoints name="${jn}">\n`;
   points.forEach(p=>{
-    xml+=`    <CgPoint name="${p.Point}" desc="${_xmlEsc(p.Description||"")}">${p.Northing.toFixed(4)} ${p.Easting.toFixed(4)} ${p.Elevation.toFixed(4)}</CgPoint>\n`;
+    const z=(typeof p.Elevation==="number"&&isFinite(p.Elevation))?p.Elevation:0;
+    xml+=`    <CgPoint name="${p.Point}" desc="${_xmlEsc(p.Description||"")}">${p.Northing.toFixed(4)} ${p.Easting.toFixed(4)} ${z.toFixed(4)}</CgPoint>\n`;
   });
   xml+=`  </CgPoints>\n`;
+  // 4.7.25: linework — lines by point reference, arcs by coordinates
+  const nz=(N,E)=>`${N.toFixed(4)} ${E.toFixed(4)}`;
+  let feats="";
+  plotConnections.forEach((c,i)=>{
+    if(c.type==="arc"){
+      const sE=c.centerE+c.R*Math.cos(c.startAngle), sN=c.centerN+c.R*Math.sin(c.startAngle);
+      const eE=c.centerE+c.R*Math.cos(c.endAngle),   eN=c.centerN+c.R*Math.sin(c.endAngle);
+      const rot=(c.endAngle-c.startAngle)<0?"cw":"ccw";
+      feats+=`      <PlanFeature name="A${i+1}"><CoordGeom><Curve rot="${rot}" radius="${c.R.toFixed(4)}"><Start>${nz(sN,sE)}</Start><Center>${nz(c.centerN,c.centerE)}</Center><End>${nz(eN,eE)}</End></Curve></CoordGeom></PlanFeature>\n`;
+      return;
+    }
+    if(c.type==="spiral")return;
+    if(c.from==null||c.to==null)return;
+    if(!points.some(p=>p.Point===c.from)||!points.some(p=>p.Point===c.to))return;
+    feats+=`      <PlanFeature name="L${i+1}"><CoordGeom><Line><Start pntRef="${c.from}"/><End pntRef="${c.to}"/></Line></CoordGeom></PlanFeature>\n`;
+  });
+  (typeof _polylines!=="undefined"?_polylines:[]).forEach((pl,j)=>{
+    const vs=pl.verts||[]; if(vs.length<2)return;
+    let g="";
+    for(let k=0;k<vs.length-1;k++)g+=`<Line><Start>${nz(vs[k].N,vs[k].E)}</Start><End>${nz(vs[k+1].N,vs[k+1].E)}</End></Line>`;
+    feats+=`      <PlanFeature name="PL${j+1}"><CoordGeom>${g}</CoordGeom></PlanFeature>\n`;
+  });
+  if(feats)xml+=`  <PlanFeatures name="${jn}">\n${feats}  </PlanFeatures>\n`;
   xml+=`</LandXML>\n`;
   const blob=new Blob([xml],{type:"application/xml"});
   _deliverFile(blob,(jobName||"survey")+".xml");
@@ -2815,7 +2866,11 @@ function exportKML(){
     k+="<Point><coordinates>"+co(p.Easting,p.Northing)+"</coordinates></Point></Placemark>";
   });
   plotConnections.forEach(c=>{
-    if(c.type==="arc")return; // arcs exported as their endpoints elsewhere
+    if(c.type==="arc"){ // 4.7.25: were silently dropped
+      k+='<Placemark><styleUrl>#ln</styleUrl><LineString><tessellate>1</tessellate><coordinates>'+
+         _arcPathPoints(c,2).map(q=>co(q.E,q.N)).join(" ")+"</coordinates></LineString></Placemark>";
+      return;
+    }
     const a=points.find(p=>p.Point===c.from),b=points.find(p=>p.Point===c.to);
     if(!a||!b)return;
     k+='<Placemark><styleUrl>#ln</styleUrl><LineString><tessellate>1</tessellate><coordinates>'+
@@ -2833,7 +2888,7 @@ function exportKML(){
   showResult("✓ KML Exported",[
     {lbl:"Points:",val:String(points.length)},
     {lbl:"Datum:",val:"WGS84 via "+geoAnchor.zoneName+" anchor"},
-    {lbl:"Note:",val:"arcs export as straight chords"}]);
+    {lbl:"Note:",val:"arcs export as densified curves (2° steps)"}]);
 }
 function exportGeoJSON(){
   if(!requirePro("GeoJSON export")) return;
@@ -4783,8 +4838,9 @@ function _processShot(fields, is3D, ih, occ){
 
   let E,N,Z,hd;
   if(is3D){
-    const za = parseDMS(fields.va);
-    if(isNaN(za)||za<0||za>180){alert("Bad zenith angle — 90=level, <90=uphill, >90=downhill.");takeShot();return}
+    let za = parseDMS(fields.va);
+    if(isNaN(za)||za<0||za>=360){alert("Bad zenith angle — 90=level, <90=uphill, >90=downhill.");takeShot();return}
+    if(za>180) za=360-za; // reverse-face reading: fold to direct (4.7.25)
     const th = parseFloat(fields.th)||0;
     const ihUsed = parseFloat(fields.ih)||0;
     occ._lastTH = th;
@@ -4913,12 +4969,14 @@ function _twoFaceParse(fields,is3D){
   dist=_applyPPM(dist+prismConstant);          // same corrections as a normal shot
   if(!is3D) return {az, hd:dist};
   const va=parseDMS(fields.va);
-  if(isNaN(va)||va<0||va>180) return null;
-  // Form distance is SD or HD depending on distMode; reduce to slope distance
+  // Face 2 (reverse) zeniths read 180–360 — they are valid, not errors (4.7.25)
+  if(isNaN(va)||va<0||va>=360) return null;
+  // Form distance is SD or HD depending on distMode; reduce to slope distance.
+  // |sin| — a reverse-face zenith has a negative sine, which made SD negative.
   let sd=dist;
   if(distMode==="HD"){
-    const s=Math.sin(va*Math.PI/180);
-    sd=Math.abs(s)>0.0001 ? dist/s : dist;
+    const s=Math.abs(Math.sin(va*Math.PI/180));
+    sd=s>0.0001 ? dist/s : dist;
   }
   const th=parseFloat(fields.th)||0;
   return {az, va, sd, th};
@@ -4962,10 +5020,13 @@ function _twoFaceReduce(occ,is3D,f1,f2){
     const {E,N,Z}=computeShot2D(occ,avgAz,avgHD);
     _showTwoFaceResult(avgAz,avgHD,null,null,collimErr,null,E,N,Z,occ,false);
   } else {
-    const va2corr=360-f2.va;                       // reverse-face zenith folds about 360
-    const avgVA=(f1.va+va2corr)/2;
+    // Fold any reverse-face zenith (>180) to its direct equivalent. The index
+    // error is only defined when one face is direct and the other reverse.
+    const fold=v=>v>180?360-v:v;
+    const avgVA=(fold(f1.va)+fold(f2.va))/2;
     const avgSD=(f1.sd+f2.sd)/2;
-    const indexErr=(f1.va+f2.va-360)/2;            // vertical index error
+    const oneEach=(f1.va>180)!==(f2.va>180);
+    const indexErr=oneEach?(f1.va+f2.va-360)/2:null;  // vertical index error
     const ih=occ.ih||0, th=f1.th||0;
     const {E,N,Z,hd}=computeShot3D(occ,avgAz,avgSD,avgVA,ih,th);
     _showTwoFaceResult(avgAz,avgSD,avgVA,hd,collimErr,indexErr,E,N,Z,occ,true);
@@ -5207,15 +5268,20 @@ function _doStakeout(target,label,th){
     {lbl:"Set Inst to:",val:fmtBrg(inst)},
   ];
   if(surveyMode==="3D"){
+    // 4.7.25: no cut/fill is shown until the rod is actually shot. The old
+    // "Cut/Fill" row was only target Z minus the occupied point — no
+    // measurement at all. VD-to-prism is what the instrument should read
+    // with the rod on grade.
     const hiVal=occ.ih||0;
-    const cutFill=dZ+hiVal-th; // HI + dZ - TH = prism height target
-    rows.push({lbl:"ΔZ:",val:dZ.toFixed(3)+" "+units});
+    const vdOnGrade=(target.Elevation+th)-(occ.Elevation+hiVal);
     rows.push({lbl:"Target Z:",val:target.Elevation.toFixed(3)+" "+units});
     rows.push({lbl:"Rod (TH):",val:th.toFixed(3)+" "+units});
-    rows.push({lbl:"Cut(+)/Fill(−):",val:cutFill.toFixed(3)+" "+units});
+    rows.push({lbl:"VD to prism on grade:",val:(vdOnGrade>=0?"+":"")+vdOnGrade.toFixed(3)+" "+units});
+    rows.push({lbl:"Cut/Fill:",val:"shoot the rod ▸ Measure Rod"});
   }
   showResult("Stakeout → "+label,rows,
     surveyMode==="3D"?[
+      {txt:"Measure Rod → Cut/Fill",cls:"ok",fn:()=>_stakeMeasureRod(target,label,th)},
       {txt:"Change Rod Height",cls:"blue",fn:()=>{
         calculatorInput("Rod height / TH ("+units+"):",th.toFixed(3),newTH=>{
           if(!newTH)return;
@@ -5223,6 +5289,37 @@ function _doStakeout(target,label,th){
         });
       }},
     ]:[]);
+}
+/* Cut/fill from a real shot to the rod: ground Z = occ Z + HI + SD·cos(ZA) − TH.
+   Cut (+) = ground above grade; Fill (−) = ground below grade. */
+function _stakeMeasureRod(target,label,th){
+  const occ=currentPoint; if(!occ){alert("Occupy a point first.");return}
+  calculatorInput("Zenith angle to rod (DDD.MMSS):","90.0000",zaStr=>{
+    if(!zaStr)return;
+    let za=parseDMS(zaStr);
+    if(isNaN(za)||za<0||za>=360){alert("Bad zenith angle.");return}
+    if(za>180)za=360-za;
+    calculatorInput(`Slope distance to rod (${units}):`,"",sdStr=>{
+      if(!sdStr)return;
+      let sd=parseFloat(sdStr);
+      if(isNaN(sd)||sd<=0){alert("Bad distance.");return}
+      sd=_applyPPM(sd+prismConstant);
+      const zr=za*Math.PI/180, hd=sd*Math.sin(zr);
+      const groundZ=occ.Elevation+(occ.ih||0)+sd*Math.cos(zr)-th;
+      const cf=groundZ-target.Elevation;
+      const desHD=dist2D(occ,target);
+      showResult("Rod Shot → "+label,[
+        {lbl:"Ground Z:",val:groundZ.toFixed(3)+" "+units},
+        {lbl:"Grade Z:",val:target.Elevation.toFixed(3)+" "+units},
+        {lbl:Math.abs(cf)<0.005?"On grade:":(cf>0?"CUT:":"FILL:"),val:Math.abs(cf).toFixed(3)+" "+units},
+        {lbl:"HD to rod:",val:hd.toFixed(3)+" "+units},
+        {lbl:"HD to target:",val:desHD.toFixed(3)+" "+units+(Math.abs(desHD-hd)<0.005?" ✓":" ("+(hd>desHD?"come in ":"go out ")+Math.abs(desHD-hd).toFixed(3)+")")},
+      ],[
+        {txt:"Measure Again",cls:"ok",fn:()=>_stakeMeasureRod(target,label,th)},
+        {txt:"Back to Stakeout",cls:"",fn:()=>_doStakeout(target,label,th)},
+      ]);
+    });
+  });
 }
 function stakeToLine(){
   if(!requirePro("Stake to Line / Arc")) return;
@@ -5311,8 +5408,9 @@ function _stlMeasure(geom){
     _lastStlAz=toDMS(trueAz); // save for next time
     calculatorInput("Horiz Distance to rodman ("+units+"):","",distStr=>{
       if(!distStr)return;
-      const hd=parseFloat(distStr);
+      let hd=parseFloat(distStr);
       if(isNaN(hd)||hd<=0){alert("Bad distance.");return;}
+      hd=_applyPPM(hd+prismConstant); // same corrections as a shot (4.7.25)
       _stlCompute(geom,trueAz,hd);
     });
   });
@@ -6171,6 +6269,7 @@ function settingsMenu(){
           _takeSnapshot("Convert "+from+"→"+to);
           _convertLinearUnits(f);
           units=to; btn.textContent=units;
+          try{_recomputeAreaLabels();}catch(e){}
           saveData();
         };
         if(to==="m"){
@@ -6282,7 +6381,7 @@ function recordsWorkspaceMenu(){
       ids.forEach(id=>{
         const figs=_deedRecordFigures(id), boundary=figs.find(f=>f.kind==="boundary")||figs[0];
         const card=document.createElement("button");card.className="workspace-record-card";
-        const ac=boundary&&boundary.computed&&boundary.kind!=="easement"?(_deedArea(boundary.computed)/43560).toFixed(3)+" ac":"";
+        const ac=boundary&&boundary.computed&&boundary.kind!=="easement"?_deedAc(_deedArea(boundary.computed)).toFixed(3)+" ac":"";
         card.innerHTML="<strong>"+_deedRecordLabel(id)+"</strong><small>"+figs.length+" figure"+(figs.length===1?"":"s")+(ac?" · "+ac:"")+"</small>";
         card.onclick=()=>{close();_deedAdjustRecordId=id;_deedAdjustScope=null;_deedAdjustStart();};modal.appendChild(card);
       });
@@ -6688,7 +6787,7 @@ function _saveCogoPoint(coords,fromA,fromB,defaultDesc){
     if(_ptExists(ptNum)){alert(`#${ptNum} exists.`);return}
     alphaInput("Description:",defaultDesc||"COGO",desc=>{
       if(desc===null)return;
-      const p={Point:ptNum,Northing:coords.Northing,Easting:coords.Easting,Elevation:coords.Elevation||0,Type:"COGO",Flag:"",Description:desc};
+      const p={Point:ptNum,Northing:coords.Northing,Easting:coords.Easting,Elevation:coords.Elevation||0,Type:"COGO",Flag:coords.Flag||"",Description:desc};
       points.push(p); pointCounter=Math.max(pointCounter,ptNum+1);
       _plotStylePrompt(style=>{
         if(style!=="none"){
@@ -7862,18 +7961,36 @@ function _bowditchAdjust(poly,errN,errE,totalD){
   // poly[last] is same object as poly[0] so skip it too
   const isClosed = poly.length>1 && poly[0].Point===poly[poly.length-1].Point;
   const lastIdx = isClosed ? poly.length-2 : poly.length-1;
+  // 4.7.25: leg lengths come from the ORIGINAL coordinates. They used to be
+  // measured after the previous station had already moved.
+  const orig=poly.map(p=>({E:p.Easting,N:p.Northing}));
+  const shift={};                      // Point -> {dE,dN}
   let cumD=0;
   for(let i=1;i<=lastIdx;i++){
-    const prev=poly[i-1],cur=poly[i];
-    const leg=Math.hypot(cur.Easting-prev.Easting,cur.Northing-prev.Northing);
-    cumD+=leg;
+    cumD+=Math.hypot(orig[i].E-orig[i-1].E,orig[i].N-orig[i-1].N);
     const f=cumD/totalD;
-    cur.Northing-=errN*f;
-    cur.Easting -=errE*f;
+    poly[i].Northing=orig[i].N-errN*f;
+    poly[i].Easting =orig[i].E-errE*f;
+    shift[poly[i].Point]={dE:-errE*f,dN:-errN*f};
+  }
+  // Sideshots (and anything shot from them) move with the station they were
+  // taken from. They used to stay put while their station moved.
+  const inTrav=new Set(poly.map(p=>p.Point));
+  const queue=Object.keys(shift).map(Number);
+  let carried=0;
+  while(queue.length){
+    const from=queue.shift(), s=shift[from];
+    points.forEach(p=>{
+      if(p.From===from && !inTrav.has(p.Point) && !shift[p.Point]){
+        p.Easting+=s.dE; p.Northing+=s.dN;
+        shift[p.Point]=s; queue.push(p.Point); carried++;
+      }
+    });
   }
   saveData(); plotPoints();
   showResult("✓ Bowditch Adjusted",[
     {lbl:"Points adjusted:",val:String(lastIdx)},
+    {lbl:"Sideshots moved:",val:String(carried)+" (with their station)"},
     {lbl:"Traverse type:",val:isClosed?"Closed":"Open"},
     {lbl:"Correction N:",val:(-errN).toFixed(4)+" "+units},
     {lbl:"Correction E:",val:(-errE).toFixed(4)+" "+units},
@@ -7910,13 +8027,13 @@ function _resection2pt(){
     const pA=points.find(p=>p.Point==+a);if(!pA)return alert("Not found");
     bearingInput(`True Azimuth to #${pA.Point}:` ,"",az1=>{if(!az1)return;
       const a1=parseBrg(az1);if(isNaN(a1))return alert("Bad azimuth");
-      calculatorInput(`Slope/Horiz Dist to #${pA.Point} (${units}):` ,"",d1=>{if(!d1)return;
+      calculatorInput(`Horizontal Dist (HD, not slope) to #${pA.Point} (${units}):` ,"",d1=>{if(!d1)return;
         const dist1=parseFloat(d1);if(isNaN(dist1)||dist1<=0)return alert("Bad distance");
         calculatorInput("Known Point 2 #:","",b=>{if(!b)return;
           const pB=points.find(p=>p.Point==+b);if(!pB)return alert("Not found");
           bearingInput(`True Azimuth to #${pB.Point}:` ,"",az2=>{if(!az2)return;
             const a2=parseBrg(az2);if(isNaN(a2))return alert("Bad azimuth");
-            calculatorInput(`Slope/Horiz Dist to #${pB.Point} (${units}):` ,"",d2=>{if(!d2)return;
+            calculatorInput(`Horizontal Dist (HD, not slope) to #${pB.Point} (${units}):` ,"",d2=>{if(!d2)return;
               const dist2=parseFloat(d2);if(isNaN(dist2)||dist2<=0)return alert("Bad distance");
               // Compute station from each observation
               const r1=a1*Math.PI/180, r2=a2*Math.PI/180;
@@ -7959,7 +8076,7 @@ function _resection2pt(){
                 {lbl:"Dist chk 2:", val:chk2.toFixed(3)+" (entered "+dist2.toFixed(3)+")"},
               ],[{txt:"Save as Station",cls:"ok",fn:()=>{
                 tempGeom=[];tempIntersections=[];plotPoints();
-                _saveCogoPoint({Northing:N,Easting:E,Elevation:0},null,null,"RESECT");
+                _resectSave(N,E);
               }},
               {txt:"Cancel",cls:"",fn:()=>{tempGeom=[];tempIntersections=[];plotPoints()}},
               ]);
@@ -8005,11 +8122,11 @@ function _resection2ptDistOnly(){
           ],[
             {txt:"Use Sol 1",cls:"ok",fn:()=>{
               tempGeom=[];tempIntersections=[];plotPoints();
-              _saveCogoPoint({Northing:N1,Easting:E1,Elevation:0},null,null,"RESECT");
+              _resectSave(N1,E1);
             }},
             {txt:"Use Sol 2",cls:"blue",fn:()=>{
               tempGeom=[];tempIntersections=[];plotPoints();
-              _saveCogoPoint({Northing:N2,Easting:E2,Elevation:0},null,null,"RESECT");
+              _resectSave(N2,E2);
             }},
             {txt:"Cancel",cls:"",fn:()=>{tempGeom=[];tempIntersections=[];plotPoints()}},
           ]);
@@ -8033,34 +8150,75 @@ function _resectionInput(){
   };
   step(0);
 }
+/* 3-point resection (Tienstra), rewritten 4.7.25. The old version paired each
+   station angle with the wrong triangle corner and returned a wrong station
+   marked "OK". Each station angle now pairs with the triangle corner OPPOSITE
+   the side it subtends (α↔A over BC, β↔B over CA, γ↔C over AB). Both angle
+   senses are tried and the answer is accepted only if it reproduces the
+   observed angles — checked, not assumed. */
+function _resect3(A,B,C,oA,oB,oC){
+  const n=x=>((x%360)+360)%360, r=Math.PI/180, cot=x=>1/Math.tan(x);
+  const az=(P,Q)=>n(Math.atan2(Q.Easting-P.Easting,Q.Northing-P.Northing)/r);
+  const intAng=(P,Q,R)=>{let d=Math.abs(az(P,Q)-az(P,R));return d>180?360-d:d;};
+  const iA=intAng(A,B,C)*r, iB=intAng(B,C,A)*r, iC=intAng(C,A,B)*r;
+  const obs=[n(oB-oA),n(oC-oB)];
+  let best=null;
+  [1,-1].forEach(s=>{
+    const al=n(s*(oC-oB))*r, be=n(s*(oA-oC))*r, ga=n(s*(oB-oA))*r;
+    const KA=1/(cot(iA)-cot(al)), KB=1/(cot(iB)-cot(be)), KC=1/(cot(iC)-cot(ga));
+    const K=KA+KB+KC;
+    if(!isFinite(K)||Math.abs(K)<1e-12)return;
+    const P={Easting:(KA*A.Easting+KB*B.Easting+KC*C.Easting)/K,
+             Northing:(KA*A.Northing+KB*B.Northing+KC*C.Northing)/K};
+    if(!isFinite(P.Easting)||!isFinite(P.Northing))return;
+    const got=[n(az(P,B)-az(P,A)),n(az(P,C)-az(P,B))];
+    const res=Math.max(...got.map((v,i)=>{const d=Math.abs(v-obs[i]);return Math.min(d,360-d);}))*3600;
+    if(!best||res<best.res)best={E:P.Easting,N:P.Northing,res};
+  });
+  if(!best)return null;
+  // danger circle: station on (or near) the circle through A,B,C is indeterminate
+  const ax=B.Easting-A.Easting,ay=B.Northing-A.Northing,bx=C.Easting-A.Easting,by=C.Northing-A.Northing;
+  const d=2*(ax*by-ay*bx);
+  if(Math.abs(d)>1e-9){
+    const ux=(by*(ax*ax+ay*ay)-ay*(bx*bx+by*by))/d, uy=(ax*(bx*bx+by*by)-bx*(ax*ax+ay*ay))/d;
+    const R=Math.hypot(ux,uy);
+    best.circleRatio=Math.abs(Math.hypot(best.E-A.Easting-ux,best.N-A.Northing-uy)-R)/R;
+  } else best.circleRatio=0;
+  return best;
+}
 function _solveResection(data){
   const [A,B,C]=[data[0].pt,data[1].pt,data[2].pt];
-  const [obsA,obsB,obsC]=[data[0].az,data[1].az,data[2].az];
-  const alpha=((obsB-obsA)%360+360)%360*Math.PI/180;
-  const beta =((obsC-obsB)%360+360)%360*Math.PI/180;
-  const gamma=((obsA-obsC+360)%360)*Math.PI/180;
-  const dAB=Math.atan2(B.Easting-A.Easting,B.Northing-A.Northing);
-  const dBC=Math.atan2(C.Easting-B.Easting,C.Northing-B.Northing);
-  const dCA=Math.atan2(A.Easting-C.Easting,A.Northing-C.Northing);
-  const angA=((dCA-dAB+4*Math.PI+Math.PI)%(2*Math.PI));
-  const angB=((dAB-dBC+4*Math.PI+Math.PI)%(2*Math.PI));
-  const angC=((dBC-dCA+4*Math.PI+Math.PI)%(2*Math.PI));
-  const KA=1/(1/Math.tan(alpha)-1/Math.tan(angA));
-  const KB=1/(1/Math.tan(beta) -1/Math.tan(angB));
-  const KC=1/(1/Math.tan(gamma)-1/Math.tan(angC));
-  if(!isFinite(KA)||!isFinite(KB)||!isFinite(KC)){
-    alert("Resection indeterminate — station may lie on circumscribed circle. Choose different points.");return;
+  const sol=_resect3(A,B,C,data[0].az,data[1].az,data[2].az);
+  if(!sol||sol.res>1){
+    alert("Resection indeterminate — the station is on or near the circle through the three points, or the points are collinear. Choose different points.");return;
   }
-  const denom=KA+KB+KC;
-  const E=(KA*A.Easting+KB*B.Easting+KC*C.Easting)/denom;
-  const N=(KA*A.Northing+KB*B.Northing+KC*C.Northing)/denom;
+  const {E,N}=sol;
   const triArea=Math.abs((B.Easting-A.Easting)*(C.Northing-A.Northing)-(C.Easting-A.Easting)*(B.Northing-A.Northing))/2;
-  const warning=triArea<10?"⚠ Weak geometry — points nearly collinear":"";
+  const warns=[];
+  if(triArea<10)warns.push("points nearly collinear");
+  if(sol.circleRatio<0.1)warns.push("station near the danger circle — small angle errors move it a lot");
   showResult("Resection Solution",[
     {lbl:"Station N:",val:N.toFixed(4)},{lbl:"Station E:",val:E.toFixed(4)},
+    {lbl:"Angle check:",val:sol.res<0.05?"✓ reproduces observed angles":sol.res.toFixed(2)+"\" residual"},
     {lbl:"Triangle Area:",val:triArea.toFixed(1)+" sq "+units},
-    {lbl:"Strength:",val:warning||"✓ OK"},
-  ],[{txt:"Save as New Point",cls:"ok",fn:()=>_saveCogoPoint({Northing:N,Easting:E,Elevation:0},null,null,"RESECT")}]);
+    {lbl:"Strength:",val:warns.length?"⚠ "+warns.join("; "):"✓ OK"},
+    {lbl:"Note:",val:"3 points give no redundancy — check-shot a 4th point"},
+  ],[{txt:"Save as New Point",cls:"ok",fn:()=>_resectSave(N,E)}]);
+}
+/* Save a resected station. In 3D the elevation is asked for — it used to be
+   saved as 0, which put every later 3D shot from the station on the wrong
+   elevation. Left blank, it is saved as 0 and flagged questionable. */
+function _resectSave(N,E){
+  if(surveyMode!=="3D"){_saveCogoPoint({Northing:N,Easting:E,Elevation:0},null,null,"RESECT");return;}
+  calculatorInput("Station ground elevation ("+units+") — blank if unknown:","",z=>{
+    if(z===null)return;
+    const zv=parseFloat(z);
+    if(isNaN(zv)){
+      _saveCogoPoint({Northing:N,Easting:E,Elevation:0,Flag:"flagged"},null,null,"RESECT Z UNKNOWN");
+      return;
+    }
+    _saveCogoPoint({Northing:N,Easting:E,Elevation:zv},null,null,"RESECT");
+  });
 }
 
 function cogoRadiation(){
@@ -8922,7 +9080,7 @@ function _scaleDeedModel(px,py,factor){
   _deedPlot.figures.forEach(f=>{
     if(f.pobE!=null){f.pobE=(f.pobE-px)*factor+px;f.pobN=(f.pobN-py)*factor+py;}
     (f.calls||[]).forEach(c=>{
-      ["dist","radius","arc","chordD"].forEach(k=>{if(typeof c[k]==="number")c[k]*=factor;});
+      ["dist","radius","arc","chordD","length"].forEach(k=>{if(typeof c[k]==="number")c[k]*=factor;});
     });
     if(typeof f.width==="number")f.width*=factor;
   });
@@ -9378,6 +9536,21 @@ function _spiralSolve(startE,startN,startAz,L,R,dir,transition){
           L,R,dir,transition,k0,k1,spiralAngle:Math.abs(dAz),chord,chordAz,samples};
 }
 
+/* "TWO HUNDRED TWENTY-FIVE" -> 225. Null if the words are not a number. */
+function _deedWordsToNum(w){
+  const U={ZERO:0,ONE:1,TWO:2,THREE:3,FOUR:4,FIVE:5,SIX:6,SEVEN:7,EIGHT:8,NINE:9,TEN:10,ELEVEN:11,TWELVE:12,
+    THIRTEEN:13,FOURTEEN:14,FIFTEEN:15,SIXTEEN:16,SEVENTEEN:17,EIGHTEEN:18,NINETEEN:19,TWENTY:20,THIRTY:30,
+    FORTY:40,FOURTY:40,FIFTY:50,SIXTY:60,SEVENTY:70,EIGHTY:80,NINETY:90};
+  let total=0,cur=0,any=false;
+  for(const tok of String(w).toUpperCase().split(/[\s-]+/).filter(Boolean)){
+    if(tok==="AND")continue;
+    if(tok in U){cur+=U[tok];any=true;}
+    else if(tok==="HUNDRED"){cur=(cur||1)*100;any=true;}
+    else if(tok==="THOUSAND"){total+=(cur||1)*1000;cur=0;any=true;}
+    else return null;
+  }
+  return any?total+cur:null;
+}
 function _deedNormalize(t){
   return (t||"")
     // invisible characters PDF copy loves to smuggle in
@@ -9411,6 +9584,22 @@ function _deedNormalize(t){
     .replace(/\u00BD/g," 1/2").replace(/\u00BC/g," 1/4").replace(/\u00BE/g," 3/4")
     .replace(/\s+/g," ")
     .toUpperCase()
+    // — 4.7.25 additions —
+    // "148.9, more or less, feet": the qualifier split the number from its unit
+    .replace(/(\d(?:\.\d+)?)\s*,?\s*MORE\s+OR\s+LESS\s*,?\s*(?=(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|PERCH(?:ES)?|VARAS?|LINKS?|METERS?|METRES?)\b)/g,"$1 ")
+    // "one hundred twenty (120) feet": the figure in parentheses governs
+    .replace(/\b(?:(?:ZERO|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY|THIRTY|FORTY|FOURTY|FIFTY|SIXTY|SEVENTY|EIGHTY|NINETY|HUNDRED|THOUSAND|AND)[\s-]+)+(?:\d{1,2}\/100\s+)?\(\s*(\d[\d,]*(?:\.\d+)?)\s*(?:FEET|FOOT|FT|')?\s*\)\s*(?=(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|VARAS?|LINKS?)\b)/g,"$1 ")
+    // "(120) feet" with no words
+    .replace(/\(\s*(\d[\d,]*(?:\.\d+)?)\s*\)\s*(?=(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|VARAS?|LINKS?)\b)/g,"$1 ")
+    // words only: "two hundred feet", "three hundred and 50/100 feet"
+    .replace(/\b((?:(?:ZERO|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY|THIRTY|FORTY|FOURTY|FIFTY|SIXTY|SEVENTY|EIGHTY|NINETY|HUNDRED|THOUSAND)(?:[\s-]+AND[\s-]+|[\s-]+))+)(?:(\d{1,2})\/100\s+)?(?=(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|VARAS?|LINKS?)\b)/g,
+      (m,w,c)=>{const v=_deedWordsToNum(w);return v==null?m:(v+(c?parseInt(c,10)/100:0))+" ";})
+    // OCR letter O inside bearing numbers: 45°3O'OO" -> 45°30'00"
+    .replace(/(?<![A-Z])([0-9O]*\d[0-9O]*)(?=\s*['"°])/g,t=>t.replace(/O/g,"0"))
+    .replace(/([°'])(\s*)(O{1,2})(?=\s*["'])/g,(m,a,b,o)=>a+b+o.replace(/O/g,"0"))
+    // 45d30m00s / 45D30M
+    .replace(/(\d{1,3})\s*D\s*(\d{1,2})\s*M\s*(\d{1,2}(?:\.\d+)?)\s*S\b/g,"$1°$2'$3\"")
+    .replace(/(\d{1,3})\s*D\s*(\d{1,2})\s*M\b(?!ETER|ETRE|ILE)/g,"$1°$2'")
     // — OCR dialect repairs (each learned from a real misread) —
     // doubled quadrant letters: "WW"/"EE"/"NN"/"SS" -> single
     .replace(/\b([NSEW])\1\b/g,"$1")
@@ -9456,7 +9645,7 @@ function _deedNormalize(t){
     // S 82 W 8 vrs" locates a reference tree, not a boundary course
     .replace(/\bFROM\s+WHICH[^;.]{0,60}?\bBEARS?\b[^;.]{0,50}?[NS]\s*\.?\s*\d[^;.]{0,30}?(?:FEET|FOOT|FT|CHAINS?|RODS?|VARAS?|VRS?)\b\.?/gi," ")
     .replace(/\b([0-9OlI]{2,7}(?:\.[0-9OlI]+)?)\s+(?=(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|PERCHES?|LINKS?|VARAS?|METERS?|METRES?)\b)/gi,
-      (m,tok)=>(/[0-9]/.test(tok)&&/[OlI]/.test(tok))?tok.replace(/O/gi,"0").replace(/[lI]/g,"1")+" ":m)
+      (m,tok)=>(/[0-9]/.test(tok)&&/[OlI]/i.test(tok))?tok.replace(/O/gi,"0").replace(/[lI]/gi,"1")+" ":m)
     // recorded/SEC transcription typo seen in a real Alabama exhibit: "787.00 tent"
     // in a bearing-and-distance course. Treat only a numeric TENT token as FEET.
     .replace(/(\d+(?:\.\d+)?)\s+TENT\b/g,"$1 FEET")
@@ -9516,6 +9705,10 @@ function _deedParseBearing(seg){
   );
   if(m){
     let deg=parseFloat(m[2]), min=m[3]!=null?parseFloat(m[3]):0, sec=m[4]!=null?parseFloat(m[4]):0;
+    // 4.7.25: "S45-30E" — the second number has no mark and runs straight
+    // into the quadrant letter, so it fell into the SECONDS slot (45°00'30").
+    // An unmarked lone second value is minutes.
+    if(m[3]==null&&m[4]!=null&&!/["\u2033]|SEC/.test(m[0]))({min,sec}={min:sec,sec:0});
     // fractional degrees: "S 12 1/2 W" — fraction lands in group 5, or min slot when written "12 1/2°"
     if(m[5]){ const fr={"1/2":30,"1/4":15,"3/4":45}[m[5]]; if(min===0)min=fr; else sec=fr*0+sec; }
     // guard: "12 1/2" often parses as deg=12 min=1 sec=2 — detect trailing "1/2" pattern
@@ -9586,7 +9779,11 @@ function _deedAzToBearingStr(az){
 }
 
 /* Distance: first "number unit" in segment (skipping numbers that belong to bearings/radius) */
-function _deedParseDistance(seg){
+/* 4.7.25: a zero distance is never a course — it was how "3l0.00 feet"
+   (OCR lowercase L) became a 0 ft line with no warning. Null makes it a loud
+   partial the reviewer has to fix. */
+function _deedParseDistance(seg){const r=_deedParseDistance0(seg);return (r&&r.ft>0)?r:null;}
+function _deedParseDistance0(seg){
   const scrub=seg.replace(/\b(RADIUS|DELTA|CENTRAL ANGLE|ARC)\s*(?:OF|LENGTH|=|:)?\s*[\d.]+\s*(?:FEET|FT|')?/g," ");
   // Prefer an explicitly introduced course distance over incidental widths,
   // acreage references, coordinates, and monument dimensions earlier in the
@@ -9669,7 +9866,7 @@ function parseDeedText(txt){
       if(d2!=null&&lc.delta==null){lc.delta=d2;used=true;}
       if(am2&&lc.arc==null){lc.arc=parseFloat(am2[1]);used=true;}
       if(!am2&&lc.arc==null&&(d2!=null||lc.delta!=null||lc.chordD!=null)){
-        const dm2=seg.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
+        const dm2=seg.match(/(?<!CHORD\s+(?:LENGTH\s+)?)DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
         if(dm2){lc.arc=parseFloat(dm2[1]);used=true;}
       }
       if(chB2&&!lc.chordB){lc.chordB=chB2;used=true;}
@@ -9849,7 +10046,7 @@ function parseDeedText(txt){
         // stayed null and the following straight course could be swallowed as
         // curve continuation data.
         if(arcV==null&&(chB||chD||rm||pc.chordB||pc.chordD!=null||pc.radius!=null)){
-          const dm=seg.match(/(?:A\s+)?DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
+          const dm=seg.match(/(?:A\s+)?(?<!CHORD\s+(?:LENGTH\s+)?)DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
           if(dm)arcV=parseFloat(dm[1]);
         }
         calls.push({type:"curve",_si,_pob:_POBARR,
@@ -10217,7 +10414,10 @@ function computeDeed(calls,pobE,pobN,rotDeg,_turnSide){
   const closeE=verts[0].E-E, closeN=verts[0].N-N;
   const closeDist=Math.hypot(closeE,closeN);
   let perim=0;
-  usable.forEach(c=>{perim+=c.type==="line"?c.dist:(c.type==="spiral"?(c.length||0):(c.arc||c.chordD||0));});
+  // a curve given only by radius + chord: the arc is longer than the chord
+  const _arcLen=c=>c.arc?c.arc:(c.radius&&c.delta?c.radius*c.delta*rad:
+    (c.radius&&c.chordD?2*c.radius*Math.asin(Math.min(1,c.chordD/(2*c.radius))):(c.chordD||0)));
+  usable.forEach(c=>{perim+=c.type==="line"?c.dist:(c.type==="spiral"?(c.length||0):_arcLen(c));});
   return {verts,arcs,spirals,areaVerts,closeDist,perim,closeE,closeN,usable,
     precision:closeDist>0.001?Math.round(perim/closeDist):null,
     closeAz:closeDist>0.001?((Math.atan2(closeE,closeN)/rad)%360+360)%360:0,
@@ -10423,6 +10623,8 @@ function _deedRecompute(){
   });
   _deedSyncPoints();
 }
+/* area (job units squared) -> acres, in either unit system */
+function _deedAc(a){return a/((typeof units!=="undefined"&&units==="m")?4046.8564224:43560);}
 /* signed area with true arc segments (chords ± circular segments) */
 function _deedArea(g){
   if(!g||g.verts.length<3)return 0;
@@ -10477,7 +10679,7 @@ function _deedNetAcres(){
     if(f.kind==="boundary"){net+=a;any=true;}
     else if(f.kind==="except")net-=a;
   });
-  return any?net/43560:null;
+  return any?_deedAc(net):null;
 }
 /* Tie geometry for a figure: the record path from the commence monument
    to the POB, in world coordinates, rigid with the record's rotation.
@@ -10949,6 +11151,13 @@ function parseDeedFigures(txt){
   if(ex<2)figs.forEach(f=>{if(f.kind==="except"&&!f.aliquot)f.name="Except parcel";});
   if(es<2)figs.forEach(f=>{if(f.kind==="easement")f.name="Easement";});
   _deedApplySectionFabric(figs);
+  // 4.7.25: deed distances are parsed in feet. In a meters job they were
+  // plotted as meters — a 100 ft course drew 100 m. Convert once, here.
+  if(typeof units!=="undefined"&&units==="m"){
+    figs.forEach(f=>(f.calls||[]).forEach(c=>{
+      ["dist","radius","arc","chordD","length"].forEach(k=>{if(typeof c[k]==="number")c[k]/=3.280833333;});
+    }));
+  }
   return figs;
 }
 
@@ -10956,15 +11165,15 @@ function _deedCallLabel(c,i){
   if(c&&c.type==="line"&&c.defl){
     const a=c.defl.ang, t0=_dmsParts(a);
     const at=(a===0)?"continue straight":("deflect "+t0.d+"\u00b0"+String(t0.m).padStart(2,"0")+"'"+String(t0.s).padStart(2,"0")+'" '+(c.defl.dir==="R"?"RIGHT":"LEFT"));
-    return (i+1)+". "+(c.tie?"TIE \u2192 POB (excluded): ":"")+at+" \u2014 "+c.dist.toFixed(2)+" ft";
+    return (i+1)+". "+(c.tie?"TIE \u2192 POB (excluded): ":"")+at+" \u2014 "+c.dist.toFixed(2)+" "+units;
   }
   if(c&&c.type==="line"&&c.compassAz!=null&&!c.bearing){
     const names={0:"Northerly",45:"Northeasterly",90:"Easterly",135:"Southeasterly",180:"Southerly",225:"Southwesterly",270:"Westerly",315:"Northwesterly"};
-    return (i+1)+". "+(c.tie?"TIE \u2192 POB (excluded): ":"")+(names[c.compassAz]||("az "+c.compassAz+"\u00b0"))+" (word direction) \u2014 "+c.dist.toFixed(2)+" ft";
+    return (i+1)+". "+(c.tie?"TIE \u2192 POB (excluded): ":"")+(names[c.compassAz]||("az "+c.compassAz+"\u00b0"))+" (word direction) \u2014 "+c.dist.toFixed(2)+" "+units;
   }
 
   const tie=c.tie?"TIE→POB (excluded): ":"";
-  if(c.type==="line")return (i+1)+". "+tie+_deedAzToBearingStr(_deedBearingToAz(c.bearing))+" — "+c.dist.toFixed(2)+" "+(units==="ft"?"ft":"m eq")+(c.unit&&!/FEET|FT|FOOT/.test(c.unit)?" ("+c.rawVal+" "+String(c.unit).toLowerCase()+")":"");
+  if(c.type==="line")return (i+1)+". "+tie+_deedAzToBearingStr(_deedBearingToAz(c.bearing))+" — "+c.dist.toFixed(2)+" "+units+(c.unit&&(units==="m"||!/FEET|FT|FOOT/.test(c.unit))?" ("+c.rawVal+" "+String(c.unit).toLowerCase()+")":"");
   if(c.type==="spiral"){
     const tr=c.transition?c.transition.toUpperCase():"AUTO";
     const usable=!!(c.length&&c.radius&&c.dir);
@@ -11212,7 +11421,7 @@ function _deedSet(calls,E,N){
     {lbl:"Courses:",val:String(g.verts.length-1)+(g.skipped?" ("+g.skipped+" skipped)":"")},
     {lbl:"Perimeter:",val:g.perim.toFixed(1)+" "+units},
     {lbl:"Closure:",val:g.closeDist.toFixed(2)+" "+units+(g.precision?"  (1:"+g.precision+")":"")},
-    {lbl:"Area:",val:(_deedArea(g)/43560).toFixed(2)+" acres"},
+    {lbl:"Area:",val:_deedAc(_deedArea(g)).toFixed(2)+" acres"},
     {lbl:"Next:",val:"COGO → Deed Plotter to swing / adjust"}]);
 }
 function _deedReviewFigures(figs){
@@ -12155,7 +12364,7 @@ function deedPlotterMenu(){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>"+(_deedRecordIds().length>1?("Records: <b style=\'color:var(--accent)\'>"+_deedRecordIds().length+"</b><br>"):"")+
       (_deedPlot.figures.length>1?_deedPlot.figures.map(f=>f.name+
-        (f.computed&&f.kind!=="easement"?" ("+(_deedArea(f.computed)/43560).toFixed(3)+" ac"+((f.computed.arcs&&f.computed.arcs.length)||(f.computed.spirals&&f.computed.spirals.length)?", curved":"")+")":"")+
+        (f.computed&&f.kind!=="easement"?" ("+_deedAc(_deedArea(f.computed)).toFixed(3)+" ac"+((f.computed.arcs&&f.computed.arcs.length)||(f.computed.spirals&&f.computed.spirals.length)?", curved":"")+")":"")+
         (_deedExceptOutside(f)?" ⚠outside parent":"")).join(" · ")+"<br>":"")+
       (g?("Boundary closure: <b style='color:var(--accent)'>"+g.closeDist.toFixed(2)+" "+units+"</b>"+
       (g.precision?" (1:"+g.precision+")":"")+"<br>"):"")+
@@ -12922,8 +13131,12 @@ function _ngsCard(m){
     mk("📌 Create point & navigate","ok",()=>{
       let pt=points.find(p=>p.Type==="NGS"&&p.Description===("NGS "+m.pid));
       if(!pt){
-        pt={Point:pointCounter++,Northing:m.N,Easting:m.E,Elevation:parseFloat(m.orthoHt)*3.280833333||100,
-            Type:"NGS",Description:"NGS "+m.pid,Flag:"",ih:0};
+        // 4.7.25: orthoHt is meters — convert only for a feet job; a missing
+        // height is 0 and flagged, never an invented 100
+        const oh=parseFloat(m.orthoHt), hasZ=isFinite(oh);
+        pt={Point:pointCounter++,Northing:m.N,Easting:m.E,
+            Elevation:hasZ?(units==="m"?oh:oh*3.280833333):0,
+            Type:"NGS",Description:"NGS "+m.pid+(hasZ?"":" (no published height)"),Flag:hasZ?"":"flagged",ih:0};
         points.push(pt);saveData();
       }
       _gpsStakeTarget=pt.Point;close();startLiveGps&&startLiveGps();plotPoints();
@@ -13414,9 +13627,9 @@ function storeGpsPoint(){
       const num=pointCounter;
       _takeSnapshot("GPS Pt #"+num);
       points.push({Point:num,Northing:p.N,Easting:p.E,
-        Elevation:(currentPoint?currentPoint.Elevation:100)||100,
+        Elevation:0, // 4.7.25: was copied from the occupied point (or 100) — not measured
         Type:"GPS",Flag:"",ih:0,
-        Description:(d||"")+(accU!=null?" [GPS ±"+accU.toFixed(0)+units+"]":" [GPS]")});
+        Description:(d||"")+(accU!=null?" [GPS ±"+accU.toFixed(0)+units+"]":" [GPS]")+(surveyMode==="3D"?" [no Z]":"")});
       pointCounter=num+1;
       saveData();updateStatus();
       showResult("✓ Point #"+num+" stored at GPS",[
@@ -16052,6 +16265,7 @@ const HELP_TOPICS = [
     preview:"Average Face 1 and Face 2 to cancel instrument errors",
     body:`<h3>Two-Face Shot</h3>
 <p>Tap <strong>Field → Two-Face Shot</strong>. Take Face 1 (direct), then plunge the scope 180° on both axes, re-sight the target, and take Face 2 (reverse). ChainLink averages the two observations to cancel collimation and (in 3D) vertical index error.</p>
+<p>Enter the Face 2 zenith exactly as the instrument shows it (e.g. 271°00'10"). Readings over 180° are reverse-face and are folded automatically.</p>
 <h3>What You Enter</h3>
 <ul>
 <li><strong>2D:</strong> azimuth + horizontal distance for each face</li>
@@ -16191,17 +16405,19 @@ const HELP_TOPICS = [
 <div class="warn">Don't re-tap the original start point to close. The closing shot is its own point; re-tapping the start forces a zero closure.</div>
 <h3>Bowditch Adjustment</h3>
 <p>Distributes closure error proportionally by distance across the traverse points. The closing shot is pulled onto the start coordinate; intermediate points get proportional corrections.</p>
+<p>Sideshots move with the station they were shot from (and anything shot from them), so topo stays tied to the adjusted traverse. Undo restores everything.</p>
 <div class="warn">Bowditch modifies stored coordinates permanently. Save your CSV first.</div>`},
 
   { id:"cogo-resection", section:"COGO", title:"Resection",
     preview:"Determine your position from observations to known points",
     body:`<h3>Resection — Find Your Position</h3>
 <h3>2-Point: True Az + Distance</h3>
-<p>Shoot two known points, record true azimuth and distance to each. App averages the two independent solutions and reports the residual.</p>
+<p>Shoot two known points, record true azimuth and <strong>horizontal</strong> distance to each (reduce slope distances first). App averages the two independent solutions and reports the residual.</p>
 <h3>2-Point: Distance Only</h3>
 <p>Shoot distance to two known points — no azimuth needed. Two solutions shown on canvas — pick the correct one.</p>
 <h3>3-Point: Tienstra</h3>
-<p>Observe azimuth to three known points. Very accurate when the three points surround your position.</p>
+<p>Observe azimuth to three known points. Very accurate when the three points surround your position. The answer is checked by recomputing the angles from the solved station; three points give no redundancy, so check-shot a fourth point.</p>
+<p>In 3D you are asked for the station's ground elevation. Left blank, the station is saved at 0 and flagged.</p>
 <div class="warn">Avoid the danger circle — if your position lies on the circumscribed circle of the three points, Tienstra is undefined.</div>`},
 
   { id:"cogo-prorate", section:"COGO", title:"Prorate on Line",
@@ -16305,9 +16521,11 @@ const HELP_TOPICS = [
     preview:"Navigate to a stored point or entered coordinates",
     body:`<h3>Stakeout</h3>
 <p>Tap <strong>Stake → Stake Stored Point</strong> or <strong>Stake to Entered Coords</strong>.</p>
-<p>Result shows: horizontal distance, true azimuth, instrument setting, and in 3D mode: ΔZ, target elevation, rod height (TH), and cut/fill.</p>
+<p>Result shows: horizontal distance, true azimuth, instrument setting, and in 3D mode: target elevation, rod height (TH), and the vertical distance the instrument should read to the prism when the rod is on grade.</p>
+<h3>Measure Rod → Cut/Fill</h3>
+<p>Shoot the rod, then enter the zenith angle and slope distance. ChainLink computes the ground elevation at the rod and shows <strong>CUT</strong> (ground above grade) or <strong>FILL</strong> (ground below grade), plus how far to come in or go out. Cut/fill is only shown from a real shot.</p>
 <h3>Change Rod Height</h3>
-<p>Tap <strong>Change Rod Height</strong> in the stakeout result to update TH and instantly recalculate cut/fill without re-entering the point.</p>
+<p>Tap <strong>Change Rod Height</strong> in the stakeout result to update TH without re-entering the point.</p>
 <div class="warn">Requires an occupied point.</div>`},
 
   { id:"stake-to-line", section:"Stakeout", title:"Stake to Line or Arc",
@@ -17047,7 +17265,7 @@ function renderDrawerTab(tab){
     if(!ids.length)_drawerItem(body,"+","Import first deed","Paste text, photo or PDF",()=>{closeProjectDrawer();deedPlotterMenu()});
     ids.forEach(id=>{
       const figs=_deedRecordFigures(id),boundary=figs.find(f=>f.kind==="boundary")||figs[0];
-      const ac=boundary&&boundary.computed&&boundary.kind!=="easement"?(_deedArea(boundary.computed)/43560).toFixed(3)+" ac":"";
+      const ac=boundary&&boundary.computed&&boundary.kind!=="easement"?_deedAc(_deedArea(boundary.computed)).toFixed(3)+" ac":"";
       _drawerItem(body,String(id),_deedRecordLabel(id),figs.length+" figure"+(figs.length===1?"":"s")+(ac?" · "+ac:""),()=>{closeProjectDrawer();_deedRecordActions(id)});
     });
     _drawerSection(body,"Record tools");
