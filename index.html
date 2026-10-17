@@ -6,13 +6,25 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.28">
+<meta name="application-name" content="ChainLink-v4.7.29">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.28</title>
+<title>ChainLink Survey v4.7.29</title>
+<!-- 4.7.29: search and link-preview metadata (the app had none) -->
+<meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://app.chainlinksurvey.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ChainLink Survey">
+<meta property="og:title" content="ChainLink Survey — total station data collector on your phone">
+<meta property="og:description" content="Record total station shots, run COGO, stake out, and plot deeds on live aerial imagery. Free, offline, no account.">
+<meta property="og:url" content="https://app.chainlinksurvey.com/">
+<meta property="og:image" content="https://chainlinksurvey.com/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://chainlinksurvey.com/og-image.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1035,6 +1047,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 
 </head>
 <body>
+<noscript><p style="padding:24px;font-family:sans-serif;color:#eee">ChainLink Survey is a free total station data collector and COGO app that runs on your phone: record shots in 2D or 3D, run inverse, intersections, resection and traverse adjustment, stake out points, lines and curves, and plot deeds from pasted legal descriptions on aerial imagery. It needs JavaScript. <a href="https://chainlinksurvey.com/" style="color:#e6b75f">Read about ChainLink Survey</a>.</p></noscript>
 
 <!-- ══ SPLASH ════════════════════════════════════════════ -->
 <div id="splash">
@@ -1300,7 +1313,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.28";
+const APP_VERSION = "4.7.29";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1639,29 +1652,23 @@ let intersectFirst    = null;   // {type:"line"|"arc", connIdx, conn} of first s
 
 /* ── 2. SPLASH ─────────────────────────────────────────────────── */
 function enterApp() {
-  _lsSet("cl_seenSplash","1");
   const btn = document.getElementById("splashEnter");
   if(btn){ btn.disabled=true; btn.textContent="Loading..."; }
   const sp = document.getElementById("splash");
   sp.classList.add("hide");
-  setTimeout(()=>{ sp.style.display="none"; _showJobScreen(); }, 500);
-}
-/* 4.7.28: the splash and Job Manager stood between you and the work on every
-   launch. After the first run the splash is skipped and the active job opens
-   straight onto the map; Job Manager stays one tap away (Project → Job
-   Manager). With no active job you land in Job Manager as before. */
-document.addEventListener("DOMContentLoaded",()=>{
-  try{
-    const seen=_lsGet("cl_seenSplash")==="1"||_jobIndex().length>0;
-    if(!seen)return;
-    const sp=document.getElementById("splash"); if(!sp)return;
+  /* 4.7.29: the splash (with its version number) shows on every launch
+     again; ENTER opens the active job straight onto the map, or Job
+     Manager when there is no active job. */
+  setTimeout(()=>{
     sp.style.display="none";
-    _jobMigrateFromLegacy();
-    const id=_lsGet("cl_activeJob");
-    if(id&&_jobReadBlob(id)){ _hideJobScreen(); loadData(); }
-    else _showJobScreen();
-  }catch(e){}
-});
+    try{
+      _jobMigrateFromLegacy();
+      const id=_lsGet("cl_activeJob");
+      if(id&&_jobReadBlob(id)){ _hideJobScreen(); loadData(); return; }
+    }catch(e){}
+    _showJobScreen();
+  }, 500);
+}
 
 /* ── JOB LIBRARY (4.7.16) ───────────────────────────────────────── */
 let _activeJobId  = null;   // id of the job currently in RAM / cl_activeJob
