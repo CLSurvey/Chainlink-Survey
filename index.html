@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.29">
+<meta name="application-name" content="ChainLink-v4.7.30">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.29</title>
+<title>ChainLink Survey v4.7.30</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1313,7 +1313,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.29";
+const APP_VERSION = "4.7.30";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -16354,7 +16354,7 @@ const HELP_TOPICS = [
   { id:"start", section:"Getting Started", title:"Starting a New Job",
     preview:"Job setup, naming, and first steps",
     body:`<h3>Starting a New Job</h3>
-<p>When you open ChainLink you see the <strong>Job Manager</strong>. Tap <strong>+ Start New Job</strong> and enter a job name.</p>
+<p>ChainLink opens on the splash screen, which shows the version number. Tap <strong>ENTER FIELD MODE</strong>: your active job opens straight onto the map, or the <strong>Job Manager</strong> opens if you have no job yet. In the Job Manager, tap <strong>+ Start New Job</strong> and enter a job name.</p>
 <p>You'll then be asked how to place your starting point. There are six ways in:</p>
 <ul>
 <li><strong>📡 GPS Start (State Plane)</strong> — stand at the point. The phone's GPS puts the job on your state's official coordinate grid, fills in the real ground elevation, and turns on aerial imagery, all automatically.</li>
@@ -16374,7 +16374,7 @@ const HELP_TOPICS = [
   { id:"jobs", section:"Getting Started", title:"Managing Multiple Jobs",
     preview:"Job Manager, switching jobs, renaming",
     body:`<h3>Job Manager</h3>
-<p>ChainLink stores multiple jobs on your phone. The Job Manager appears on launch, or any time via <strong>Project → Job Manager</strong>.</p>
+<p>ChainLink stores multiple jobs on your phone. ENTER FIELD MODE reopens the job you were last in; open the Job Manager any time with <strong>Project → Job Manager</strong>, or <strong>☰ → Switch job</strong>.</p>
 <p>Each job card shows its point count, connections, units, imported deed records, and when it was last saved, with the one you're in marked <strong>ACTIVE</strong>. Tapping a card swaps the active job — the current job is saved automatically first. The ✕ on a card deletes that job only.</p>
 <p>Each job is stored in its own slot on the phone, so jobs never bleed into each other: points, connections, polylines, deed records, undo history, and instrument settings all belong to the job that made them.</p>
 <h3>Renaming a Job</h3>
@@ -16515,14 +16515,16 @@ const HELP_TOPICS = [
 <ul>
 <li>Drag one finger to pan</li>
 <li>Pinch two fingers to zoom toward the midpoint</li>
-<li>+ / − buttons for step zoom</li>
-<li>⊡ Fit — zoom to show all points</li>
-<li>◎ — center on current occupation</li>
+<li><strong>+ / −</strong> step zoom, centered on the middle of the screen</li>
+<li><strong>FIT</strong> — zoom to show everything</li>
+<li><strong>OCC</strong> — center on the occupied point</li>
+<li><strong>HIDE</strong> folds the panel away; tap <strong>MAP</strong> to bring it back</li>
+<li>On a computer, arrow buttons on the panel (and the arrow keys) pan</li>
 </ul>
 <h3>Labels</h3>
-<p>Tap <strong>LBL</strong> to toggle point number and description labels. Labels scale with zoom and hide automatically when points are too close.</p>
+<p>Turn point number and description labels on or off in <strong>Map → Show/Hide Labels</strong>, or <strong>☰ → Layers → Labels</strong>. Labels scale with zoom and hide automatically when points are too close. Distances read in feet as <strong>200.00'</strong> (meters as <strong>61.00 m</strong>) everywhere on the map.</p>
 <h3>Elevation Display</h3>
-<p>Tap <strong>ELV</strong> to toggle elevation labels shown in green below each point. Only appears in 3D mode with valid elevations.</p>
+<p>Turn elevation labels on or off in <strong>Map → Show/Hide Elevations</strong>, or <strong>☰ → Layers → Elevations</strong>. They show in green below each point, only in 3D mode with valid elevations.</p>
 <h3>Line Annotations</h3>
 <p>Each connection shows distance and azimuth along the line when zoomed in far enough.</p>`},
 
@@ -16853,8 +16855,8 @@ const HELP_TOPICS = [
 <p><strong>Keep local coords</strong> — your numbers stay exactly as they are; the photo just lines up behind them.</p>
 <h3>What's a "State Plane zone"?</h3>
 <p>The US is divided into named map grids — every state has one or a few. It's how professionals state exactly where something is using plain X/Y numbers instead of latitude/longitude. The app picks your zone automatically from the GPS fix and shows nearby alternatives in case you're close to a boundary.</p>
-<h3>The 🛰 Button</h3>
-<p>The 🛰 button on the right side of the plot turns the photo (and the blue GPS dot) on and off with one tap. Bright = on, dim = off.</p>
+<h3>Turning the Photo On and Off</h3>
+<p><strong>Map → Toggle Satellite</strong> (or <strong>☰ → Layers → Satellite</strong>) turns the photo and the blue GPS dot on and off together.</p>
 <h3>Choosing a Basemap</h3>
 <p>In Map → Imagery / GPS, <strong>Basemap</strong> offers four sources:</p>
 <ul>
@@ -16877,7 +16879,7 @@ const HELP_TOPICS = [
 <p>A <strong>blue arrow at the screen edge</strong> means you're off-screen in that direction — pan or zoom out to find yourself.</p>
 <p>A <strong>dimmed dot</strong> means the fix is stale (no update for 15+ seconds).</p>
 <h3>Turning It Off</h3>
-<p>GPS uses battery. The 🛰 button toggles it together with the photo, or use <strong>📍 Live GPS marker</strong> in Map → Imagery / GPS to control it separately.</p>
+<p>GPS uses battery. <strong>Map → Toggle Satellite</strong> turns it off together with the photo, or use <strong>📍 Live GPS marker</strong> in Map → Imagery / GPS to control it separately.</p>
 <div class="tip">The dot is a "which part of the property am I in" tool, good to a couple of car-lengths — not a precise position.</div>`},
 
   { id:"sat-navigate", section:"Satellite & GPS", title:"GPS Navigate — Walk to a Point",
@@ -17015,7 +17017,9 @@ const HELP_TOPICS = [
     body:`<h3>One Bar, Six Rooms</h3>
 <p>Every tool now lives in one of six workspaces on the bottom bar. <strong>Field</strong> is observations — setup, occupy, shots, corrections. <strong>Records</strong> is deed work — import, review, assemble, and fit record geometry. <strong>COGO</strong> is the calculations. <strong>Stake</strong> guides layout to points, lines, and curves. <strong>Map</strong> is imagery, basemaps, GPS context, and display. <strong>Project</strong> is jobs, import/export, settings, and this help.</p>
 <h3>The Project Drawer</h3>
-<p>The panel that slides from the left shows the project at a glance — records, points, and layers with counts. Tap through it to jump; it's a map of the job, not another menu to memorize.</p>
+<p>The ☰ panel that slides from the left shows the job at a glance. <strong>Project</strong> switches or renames the job and opens Settings; <strong>Records</strong>, <strong>Points</strong>, and <strong>Layers</strong> list what's in it, with counts. Tap through it to jump; it's a map of the job, not another menu to memorize.</p>
+<h3>Messages</h3>
+<p>Warnings and confirmations appear as a card at the top of the screen. They don't stop your work: tap the card to dismiss it, or it clears on its own after a few seconds.</p>
 <h3>Quick Actions</h3>
 <p>Tap a point, line, or arc on the plot and a small set of actions for <em>that object</em> appears — inverse from it, stake to it, edit it — without hunting through a workspace first.</p>`},
 
