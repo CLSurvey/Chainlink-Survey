@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.27">
+<meta name="application-name" content="ChainLink-v4.7.28">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.27</title>
+<title>ChainLink Survey v4.7.28</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
@@ -1112,9 +1112,10 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
     <div id="jobBadge">No job</div>
   </div>
   <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+    <!-- 4.7.28: one badge that asks before switching (a stray tap on the old
+         two-button toggle silently changed how every distance was read) -->
     <div id="modeToggle">
-      <button id="btn2d" onclick="setMode('2D')">2D</button>
-      <button id="btn3d" onclick="setMode('3D')">3D</button>
+      <button id="modeBadge" class="mode-active-2d" onclick="_modeSwitchPrompt()" aria-label="Survey mode — tap to change">2D</button>
     </div>
     <div style="font-size:.58em;color:var(--muted);letter-spacing:.06em" id="modeHint">horiz dist</div>
   </div>
@@ -1161,9 +1162,8 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
     <button title="Pan S"      onclick="panBy(0,-60)">▼</button>
     <button title="Pan W"      onclick="panBy(-60,0)">◀</button>
     <button title="Pan E"      onclick="panBy(60,0)">▶</button>
-    <button title="Satellite + GPS"   onclick="toggleSatAndGps()" id="btnSat" style="font-size:.8em;letter-spacing:0">🛰</button>
-    <button title="Toggle labels"     onclick="toggleLabels()"   id="btnLabels" style="font-size:.7em;letter-spacing:0">LBL</button>
-    <button title="Toggle elevations" onclick="toggleElevations()" id="btnElev"   style="font-size:.7em;letter-spacing:0">ELV</button>
+    <!-- 4.7.28: satellite, labels and elevations moved off the map panel;
+         they live in Map workspace and Project Explorer → Layers -->
   </div>
 </div>
 
@@ -1185,13 +1185,43 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 }
 .modal{
   pointer-events:auto !important;
-  max-height:min(48vh, 430px) !important;
+  /* 4.7.28: was min(48vh,430px) — primary buttons landed below the fold */
+  max-height:min(58vh, 500px) !important;
 }
+/* 4.7.28: a sheet with more below the fold fades at its bottom edge */
+.modal.more{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 40px),transparent)}
 .modal.modal-shot{
-  max-height:min(52vh, 470px) !important;
-  padding:8px 10px 8px !important;
+  /* 4.7.28: the whole form (keypad + STORE) must fit without scrolling */
+  max-height:min(calc(100dvh - 150px), 620px) !important;
+  padding:6px 10px 8px !important;
 }
-.modal.modal-shot h2{min-height:auto;margin:0 0 6px;padding:0 0 6px;font-size:.72rem}
+.modal.modal-shot::before{display:none}
+.modal.modal-shot h2{min-height:auto;margin:0 0 6px;padding:0 0 6px;font-size:.72rem;flex-wrap:wrap;row-gap:4px}
+.modal.modal-shot .sf-row{margin-bottom:5px}
+.modal.modal-shot .sf-label{margin-bottom:2px}
+.sf-row.sf-row3{grid-template-columns:1fr 1fr .8fr}
+.sf-opt-row{display:flex;gap:8px;margin:2px 0 0}
+.sf-opt-row .sf-line-row{flex:3;margin:0}
+.sf-opt-row .sf-bpill{flex:2;display:flex;gap:4px}
+.sf-opt-row button{min-height:36px !important;padding:4px 2px !important;font-size:.7rem !important}
+.sf-off-chip{margin-left:auto;min-height:30px;padding:0 10px;border-radius:999px;border:1px dashed var(--border2);background:transparent;color:var(--muted);font-family:var(--font-ui);font-size:.66rem;font-weight:700;letter-spacing:.06em;cursor:pointer}
+.sf-off-chip.on{border-style:solid;color:var(--accent2);border-color:rgba(115,199,210,.4)}
+.sf-close{min-width:34px;min-height:30px;border-radius:10px;border:1px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:1rem;cursor:pointer}
+@media(max-height:700px){
+  .modal.modal-shot .sf-val{min-height:36px !important;padding:4px 9px !important}
+  .modal.modal-shot .sf-numpad button,.modal.modal-shot .sf-quad-numrow button{min-height:38px !important;padding:4px 3px !important}
+  .modal.modal-shot .sf-numpad{gap:4px !important;margin-top:5px !important}
+}
+@media(max-height:600px){
+  .modal.modal-shot h2{margin-bottom:3px !important;padding-bottom:3px !important}
+  .modal.modal-shot .sf-label{font-size:.5rem !important;margin-bottom:1px !important}
+  .modal.modal-shot .sf-val{min-height:32px !important;padding:2px 8px !important;font-size:.9rem !important}
+  .modal.modal-shot .sf-row{margin-bottom:3px !important;gap:6px !important}
+  .modal.modal-shot .sf-numpad button,.modal.modal-shot .sf-quad-numrow button{min-height:34px !important}
+  .modal.modal-shot [data-qns],.modal.modal-shot [data-qew]{padding:6px 4px !important}
+  .sf-opt-row button{min-height:32px !important}
+  .modal.modal-shot .sf-numpad{gap:3px !important;margin-top:3px !important}
+}
 .modal.modal-shot .sf-val{min-height:40px;padding:6px 10px;font-size:.95rem}
 .modal.modal-shot .sf-numpad,.modal.modal-shot .calc-grid{gap:5px;margin-top:6px}
 .modal.modal-shot .sf-numpad button,.modal.modal-shot .calc-grid button,.modal.modal-shot .sf-quad-numrow button{min-height:40px;padding:6px 3px}
@@ -1200,13 +1230,65 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 .sf-off-toggle{width:100%;min-height:34px;margin:2px 0 6px;border-radius:10px;border:1px dashed var(--border2);
   background:transparent;color:var(--muted);font-family:var(--font-ui);font-size:.68rem;font-weight:700;letter-spacing:.08em;cursor:pointer}
 .sf-off-toggle.on{border-style:solid;color:var(--accent2);border-color:rgba(115,199,210,.4)}
+/* 4.7.28: the canvas is z-index 1, so these sat behind it and never showed */
+#northArrow,#recentTicker{z-index:5}
+/* 4.7.28: in-app notices (replace alert boxes) */
+#noticeStack{position:fixed;left:10px;right:10px;top:calc(76px + env(safe-area-inset-top));z-index:9600;display:flex;flex-direction:column;gap:6px;pointer-events:none;align-items:center}
+.notice{pointer-events:auto;width:100%;max-width:520px;display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border-radius:14px;
+  background:linear-gradient(145deg,rgba(36,52,58,.98),rgba(18,28,32,.98));border:1px solid rgba(230,183,95,.45);color:var(--text);
+  box-shadow:0 14px 40px rgba(0,0,0,.45);font-family:var(--font-ui);font-size:.86rem;line-height:1.4;animation:noticeIn .18s ease-out;cursor:pointer}
+.notice.out{opacity:0;transform:translateY(-6px);transition:opacity .18s,transform .18s}
+.notice-text{flex:1;white-space:pre-line;word-break:break-word}
+.notice-x{flex:0 0 auto;min-width:30px;min-height:30px;border-radius:9px;border:1px solid var(--border2);background:transparent;color:var(--text2);font-size:.9rem;cursor:pointer}
+@keyframes noticeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+html.light-mode .notice{background:linear-gradient(145deg,#ffffff,#f4f7f6);border-color:rgba(156,104,20,.45);box-shadow:0 12px 30px rgba(21,40,45,.16)}
+/* 4.7.28: section headings inside long menus */
+.menu-group{font-family:var(--font-ui);font-size:.6rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:12px 2px 2px}
+#modeBadge{min-width:58px;min-height:32px;font-size:.78rem !important;letter-spacing:.08em}
+/* 4.7.28: tab labels were ~8.5px — unreadable in sun */
+#toolbar button{font-size:.68rem !important;letter-spacing:.03em !important;font-weight:800}
+#toolbar button .tab-label{text-overflow:clip}
+@media(max-width:420px){#toolbar button{font-size:.62rem !important;letter-spacing:0 !important}}
+@media(max-width:340px){#toolbar button{font-size:.56rem !important}}
+/* 4.7.28: numbers never wrap mid-value (10000.0 / 0); descriptions may */
+table.data-tbl td{white-space:nowrap;word-break:normal}
+table.data-tbl td:nth-child(2){white-space:normal;word-break:break-word;min-width:64px}
+table.data-tbl th,table.data-tbl td{padding-left:5px;padding-right:5px}
+/* 4.7.28: light mode, finished. The 4.6 field UI hard-coded dark gradients on
+   the chrome, so in light mode its text (now dark) sat on dark panels. */
+html.light-mode body::before{display:none}
+/* closed drawer's shadow bled 80px onto the left edge of the map */
+#projectDrawer:not(.open){box-shadow:none}
+html.light-mode #canvasWrap::after{box-shadow:none;border-color:rgba(21,40,45,.06)}
+html.light-mode #appHeader{background:linear-gradient(180deg,#ffffff,#f1f5f4);box-shadow:0 6px 20px rgba(21,40,45,.10)}
+html.light-mode #modeToggle,html.light-mode #modeBadge{background:#e8eeec;box-shadow:none}
+html.light-mode #toolbar{background:linear-gradient(180deg,#fbfcfa,#eef2f1);box-shadow:0 -8px 24px rgba(21,40,45,.08)}
+html.light-mode #toolbar button{color:var(--text2)}
+html.light-mode #workspacePanel,html.light-mode #projectDrawer,html.light-mode #helpInner,html.light-mode #contextDock{background:linear-gradient(180deg,#ffffff,#f1f5f4)}
+html.light-mode .ws-card,html.light-mode .workspace-record-card{background:linear-gradient(180deg,#ffffff,#f3f6f5);box-shadow:0 4px 12px rgba(21,40,45,.06)}
+html.light-mode .ws-card.primary{background:linear-gradient(180deg,rgba(57,126,75,.16),rgba(57,126,75,.05))}
+html.light-mode .ws-card.accent{background:linear-gradient(180deg,rgba(156,104,20,.16),rgba(156,104,20,.05))}
+html.light-mode .workspace-head-icon{background:var(--accent-lo)}
+html.light-mode #plotControls{background:rgba(255,255,255,.92)}
+html.light-mode #plotControls button,html.light-mode #helpBtn{background:linear-gradient(145deg,#ffffff,#eef3f1);color:var(--text)}
+html.light-mode #undoBtn,html.light-mode #redoBtn,html.light-mode #recentTicker,html.light-mode #intersectBanner{background:rgba(255,255,255,.94)}
+html.light-mode .sf-numpad button:not(.np-ok):not(.np-clr),html.light-mode .calc-grid button:not(.ok-btn):not(.danger-btn):not(.accent-btn),
+html.light-mode .sf-quad-numrow button:not(.np-clr),html.light-mode .sf-line-row button:not(.sel),html.light-mode .alpha-grid button:not(.ok-btn):not(.danger-btn):not(.accent-btn),
+html.light-mode .sf-alpha button,html.light-mode .context-actions button{background:linear-gradient(145deg,#ffffff,#eef3f1);color:var(--text)}
+html.light-mode .disp-input,html.light-mode .result-box,html.light-mode .tbl-wrap,html.light-mode .csv-out,html.light-mode #helpSearch input{background:#ffffff}
+html.light-mode table.data-tbl th{background:#e8eeec}
+html.light-mode .btn.danger{background:linear-gradient(145deg,#fff1ee,#ffffff);color:#b33a26}
+html.light-mode #jobScreen{background:linear-gradient(150deg,#f4f7f6,#e6ecea) !important}
+html.light-mode .job-card{background:linear-gradient(145deg,#ffffff,#f3f6f5)}
+html.light-mode .job-btn:not(.job-btn-ok):not(.job-btn-blue){background:linear-gradient(145deg,#ffffff,#f3f6f5)}
+html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,.10),#ffffff) !important}
 #workspaceShade{background:transparent !important}
 /* transparent but receives taps so Field/etc dismiss on plot tap */
 #workspaceShade.open{opacity:0 !important;pointer-events:auto !important}
 #workspacePanel{max-height:min(44vh, 380px) !important}
 @media(min-width:700px){
-  .modal{max-height:min(56vh, 520px) !important}
-  .modal.modal-shot{max-height:min(60vh, 560px) !important}
+  .modal{max-height:min(62vh, 560px) !important}
+  .modal.modal-shot{max-height:min(calc(100dvh - 160px), 640px) !important}
   #workspacePanel{max-height:min(56vh, 520px) !important}
 }
 </style>
@@ -1218,7 +1300,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.27";
+const APP_VERSION = "4.7.28";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1365,6 +1447,41 @@ function _saveFailHide(){
   const el=document.getElementById("saveFailBanner");
   if(el) el.classList.remove("show");
 }
+
+/* ── IN-APP NOTICES (4.7.28) ───────────────────────────────────────
+   The app has ~200 alert() calls. In the installed PWA each one was a
+   blocking system box headed with the web address. alert() is now routed
+   here: a card at the top of the screen that doesn't block, stacks up to
+   three, and clears on tap or after a read-time based on its length.
+   Call sites are unchanged, so the test harnesses' alert stubs still work. */
+function _notify(msg){
+  const text=String(msg==null?"":msg);
+  let host=document.getElementById("noticeStack");
+  if(!host){
+    host=document.createElement("div"); host.id="noticeStack";
+    host.setAttribute("aria-live","assertive");
+    document.body.appendChild(host);
+  }
+  const card=document.createElement("div"); card.className="notice"; card.setAttribute("role","alert");
+  const body=document.createElement("div"); body.className="notice-text"; body.textContent=text;
+  const x=document.createElement("button"); x.type="button"; x.className="notice-x"; x.textContent="✕";
+  x.setAttribute("aria-label","Dismiss");
+  card.appendChild(body); card.appendChild(x);
+  const kill=()=>{ if(!card.parentNode)return; card.classList.add("out"); setTimeout(()=>{ if(card.parentNode)card.remove(); },200); };
+  card.onclick=kill;
+  host.appendChild(card);
+  while(host.children.length>3) host.removeChild(host.firstChild);
+  setTimeout(kill, Math.min(14000, Math.max(4500, text.length*70)));
+  try{ if(navigator.vibrate) navigator.vibrate(15); }catch(e){}
+}
+(function(){
+  try{
+    const _nativeAlert=window.alert;
+    window.alert=function(m){
+      try{ _notify(m); }catch(e){ try{ _nativeAlert&&_nativeAlert.call(window,m); }catch(x){} }
+    };
+  }catch(e){}
+})();
 
 /* ── 1. STATE ──────────────────────────────────────────────────── */
 let orientationOffset = 0;
@@ -1522,12 +1639,29 @@ let intersectFirst    = null;   // {type:"line"|"arc", connIdx, conn} of first s
 
 /* ── 2. SPLASH ─────────────────────────────────────────────────── */
 function enterApp() {
+  _lsSet("cl_seenSplash","1");
   const btn = document.getElementById("splashEnter");
   if(btn){ btn.disabled=true; btn.textContent="Loading..."; }
   const sp = document.getElementById("splash");
   sp.classList.add("hide");
   setTimeout(()=>{ sp.style.display="none"; _showJobScreen(); }, 500);
 }
+/* 4.7.28: the splash and Job Manager stood between you and the work on every
+   launch. After the first run the splash is skipped and the active job opens
+   straight onto the map; Job Manager stays one tap away (Project → Job
+   Manager). With no active job you land in Job Manager as before. */
+document.addEventListener("DOMContentLoaded",()=>{
+  try{
+    const seen=_lsGet("cl_seenSplash")==="1"||_jobIndex().length>0;
+    if(!seen)return;
+    const sp=document.getElementById("splash"); if(!sp)return;
+    sp.style.display="none";
+    _jobMigrateFromLegacy();
+    const id=_lsGet("cl_activeJob");
+    if(id&&_jobReadBlob(id)){ _hideJobScreen(); loadData(); }
+    else _showJobScreen();
+  }catch(e){}
+});
 
 /* ── JOB LIBRARY (4.7.16) ───────────────────────────────────────── */
 let _activeJobId  = null;   // id of the job currently in RAM / cl_activeJob
@@ -2061,6 +2195,19 @@ function _buildCSV(){
   return csv;
 }
 
+function _modeSwitchPrompt(){
+  const to = surveyMode==="3D" ? "2D" : "3D";
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Switch to "+to+" mode?</h2><p class='info'>"+
+      (to==="3D"
+        ?"3D shots take "+(distMode==="HD"?"horizontal":"slope")+" distance, zenith angle, HI and target height, and compute elevations."
+        :"2D shots take azimuth and horizontal distance only; elevations are not computed.")+
+      " Points already stored are not changed.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    mk("Switch to "+to,"ok",()=>{close();setMode(to);});
+    mk("Keep "+surveyMode,"",close);
+  });
+}
 function setMode(m){
   surveyMode = m;
   saveData();
@@ -2076,13 +2223,12 @@ function updateStatus() {
     `<span style="color:var(--muted)">${u}</span>`;
   document.getElementById("jobBadge").textContent = jobName;
 
-  // Sync mode toggle buttons
-  const b2 = document.getElementById("btn2d");
-  const b3 = document.getElementById("btn3d");
+  // Sync the survey-mode badge
+  const mb = document.getElementById("modeBadge");
   const hint = document.getElementById("modeHint");
-  if(b2 && b3){
-    b2.className = surveyMode==="2D" ? "mode-active-2d" : "";
-    b3.className = surveyMode==="3D" ? "mode-active-3d" : "";
+  if(mb){
+    mb.textContent = surveyMode;
+    mb.className = surveyMode==="3D" ? "mode-active-3d" : "mode-active-2d";
   }
   if(hint){
     if(surveyMode==="2D"){
@@ -2105,7 +2251,7 @@ function _updateTicker() {
   if(!recentShots.length){ el.classList.remove("visible"); return; }
   el.classList.add("visible");
   el.innerHTML="<span style='color:var(--accent);letter-spacing:.06em'>LAST SHOTS</span><br>"+
-    recentShots.slice(-5).reverse().map(s=>`<span style="color:var(--text)">#${s.pt}</span> <span style="color:var(--muted)">${s.desc||"—"} ${s.hd}${units}</span>`).join("<br>");
+    recentShots.slice(-5).reverse().map(s=>`<span style="color:var(--text)">#${s.pt}</span> <span style="color:var(--muted)">${s.desc||"—"} ${s.hd}${_dU()}</span>`).join("<br>");
 }
 
 const uLabel = () => units; // "ft" or "m"
@@ -2153,6 +2299,16 @@ function toQuadrant(deg){
   return ns+d+"\u00b0"+String(m).padStart(2,"0")+"'"+String(s).padStart(2,"0")+'"'+ew;
 }
 
+// 4.7.28: one distance suffix for every map label — 200.00' / 61.00 m
+// (connections printed 130.48ft while deeds printed 200.00')
+function _dU(){return (typeof units!=="undefined"&&units==="m")?" m":"'";}
+// 4.7.28: light-mode ink — darken a bright hex colour so it reads on white
+function _lmInk(c){
+  const m=/^#([0-9a-f]{6})$/i.exec(String(c||""));
+  if(!m)return c;
+  const n=parseInt(m[1],16),f=.5;
+  return "rgb("+Math.round((n>>16&255)*f)+","+Math.round((n>>8&255)*f)+","+Math.round((n&255)*f)+")";
+}
 // Route bearing display through current mode
 function fmtBrg(deg){ return bearingMode==="quad" ? toQuadrant(deg) : toDMS(deg); }
 
@@ -2189,7 +2345,10 @@ function parseBrg(str){
 // Build quadrant bearing keyboard: N/S row → DDD.MMSS numpad → E/W row
 // Input format: N35.2342W  (NS prefix, DDD.MMSS digits, EW suffix)
 // onUpdate(azDecDeg, displayStr) called on every change.
-function _buildQuadKeyboard(container, onUpdate){
+// 4.7.28: opts.compact folds N/S/E/W into one row and drops the duplicate
+// readout; opts.onStore puts STORE inside the keypad instead of below it.
+function _buildQuadKeyboard(container, onUpdate, opts){
+  opts=opts||{};
   const state = { ns:"N", ew:"E", val:"" };
 
   function _toAz(){
@@ -2229,10 +2388,11 @@ function _buildQuadKeyboard(container, onUpdate){
   const disp=document.createElement("div"); disp.className="qb-disp";
   disp.style.cssText="font-family:var(--font-data);font-size:1.05em;color:var(--accent);text-align:center;padding:5px 8px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);letter-spacing:.06em;min-height:1.7em";
   disp.textContent=_dispStr();
+  if(opts.compact) disp.style.display="none";
   wrap.appendChild(disp);
 
   // N/S row
-  const nsRow=document.createElement("div"); nsRow.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:4px";
+  const nsRow=document.createElement("div"); nsRow.style.cssText="display:grid;grid-template-columns:"+(opts.compact?"1fr 1fr 1fr 1fr":"1fr 1fr")+";gap:4px";
   ["N","S"].forEach(v=>{
     const b=document.createElement("button"); b.textContent=v; b.dataset.qns=v;
     b.style.cssText="padding:10px 4px;border-radius:var(--radius);font-family:var(--font-ui);font-size:1em;font-weight:800;letter-spacing:.1em;cursor:pointer;transition:all .12s;border:1px solid "+(v===state.ns?"var(--accent2)":"var(--border)")+";color:"+(v===state.ns?"var(--accent2)":"var(--muted)")+";background:"+(v===state.ns?"var(--accent2-lo)":"var(--surface2)");
@@ -2244,6 +2404,7 @@ function _buildQuadKeyboard(container, onUpdate){
   // DDD.MMSS numpad (same layout as the main numpad)
   const np=document.createElement("div"); np.className="sf-numpad";
   ["7","8","9","⌫","4","5","6","+/-","1","2","3","CLR","0","."].forEach(k=>{
+    if(k==="+/-"&&opts.onStore) return;
     const b=document.createElement("button"); b.textContent=k;
     if(k==="CLR") b.className="np-clr";
     else if(k==="⌫") b.className="np-back";
@@ -2257,6 +2418,10 @@ function _buildQuadKeyboard(container, onUpdate){
     };
     np.appendChild(b);
   });
+  if(opts.onStore){
+    const sb=document.createElement("button"); sb.textContent="✓ STORE SHOT"; sb.className="np-ok";
+    sb.onclick=opts.onStore; np.appendChild(sb);
+  }
   wrap.appendChild(np);
 
   // E/W row
@@ -2265,9 +2430,9 @@ function _buildQuadKeyboard(container, onUpdate){
     const b=document.createElement("button"); b.textContent=v; b.dataset.qew=v;
     b.style.cssText="padding:10px 4px;border-radius:var(--radius);font-family:var(--font-ui);font-size:1em;font-weight:800;letter-spacing:.1em;cursor:pointer;transition:all .12s;border:1px solid "+(v===state.ew?"var(--accent2)":"var(--border)")+";color:"+(v===state.ew?"var(--accent2)":"var(--muted)")+";background:"+(v===state.ew?"var(--accent2-lo)":"var(--surface2)");
     b.onclick=()=>{state.ew=v;_refreshButtons();_emit();};
-    ewRow.appendChild(b);
+    (opts.compact?nsRow:ewRow).appendChild(b);
   });
-  wrap.appendChild(ewRow);
+  if(!opts.compact) wrap.appendChild(ewRow);
 
   container.appendChild(wrap);
   return { getAz: _toAz, getDispStr: _dispStr };
@@ -2318,6 +2483,13 @@ function openModal(buildFn, opts){
       const f=window._pendingSetup;window._pendingSetup=null;setTimeout(f,50);
     }};
   buildFn(m,close);
+  // 4.7.28: fade the bottom edge while there is more below the fold
+  try{
+    const _more=()=>m.classList.toggle("more",m.scrollHeight-m.scrollTop-m.clientHeight>8);
+    m.addEventListener("scroll",_more,{passive:true});
+    if(typeof MutationObserver==="function") new MutationObserver(_more).observe(m,{childList:true,subtree:true});
+    if(typeof requestAnimationFrame==="function") requestAnimationFrame(_more);
+  }catch(e){}
   // Desktop-only hint (lives on the overlay so keypad re-renders can't wipe it)
   try{
     if(window.matchMedia&&matchMedia("(pointer:fine)").matches){
@@ -4398,7 +4570,7 @@ function takeShot(){
         "<div class='result-box'>"+
         "<span class='lbl'>Distance Input:</span>&nbsp;<span class='val'>"+modeName+"</span><br>"+
         "<span style='color:var(--text2);font-size:.85em'>"+modeNote+"</span><br><br>"+
-        "<span style='color:var(--muted);font-size:.8em'>Change anytime in More → Settings → Instrument Profile</span>"+
+        "<span style='color:var(--muted);font-size:.8em'>Change anytime: tap the 2D/3D badge in the header, or Project → Settings → Instrument Profile</span>"+
         "</div>";
       const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
       mk("OK — Continue","ok",()=>{close();_doTakeShot();});
@@ -4520,21 +4692,20 @@ function _shotForm(prefillDesc, autoLine, onStore){
       // ── Rows 3 & 4 (3D only): IH  |  Vert Angle  |  TH ──
       if(is3D){
         // Row 3: Vert Angle only (IH shown in header, changeable via tap)
-        const r3 = document.createElement("div"); r3.className="sf-row";
+        // 4.7.28: zenith, TH and the ΔZ preview share one row (was two)
+        const r3 = document.createElement("div"); r3.className="sf-row sf-row3";
 
         const vaF = document.createElement("div"); vaF.className="sf-field";
-        vaF.innerHTML=`<div class="sf-label">Vert Angle (DDD.MMSS · 90=level)</div>`;
+        vaF.innerHTML=`<div class="sf-label">Zenith (90=lvl)</div>`;
         const vaV = document.createElement("div");
         vaV.className="sf-val"+(activeField==="va"?" active":"");
         vaV.textContent = fields.va||"0.0000";
         vaV.onclick=()=>{activeField="va";freshFields.add("va");render()};
         vaF.appendChild(vaV); r3.appendChild(vaF);
-        form.appendChild(r3);
 
-        // Row 4: Target Height (full width for clarity)
-        const r4 = document.createElement("div"); r4.className="sf-row";
+        const r4 = r3;
         const thF = document.createElement("div"); thF.className="sf-field";
-        thF.innerHTML=`<div class="sf-label">Target Height TH (${units})</div>`;
+        thF.innerHTML=`<div class="sf-label">Target Ht (${units})</div>`;
         const thV = document.createElement("div");
         thV.className="sf-val"+(activeField==="th"?" active":"");
         thV.textContent = fields.th;
@@ -4545,7 +4716,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
         const vaNum=parseDMS(fields.va), distNum=parseFloat(fields.dist);
         const ihNum=parseFloat(fields.ih)||0, thNum=parseFloat(fields.th)||0;
         const previewF = document.createElement("div"); previewF.className="sf-field";
-        previewF.innerHTML=`<div class="sf-label">Preview ΔZ</div>`;
+        previewF.innerHTML=`<div class="sf-label">ΔZ</div>`;
         const previewV = document.createElement("div");
         previewV.className="sf-val"; previewV.style.cursor="default";
         previewV.style.borderColor="var(--border)";
@@ -4566,10 +4737,16 @@ function _shotForm(prefillDesc, autoLine, onStore){
       const offOn = fields._offOpen || fields.offLat!=="0" || (is3D && fields.offVert!=="0");
       const offToggle=document.createElement("button");
       offToggle.type="button";
-      offToggle.className="sf-off-toggle"+(offOn?" on":"");
-      offToggle.textContent=offOn?"Offsets ▾":"Offsets ▸  (lat / vert)";
+      // 4.7.28: Offsets toggle and Close live in the header line, not their own rows
+      offToggle.className="sf-off-chip"+(offOn?" on":"");
+      offToggle.textContent=offOn?"Offsets ▾":"Offsets ▸";
       offToggle.onclick=()=>{fields._offOpen=!offOn;render();};
-      form.appendChild(offToggle);
+      const _sfH2=modal.querySelector("h2");
+      _sfH2.appendChild(offToggle);
+      const _sfX=document.createElement("button");
+      _sfX.type="button"; _sfX.className="sf-close"; _sfX.textContent="✕";
+      _sfX.setAttribute("aria-label","Cancel shot"); _sfX.onclick=close;
+      _sfH2.appendChild(_sfX);
       const offRow = document.createElement("div"); offRow.className="sf-row";
       if(!offOn){ offRow.style.display="none"; }
 
@@ -4593,24 +4770,27 @@ function _shotForm(prefillDesc, autoLine, onStore){
       form.appendChild(offRow);
 
       // ── Line style selector ──────────────────────────────
+      // 4.7.28: line style and Az/Quad share one row
+      const optRow = document.createElement("div"); optRow.className="sf-opt-row";
+      form.appendChild(optRow);
       const lineRow = document.createElement("div"); lineRow.className="sf-line-row";
-      [["─── Solid","solid"],["- - - Dashed","dashed"],["· None","none"]].forEach(([lbl,val])=>{
+      [["━ Solid","solid"],["┅ Dash","dashed"],["· None","none"]].forEach(([lbl,val])=>{
         const b = document.createElement("button");
         b.textContent=lbl; b.className=(fields.line===val?"sel":"");
         b.onclick=()=>{fields.line=val;render()};
         lineRow.appendChild(b);
       });
-      form.appendChild(lineRow);
+      optRow.appendChild(lineRow);
 
       // ── Bearing mode toggle pill — always visible (except desc keyboard) ───────────
       // Placed here so it persists regardless of which field is active.
       {
         const pill=document.createElement("div");
-        pill.style.cssText="display:flex;gap:4px;margin-bottom:4px";
+        pill.className="sf-bpill";
         ["Azimuth","Quadrant"].forEach(label=>{
           const isActive=(label==="Azimuth"&&bearingMode==="az")||(label==="Quadrant"&&bearingMode==="quad");
           const b=document.createElement("button");
-          b.textContent=label;
+          b.textContent=label==="Azimuth"?"Az":"Quad";
           b.style.cssText="flex:1;padding:6px 4px;border-radius:var(--radius);font-family:var(--font-ui);font-size:.72em;font-weight:700;letter-spacing:.06em;cursor:pointer;transition:all .15s;border:1px solid "+(isActive?"var(--accent2)":"var(--border)")+";color:"+(isActive?"var(--accent2)":"var(--muted)")+";background:"+(isActive?"var(--accent2-lo)":"var(--surface2)");
           b.onclick=()=>{
             const newMode=label==="Azimuth"?"az":"quad";
@@ -4631,7 +4811,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
           };
           pill.appendChild(b);
         });
-        form.appendChild(pill);
+        optRow.appendChild(pill);
       }
 
       // ── Numpad (numeric fields) or Alpha (desc) or Quad bearing (az in quad mode) ──
@@ -4659,13 +4839,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
           fields.az = isNaN(azDec) ? "—" : previewStr;
           const azDisp = modal.querySelector(".sf-val.active");
           if(azDisp) azDisp.textContent = fields.az;
-        });
-        // Store button appended after quad keyboard
-        const storeBtn2=document.createElement("button");
-        storeBtn2.textContent="✓ STORE SHOT"; storeBtn2.className="np-ok";
-        storeBtn2.style.cssText="width:100%;margin-top:6px;padding:13px;border-color:var(--ok);color:#fff;background:linear-gradient(180deg,rgba(104,168,74,.35) 0%,rgba(104,168,74,.2) 100%);border-radius:var(--radius);font-family:var(--font-ui);font-size:.88em;font-weight:700;letter-spacing:.06em;border:1px solid var(--ok);cursor:pointer;box-shadow:0 0 8px rgba(104,168,74,.3)";
-        storeBtn2.onclick=()=>{ close(); (onStore||_processShot)(fields, is3D, ih, occ); };
-        qwrap.appendChild(storeBtn2);
+        }, {compact:true, onStore:()=>{ close(); (onStore||_processShot)(fields, is3D, ih, occ); }});
         form.appendChild(qwrap);
       } else {
         // Standard Numpad
@@ -4713,10 +4887,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
       }
 
       modal.appendChild(form);
-
-      // Cancel
-      const can=document.createElement("button");can.className="btn";can.textContent="Cancel";
-      can.style.marginTop="6px"; can.onclick=close; modal.appendChild(can);
+      // 4.7.28: Cancel moved to the ✕ in the header — the bottom button cost a row
     }
 
     // Lightweight re-render helpers that avoid full re-render on every keypress
@@ -6410,11 +6581,12 @@ function mapWorkspaceMenu(){
 function projectExportMenu(){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>Export</h2>";
-    const go=(t,fn,cls="blue")=>_wsButton(modal,t,cls,()=>{close();fn();});
+    // 4.7.28: colour marks the main action only (every format was teal)
+    const go=(t,fn,cls="")=>_wsButton(modal,t,cls,()=>{close();fn();});
     go("CSV"+(typeof window.showDirectoryPicker==="function"?" to Folder":""),saveToFile,"ok");
     go("DXF",exportDXF);go("LandXML",exportLandXML);go("PDF Plot",exportPlotPDF);go("Fieldbook",exportFieldbook);go("SVG",exportSVG);go("GeoJSON",exportGeoJSON);
     if(geoAnchor)go("KML / Google Earth",exportKML);
-    _wsButton(modal,"Back","",()=>{close();projectWorkspaceMenu();});
+    _wsButton(modal,"Back","",()=>{close();openWorkspace("project");});
   });
 }
 
@@ -6686,12 +6858,12 @@ function projectImportMenu(){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>Import</h2>";
     _wsButton(modal,"Load ChainLink CSV","ok",()=>{close();loadFromFile()});
-    _wsButton(modal,"Import Coordinate List","ok",()=>{close();importCoordList()});
-    _wsButton(modal,"Import DXF","blue",()=>{close();importDXF()});
-    _wsButton(modal,"Import LandXML","blue",()=>{close();importLandXML()});
-    _wsButton(modal,"Import KML","blue",()=>{close();importKML()});
-    _wsButton(modal,"Import Deed Record","accent",()=>{close();if(_deedPlot)_deedImportAnother();else deedPlotterMenu();});
-    _wsButton(modal,"Back","",()=>{close();projectWorkspaceMenu();});
+    _wsButton(modal,"Import Coordinate List","",()=>{close();importCoordList()});
+    _wsButton(modal,"Import DXF","",()=>{close();importDXF()});
+    _wsButton(modal,"Import LandXML","",()=>{close();importLandXML()});
+    _wsButton(modal,"Import KML","",()=>{close();importKML()});
+    _wsButton(modal,"Import Deed Record","",()=>{close();if(_deedPlot)_deedImportAnother();else deedPlotterMenu();});
+    _wsButton(modal,"Back","",()=>{close();openWorkspace("project");});
   });
 }
 function projectWorkspaceMenu(){
@@ -6758,25 +6930,31 @@ function cogoMenu(){
     _helpContext="cogo-intro";
     modal.innerHTML="<h2>📐 COGO</h2>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className=`btn ${cls}`;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk("Inverse (Dist & Bearing)","ok",   ()=>{close();cogoInverse()});
-    mk("Intersection Tools","blue",         ()=>{close();cogoIntersection()});
-    mk("Bearing & Distance","",             ()=>{close();cogoRadiation()});
-    mk("Offset to Line","",                 ()=>{close();cogoOffsetPoint()});
+    // 4.7.28: grouped by job, neutral buttons — the old green/blue mix meant nothing
+    const grp=t=>{const d=document.createElement("div");d.className="menu-group";d.textContent=t;modal.appendChild(d);};
+    grp("Measure");
+    mk("Inverse (Dist & Bearing)","",   ()=>{close();cogoInverse()});
     mk("Area & Perimeter","",               ()=>{close();cogoArea()});
-    mk("Traverse Correction","ok",          ()=>{close();cogoTraverseClosure()});
-    mk("Resection","blue",                  ()=>{close();cogoResection()});
-    mk("Average Points","blue",             ()=>{close();cogoAveragePoints()});
-    mk("Arc / Curve Layout","blue",         ()=>{close();cogoArc()});
-    mk("Spiral / Transition Curve","blue",    ()=>{close();cogoSpiral()});
-    mk("Build Polyline","blue",              ()=>{close();cogoPolyline()});
-    mk("Polyline Manager","blue",            ()=>{close();_polylineMenu()});
-    mk("Prorate on Line","",                ()=>{close();cogoProrate()});
-    mk("Midpoint","",                       ()=>{close();cogoMidpoint()});
     mk("Angle at Point","",                 ()=>{close();cogoDeflection()});
     mk("Cut / Fill","",                     ()=>{close();cogoCutFill()});
+    grp("Compute points");
+    mk("Bearing & Distance","",             ()=>{close();cogoRadiation()});
+    mk("Intersection Tools","",             ()=>{close();cogoIntersection()});
+    mk("Offset to Line","",                 ()=>{close();cogoOffsetPoint()});
+    mk("Prorate on Line","",                ()=>{close();cogoProrate()});
+    mk("Midpoint","",                       ()=>{close();cogoMidpoint()});
+    mk("Average Points","",                 ()=>{close();cogoAveragePoints()});
+    mk("Resection","",                      ()=>{close();cogoResection()});
+    grp("Curves and linework");
+    mk("Arc / Curve Layout","",             ()=>{close();cogoArc()});
+    mk("Spiral / Transition Curve","",      ()=>{close();cogoSpiral()});
+    mk("Build Polyline","",                 ()=>{close();cogoPolyline()});
+    mk("Polyline Manager","",               ()=>{close();_polylineMenu()});
     mk("✏ Draw Connection","",              ()=>{close();drawConnection()});
+    grp("Adjust");
+    mk("Traverse Correction","",            ()=>{close();cogoTraverseClosure()});
     mk("Rotate / Align","",                 ()=>{close();cogoRotateAlign()});
-    mk("\ud83d\udd90 Move / Shift Job (drag)","ok",()=>{close();_jobMoveMenu()});
+    mk("\ud83d\udd90 Move / Shift Job (drag)","",()=>{close();_jobMoveMenu()});
     mk("Translate (Shift All)","",          ()=>{close();cogoTranslate()});
     mk("Scale Points","",                   ()=>{close();cogoScale()});
     mk("Cancel","",close);
@@ -8060,10 +8238,8 @@ function _resection2pt(){
               if(residual>tol*2)
                 warns.push(`Large residual (${residual.toFixed(3)} ${units}) — observations may be inconsistent`);
 
-              if(warns.length){
-                if(!confirm("Resection warning: "+warns.join(" | ")+" Show result anyway?"))return;
-              }
-
+              // 4.7.28: in-app confirm instead of the browser's confirm() box
+              const _resShow=()=>{
               tempGeom=[
                 {type:"ray",E:E,N:N,az:a1,color:"rgba(74,158,255,.5)"},
                 {type:"ray",E:E,N:N,az:a2,color:"rgba(62,207,116,.5)"},
@@ -8083,6 +8259,9 @@ function _resection2pt(){
               }},
               {txt:"Cancel",cls:"",fn:()=>{tempGeom=[];tempIntersections=[];plotPoints()}},
               ]);
+              };
+              if(warns.length) confirmDialog("Resection warning: "+warns.map(_esc).join("<br>")+"<br>Show result anyway?",y=>{if(y)_resShow();});
+              else _resShow();
             });
           });
         });
@@ -9423,8 +9602,8 @@ function _drawScaleBar(ctx,w,h,scale){
   const barPx=90,worldDist=barPx/scale,nice=_niceStep(worldDist),barActual=nice*scale;
   const x=10,y=h-18;
   ctx.save();
-  // Background pill for readability
-  ctx.fillStyle="rgba(0,0,0,.55)";
+  // Background pill for readability (4.7.28: light pill in light mode)
+  ctx.fillStyle=lightMode?"rgba(255,255,255,.88)":"rgba(0,0,0,.55)";
   // Use arc-based rounded rect for Safari compatibility (no roundRect until Safari 15.4)
   (function(cx,cy,cw,ch,cr){
     ctx.beginPath();
@@ -9440,14 +9619,14 @@ function _drawScaleBar(ctx,w,h,scale){
   })(x-4,y-20,barActual+8,24,4);
   ctx.fill();
   // Bar
-  ctx.strokeStyle="#c0cce0";ctx.lineWidth=2;
+  ctx.strokeStyle=lightMode?"#2b3a40":"#c0cce0";ctx.lineWidth=2;
   ctx.beginPath();
   ctx.moveTo(x,y);ctx.lineTo(x+barActual,y);
   ctx.moveTo(x,y-5);ctx.lineTo(x,y+2);
   ctx.moveTo(x+barActual,y-5);ctx.lineTo(x+barActual,y+2);
   ctx.stroke();
   // Label
-  ctx.fillStyle="#e8f0ff";ctx.font="bold 10px 'Courier New',monospace";
+  ctx.fillStyle=lightMode?"#152024":"#e8f0ff";ctx.font="bold 10px 'Courier New',monospace";
   ctx.textAlign="left";ctx.textBaseline="bottom";
   ctx.fillText(`${nice.toFixed(0)} ${units}`,x,y-7);
   ctx.restore();
@@ -10275,6 +10454,18 @@ function parseDeedText(txt){
     calls.forEach((c,i)=>{if(c._si!=null&&c._si<=si)last=i;});
     if(last>=0&&last<calls.length-1&&last<=3&&calls[last]._si<si&&(si-calls[last]._si)<=2&&last>pobIdx)pobIdx=last;
   });
+  // 4.7.28 — POB named only at the DEPARTURE: "Commence at the NW corner;
+  // thence South 400 feet to a point; FROM THIS POINT OF BEGINNING measure…"
+  // (Fredonia). Nothing arrives "to the point of beginning", so the leg was
+  // read as a boundary course. In a commenced description, a call that opens
+  // FROM the point of beginning marks every call before it as a tie.
+  if(/\bCOMMENC/.test(t)){
+    calls.forEach((c,i)=>{
+      if(i>=1&&i<=4&&i<calls.length-1&&
+         /^\s*FROM\s+(?:THIS\s+|SAID\s+|THE\s+)?(?:TRUE\s+)?POINT OF BEGINNING\b/.test(c.raw||"")&&
+         i-1>pobIdx) pobIdx=i-1;
+    });
+  }
   if(pobIdx>=0){
     for(let i=0;i<=pobIdx;i++)if(calls[i].type!=="partial")calls[i].tie=true;
   }
@@ -12029,25 +12220,27 @@ function _deedFromPdf(file,prevText){
 function _deedPasteModal(prefill){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>📜 Deed Plotter</h2><p class='info'>Get the deed text into the box — the app reads the calls; you review them; it plots on the map.</p>"+
-      "<div style='border:1px solid #6a5320;border-radius:8px;padding:9px 11px;margin:4px 0 8px;background:rgba(240,160,32,.06)'>"+
-      "<div style='font-family:var(--font-ui);font-size:.82em;color:#f0a020;margin-bottom:4px'>📱 Best way — Google Lens</div>"+
-      "<div class='info' style='font-size:.8em;margin:0'>① Open the <b>Google</b> app and tap the <b>Lens</b> (camera) icon &nbsp;② Aim at the deed page &nbsp;③ Tap <b>Select text</b>, drag over the description, tap <b>Copy</b> &nbsp;④ Come back here, long-press the box, <b>Paste</b>. For multiple pages, repeat — paste each page after the last.</div></div>"+
+      "<details style='border:1px solid var(--border2);border-radius:8px;padding:8px 11px;margin:4px 0 8px;background:var(--accent-lo)'>"+
+      "<summary style='font-family:var(--font-ui);font-size:.82em;color:var(--accent);cursor:pointer'>📱 Best way to get the text — Google Lens</summary>"+
+      "<div class='info' style='font-size:.8em;margin:0'>① Open the <b>Google</b> app and tap the <b>Lens</b> (camera) icon &nbsp;② Aim at the deed page &nbsp;③ Tap <b>Select text</b>, drag over the description, tap <b>Copy</b> &nbsp;④ Come back here, long-press the box, <b>Paste</b>. For multiple pages, repeat — paste each page after the last.</div></details>"+
       (window._deedMergeNote?"<p class='info' style='color:#7cc26b'>✂ "+window._deedMergeNote+"</p>":"");
     window._deedMergeNote=null;
     const ta=document.createElement("textarea");
     ta.placeholder="…thence N 47°23'10\" E a distance of 156.48 feet; thence along a curve to the right…";
     ta.value=prefill||"";
-    ta.style.cssText="width:100%;min-height:130px;background:#111;color:#ddd;border:1px solid #444;border-radius:6px;padding:10px;font-size:.85em";
+    ta.style.cssText="width:100%;min-height:120px;background:var(--surface);color:var(--text);border:1px solid var(--border2);border-radius:10px;padding:10px;font-size:.85em";
     modal.appendChild(ta);
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk("📄 Open a PDF of the deed","blue",()=>{
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b);return b;};
+    // 4.7.28: the main action sits directly under the box (it was the 4th button, below the fold)
+    const _readBtn=mk("Read the calls →","ok",()=>{});
+    mk("📄 Open a PDF of the deed","",()=>{
       const prev=ta.value.trim();
       const inp=document.createElement("input");
       inp.type="file";inp.accept="application/pdf,.pdf";
       inp.onchange=()=>{ if(inp.files&&inp.files[0]){close();_deedFromPdf(inp.files[0],prev);} };
       inp.click();
     });
-    mk("📄 Open a .txt file","blue",()=>{
+    mk("📄 Open a .txt file","",()=>{
       const prev=ta.value.trim();
       const inp=document.createElement("input");
       inp.type="file";inp.accept=".txt,text/plain";
@@ -12067,14 +12260,14 @@ function _deedPasteModal(prefill){
       inp.onchange=()=>{ if(inp.files&&inp.files[0]){close();_deedOcr(inp.files[0],prev);} };
       inp.click();
     });
-    mk("Read the calls →","ok",()=>{
+    _readBtn.onclick=()=>{
       const figs=parseDeedFigures(ta.value);
       if(!figs.length){alert("No survey calls found — is the description text in the box?");return;}
       close();
       if(_deedAppendMode){_deedReviewFigures(figs);}
       else if(figs.length===1&&figs[0].kind==="boundary")_deedReview(figs[0].calls);
       else _deedReviewFigures(figs);
-    });
+    };
     mk("Cancel","",()=>{
       _deedAppendMode=false;window._deedPendingRecordName=null;
       close();
@@ -14272,7 +14465,7 @@ function plotPoints(extCtx,extW,extH){
       const mly=Y(conn.centerN+conn.R*Math.sin(midAngle));
       if(sR>30){
         ctx.font="bold 10px 'Courier New',monospace";
-        const lbl="R:"+conn.R.toFixed(2)+units+" L:"+conn.arcLen.toFixed(2)+units;
+        const lbl="R:"+conn.R.toFixed(2)+_dU()+" L:"+conn.arcLen.toFixed(2)+_dU();
         const lw=ctx.measureText(lbl).width;
         ctx.fillStyle=lightMode?"rgba(255,255,255,.92)":"rgba(8,11,20,.78)";ctx.fillRect(mlx-lw/2-3,mly-9,lw+6,14);
         ctx.fillStyle=lightMode?"#000000":"#3ecf74";ctx.textAlign="center";ctx.textBaseline="middle";
@@ -14300,7 +14493,7 @@ function plotPoints(extCtx,extW,extH){
     if(linePx>60){
       const hd=dist2D(from,to);
       const az=azimuth(from,to);
-      const distLbl=hd.toFixed(2)+units;
+      const distLbl=hd.toFixed(2)+_dU();
       const azLbl=fmtBrg(az);
       const mx=(sx1+sx2)/2, my=(sy1+sy2)/2;
       let angle=Math.atan2(sy2-sy1,sx2-sx1);
@@ -14399,7 +14592,7 @@ function plotPoints(extCtx,extW,extH){
           dispDesc=/COMMENCE/i.test(dispDesc)?"Commence":("Tie"+(tm&&tm[1]?" "+tm[1]:""));
         }
         if(dispDesc&&viewScale>0.6){
-          ctx.fillStyle=isTiePt?"#ffe66d":(lightMode?"#000000":"#9ab0c8");
+          ctx.fillStyle=isTiePt?(lightMode?_lmInk("#ffe66d"):"#ffe66d"):(lightMode?"#000000":"#9ab0c8");
           ctx.font=`${descFontSize}px 'Courier New',monospace`;
           ctx.fillText(dispDesc,lx,ly+descFontSize+1);
         }
@@ -14612,13 +14805,13 @@ function plotPoints(extCtx,extW,extH){
         let sweep=(s.dir==="ccw")?(sB-eB):(eB-sB);
         sweep=((sweep%360)+360)%360;
         const arcLen=s.R*sweep*Math.PI/180;
-        labels.push({t1:"\u2312 "+arcLen.toFixed(2)+units,
+        labels.push({t1:"\u2312 "+arcLen.toFixed(2)+_dU(),
           t2:"R="+Number(s.R).toFixed(2)+"  "+fmtBrg(_plBearing(A.E,A.N,B.E,B.N)),
           ax,ay,bx,by,px:Math.hypot(bx-ax,by-ay)});
       } else {
         ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
         const hd=Math.hypot(B.E-A.E,B.N-A.N);
-        labels.push({t1:hd.toFixed(2)+units,t2:fmtBrg(_plBearing(A.E,A.N,B.E,B.N)),
+        labels.push({t1:hd.toFixed(2)+_dU(),t2:fmtBrg(_plBearing(A.E,A.N,B.E,B.N)),
           ax,ay,bx,by,px:Math.hypot(bx-ax,by-ay)});
       }
     }
@@ -14811,14 +15004,25 @@ function plotPoints(extCtx,extW,extH){
         // halo: dark outline under the colored text so labels stay readable
         // over bright imagery. Size scales with the segment's on-screen
         // length so zooming in grows the labels (10px floor, 20px cap).
-        const fsFor=len=>Math.max(10,Math.min(20,len/16));
+        // 4.7.28: capped at 13px (was 20) so record labels match point labels
+        const fsFor=len=>Math.max(10,Math.min(13,len/18));
         const txt=(t,x,y,fs)=>{ctx.font="bold "+fs+"px 'Courier New',monospace";
           ctx.lineWidth=Math.max(3,fs*0.32);ctx.lineJoin="round";
-          ctx.strokeStyle="rgba(0,0,0,.85)";ctx.strokeText(t,x,y);ctx.fillText(t,x,y);};
+          // 4.7.28: light mode gets a white halo and darkened ink (neon on white was unreadable)
+          if(lightMode){ctx.fillStyle=_lmInk(ctx.fillStyle);ctx.strokeStyle="rgba(255,255,255,.92)";}
+          else ctx.strokeStyle="rgba(0,0,0,.85)";
+          ctx.strokeText(t,x,y);ctx.fillText(t,x,y);};
+        // figure centre on screen — course labels are pushed OUTSIDE the figure
+        const figC=(()=>{let a=0,b=0,n=0;(g.verts||[]).forEach(v=>{a+=X(v.E);b+=Y(v.N);n++;});return n?{x:a/n,y:b/n}:null;})();
         // Find a nearby screen-space home for a rotated two-line course label.
         // Candidates move perpendicular to the course first, preserving a
         // strong visual association with the line. If all nearby slots are
         // occupied, use the least-bad outer slot instead of hiding the call.
+        /* 4.7.28: labels used to try ON the line, then up to 3.5 label-heights
+           either side — so a crowded course's call could land beside the
+           NEXT line over and read as belonging to it. Now: hug the line,
+           outside the figure first, at most ~1.9 label-heights away; if every
+           slot is taken, overlap at the nearest outside slot rather than drift. */
         const placeCourseLabel=(t1,t2,cx,cy,ang,fs,slen)=>{
           ctx.font="bold "+fs+"px 'Courier New',monospace";
           const W=Math.max(ctx.measureText(t1).width,ctx.measureText(t2).width)+8;
@@ -14826,14 +15030,15 @@ function plotPoints(extCtx,extW,extH){
           const BW=ca*W+sa*H, BH=sa*W+ca*H;
           const nx=-Math.sin(ang),ny=Math.cos(ang);
           const step=fs*2.15;
-          const offsets=[0,step,-step,step*2,-step*2,step*3,-step*3];
+          const out=(figC&&(nx*(cx-figC.x)+ny*(cy-figC.y))<0)?-1:1;
+          const offsets=[out*step,-out*step,out*step*1.9,-out*step*1.9];
           let pick=null;
           for(const off of offsets){
             const x=cx+nx*off,y=cy+ny*off;
             const b={l:x-BW/2,r:x+BW/2,t:y-BH/2,b:y+BH/2};
             if(!_annoOverlaps(b)){pick={x,y,b};break;}
           }
-          if(!pick){const off=step*3.5;const x=cx+nx*off,y=cy+ny*off;pick={x,y,b:{l:x-BW/2,r:x+BW/2,t:y-BH/2,b:y+BH/2}};}
+          if(!pick){const off=out*step;const x=cx+nx*off,y=cy+ny*off;pick={x,y,b:{l:x-BW/2,r:x+BW/2,t:y-BH/2,b:y+BH/2}};}
           _annoClaim(pick.b);
           ctx.save();ctx.translate(pick.x,pick.y);ctx.rotate(ang);
           txt(t1,0,-(fs+1),fs);txt(t2,0,fs+1,fs);ctx.restore();
@@ -16174,7 +16379,7 @@ const HELP_TOPICS = [
     body:`<h3>Units</h3>
 <p>Set feet or meters in <strong>Project → Settings</strong>. Switching offers a choice: <strong>convert</strong> every stored value (coordinates, elevations, distances, radii, HI/TH, prism constant) using either the International foot (0.3048 m) or US Survey foot (1200/3937 m), or <strong>relabel only</strong>, keeping the numbers as-is. Conversions are undoable.</p>
 <h3>2D vs 3D Mode</h3>
-<p>Toggle at the top of the screen. In 2D mode shots use azimuth + horizontal distance only. In 3D mode you also enter a vertical angle and the app computes elevation.</p>
+<p>Tap the <strong>2D/3D badge</strong> at the top of the screen (it asks before switching), or use <strong>Field → Survey Mode</strong> or <strong>Project → Settings</strong>. In 2D mode shots use azimuth + horizontal distance only. In 3D mode you also enter a vertical angle and the app computes elevation.</p>
 <h3>Bearing Display</h3>
 <p><strong>Project → Settings → Bearing Display</strong> toggles between Azimuth (0–360°) and Quadrant bearings (N 45°30'00" E). Affects all results and plot annotations. Input is always azimuth in DDD.MMSS.</p>
 <h3>Display Mode</h3>
@@ -16232,7 +16437,7 @@ const HELP_TOPICS = [
 <li><strong>Horiz Dist</strong> — horizontal distance from instrument</li>
 </ul>
 <h3>Connection Style</h3>
-<p>Choose Solid, Dashed, or None at the bottom of the form. Default is None.</p>
+<p>Choose Solid, Dash, or None in the row just above the keypad. Default is None. Tap <strong>✕</strong> at the top of the form to cancel a shot.</p>
 <div class="tip">Description carries forward from the last shot — handy when shooting many points with the same code in a row.</div>`},
 
   { id:"shot-3d", section:"Shots", title:"Taking a 3D Shot",
@@ -16252,7 +16457,7 @@ const HELP_TOPICS = [
   { id:"shot-offset", section:"Shots", title:"Shot Offsets",
     preview:"Lateral and vertical offset from the shot position",
     body:`<h3>Shot Offsets</h3>
-<p>Below the distance fields in the shot form:</p>
+<p>Tap <strong>Offsets ▸</strong> at the top of the shot form to open them:</p>
 <ul>
 <li><strong>Lat Offset</strong> — lateral shift perpendicular to shot azimuth. Positive = right, negative = left.</li>
 <li><strong>Vert Offset</strong> (3D only) — vertical shift added to computed elevation. Positive = up, negative = down.</li>
@@ -17069,7 +17274,7 @@ function _helpGuess(){
 
   // ── Not saved recently ────────────────────────────────────────
   if(ptCount>8&&connCount>3)
-    return {text:"Good amount of data collected. Consider saving a CSV backup — More → Save CSV to Folder.",topic:"save"};
+    return {text:"Good amount of data collected. Consider saving a CSV backup — Project → Export → CSV.",topic:"save"};
 
   // ── Generic active job ────────────────────────────────────────
   if(hasShots&&connCount>0)
@@ -17262,10 +17467,12 @@ function renderDrawerTab(tab){
   document.querySelectorAll(".drawer-tabs button").forEach(b=>b.classList.toggle("active",b.dataset.dtab===_drawerTab));
   const body=document.getElementById("drawerBody");body.innerHTML="";
   if(_drawerTab==="overview"){
-    _drawerSection(body,"Current job");
-    _drawerItem(body,"F","Field workspace","Shots, occupations and field data",()=>{closeProjectDrawer();openWorkspace("field")});
-    _drawerItem(body,"R","Records workspace","Deeds, parcels and record assembly",()=>{closeProjectDrawer();openWorkspace("records")});
-    _drawerItem(body,"M","Map workspace","Imagery, GPS and display layers",()=>{closeProjectDrawer();openWorkspace("map")});
+    // 4.7.28: the three workspace shortcuts duplicated the bottom bar — the
+    // drawer now holds the job itself
+    _drawerSection(body,"This job");
+    _drawerItem(body,"J","Switch job","Job Manager · "+_jobIndex().length+" saved",()=>{closeProjectDrawer();closeAllModals();_showJobScreen()});
+    _drawerItem(body,"✎","Rename job",jobName||"Untitled job",()=>{closeProjectDrawer();alphaInput("Job Name:",jobName,jn=>{if(jn){jobName=jn;saveData();}})});
+    _drawerItem(body,"⚙","Settings",units+" · "+surveyMode+" · "+(bearingMode==="quad"?"quadrant bearings":"azimuths"),()=>{closeProjectDrawer();settingsMenu()});
     _drawerSection(body,"Quick actions");
     _drawerItem(body,"+","Take shot",currentPoint?"Occupied #"+currentPoint.Point:"No occupied point",()=>{closeProjectDrawer();takeShot()});
     _drawerItem(body,"◎","Fit all geometry","Reset plot extent",()=>{closeProjectDrawer();resetPlot()});
@@ -17321,7 +17528,7 @@ function openWorkspace(name){
   const add=(t,s,c,f,b)=>_wsCard2(body,t,s,c,f,b);
   if(name==="field"){
     _wsGroup2(body,"Observation");add("Take Shot","Store a 2D or 3D observation","primary",takeShot,currentPoint?"OCC "+currentPoint.Point:null);add("Occupy Point","Move the instrument setup","blue",occupyPoint);add("Set Station","Enter known station coordinates","",setKnownStation);add("Check Shot","Compare against a known point","",checkShot);add("Two-Face Shot","Reduce Face 1 and Face 2","",twoFaceShot);add("Atmospheric PPM","Temperature and pressure correction",_ppmEnabled?"primary":"",atmosphericSetup,_ppmEnabled?"ON":null);
-    _wsGroup2(body,"Instrument");add("Instrument Height HI",currentPoint?("Occupied #"+currentPoint.Point+" · "+(currentPoint.ih||0).toFixed(3)+" "+units):"Occupy a point first","",()=>_setupTapHI(),currentPoint&&!(currentPoint.ih>0)&&surveyMode==="3D"?"CHECK":null);add("Prism Constant",(_prismPresetMm()===0?"0":_prismPresetMm()===-30?"-30 mm":_prismPresetMm()===30?"+30 mm":(prismConstant||0).toFixed(4)+" "+units),"",()=>_setupTapPrism());add("Grid Scale CSF",(combinedScaleFactor>0?combinedScaleFactor:1).toFixed(8)+(combinedScaleFactor===1?" · off":""),"",()=>_setupTapCSF());
+    _wsGroup2(body,"Instrument");add("Survey Mode: "+surveyMode,surveyMode==="3D"?"Slope/HD + zenith, computes elevations":"Azimuth + horizontal distance","",_modeSwitchPrompt);add("Instrument Height HI",currentPoint?("Occupied #"+currentPoint.Point+" · "+(currentPoint.ih||0).toFixed(3)+" "+units):"Occupy a point first","",()=>_setupTapHI(),currentPoint&&!(currentPoint.ih>0)&&surveyMode==="3D"?"CHECK":null);add("Prism Constant",(_prismPresetMm()===0?"0":_prismPresetMm()===-30?"-30 mm":_prismPresetMm()===30?"+30 mm":(prismConstant||0).toFixed(4)+" "+units),"",()=>_setupTapPrism());add("Grid Scale CSF",(combinedScaleFactor>0?combinedScaleFactor:1).toFixed(8)+(combinedScaleFactor===1?" · off":""),"",()=>_setupTapCSF());
     _wsGroup2(body,"Field data");add("Point List","Review and edit stored points","",pointListMenu,points.length+" PTS");add("Shift Elevations","Tie assumed elevations to a benchmark","",elevationShift);add("Flag Point","Mark control or questionable shots","",flagPoint);
   } else if(name==="records"){
     const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
