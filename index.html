@@ -6,17 +6,21 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.30">
+<meta name="application-name" content="ChainLink-v4.7.31">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.30</title>
+<title>ChainLink Survey v4.7.31</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://app.chainlinksurvey.com/">
+<!-- 4.7.31: real icon files so search results and browser tabs show the logo -->
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="ChainLink Survey">
 <meta property="og:title" content="ChainLink Survey — total station data collector on your phone">
@@ -1097,11 +1101,11 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
     Created by Michael P. Ross
   </div>
 
-  <div id="splashVersion">v3.8.0 · Built for total station work</div>
+  <div id="splashVersion" data-nosnippet>Built for total station work</div>
 </div>
 
-<div id="saveFailBanner" role="alert">
-  <div class="save-fail-msg">SAVE FAILED — storage full. Last good copy kept. Export CSV now.</div>
+<div id="saveFailBanner" role="alert" data-nosnippet>
+  <div class="save-fail-msg"></div>
   <button type="button" class="save-fail-csv" onclick="saveToFile()">Export CSV</button>
   <button type="button" class="save-fail-dismiss" onclick="_saveFailHide()">Dismiss</button>
 </div>
@@ -1313,7 +1317,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.30";
+const APP_VERSION = "4.7.31";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
