@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.33">
+<meta name="application-name" content="ChainLink-v4.7.34">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.33</title>
+<title>ChainLink Survey v4.7.34</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1317,7 +1317,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.33";
+const APP_VERSION = "4.7.34";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -10800,13 +10800,16 @@ function _deedBlunderReport(){
    plot result and the lock-in result — instead of only behind
    Deed Plotter → Diagnostics, where people may never look. */
 function _deedFlagSummary(){
-  const out={n:0,top:null,fig:null,rank:99};
-  if(!_deedPlot||!_deedPlot.figures||!_deedPlot.figures.length)return out;
+  if(!_deedPlot||!_deedPlot.figures||!_deedPlot.figures.length)return {n:0,top:null,fig:null,rank:99};
+  return _deedFlagCore(_deedPlot.figures,f=>(_deedPlot.rot||0)+(f.recordRot||0));
+}
+function _deedFlagCore(figs,rotOf){
+  const out={n:0,top:null,fig:null,rank:99,multi:figs.length>1};
   const order={repair:0,distance:1,angle:2,partial:3,acreage:4};
   const repairsBy=new Map();
-  _deedPlot.figures.forEach(f=>{
+  figs.forEach(f=>{
     if(!f.computed)return;
-    _deedBlunders(f,(_deedPlot.rot||0)+(f.recordRot||0)).filter(d=>d.sev!=="info").forEach(d=>{
+    _deedBlunders(f,rotOf(f)).filter(d=>d.sev!=="info").forEach(d=>{
       out.n++;
       if(d.code==="repair")repairsBy.set(f,(repairsBy.get(f)||0)+1);
       const r=(d.code in order)?order[d.code]:9;
@@ -10821,7 +10824,7 @@ function _deedFlagSummary(){
 }
 function _deedFlagRows(s){
   if(!s||!s.n||!s.top)return [];
-  const who=(_deedPlot.figures.length>1&&s.fig)?_esc(s.fig.name)+": ":"";
+  const who=(s.multi&&s.fig)?_esc(s.fig.name)+": ":"";
   const rows=[{lbl:"⚠ Likely cause:",val:who+_esc(s.top.msg)+(s.top.detail?" — "+_esc(s.top.detail):"")}];
   if(s.top.code==="repair"&&s.repairs>1)rows.push({lbl:"",val:s.repairs+" different single-course fixes would close it \u2014 compare them in Diagnostics."});
   rows.push({lbl:"",val:(s.n>1?(s.n-1)+" more finding"+(s.n===2?"":"s")+" in Diagnostics. ":"")+(s.fix?"Check it against the paper before applying.":"Nothing is changed for you \u2014 check it against the paper.")});
@@ -10842,9 +10845,7 @@ function _deedApplyFix(fig,d){
   const c=fig.calls[d.call];if(!c)return;
   const before=fig.computed?fig.computed.closeDist:null;
   if(typeof _takeSnapshot==="function")_takeSnapshot("Deed fix");
-  if(!c.record)c.record=JSON.parse(JSON.stringify({bearing:c.bearing||null,dist:c.dist,rawVal:c.rawVal==null?null:c.rawVal}));
-  Object.assign(c,JSON.parse(JSON.stringify(d.patch)));
-  c.corrected=d.what||"corrected";
+  _deedPatchCall(c,d);
   _deedRecompute();saveData();plotPoints();
   const g=fig.computed,U=units;
   const ac=(fig.statedAcres&&g)?_deedBlunders(fig,(_deedPlot.rot||0)+(fig.recordRot||0)).find(x=>x.code==="acreage"):null;
@@ -10856,6 +10857,28 @@ function _deedApplyFix(fig,d){
     {lbl:"",val:"The deed's own value is kept. The plot marks this course (corr)."}],
     [{txt:"\u21a9 Revert to record",cls:"",fn:()=>_deedRevertFixes()}]);
 }
+function _deedPatchCall(c,d){
+  if(!c.record)c.record=JSON.parse(JSON.stringify({bearing:c.bearing||null,dist:c.dist,rawVal:c.rawVal==null?null:c.rawVal}));
+  Object.assign(c,JSON.parse(JSON.stringify(d.patch)));
+  c.corrected=d.what||"corrected";
+}
+function _deedUnpatchCall(c){
+  if(!c||!c.corrected)return;
+  if(c.record){c.dist=c.record.dist;if(c.record.bearing)c.bearing=c.record.bearing;if(c.record.rawVal!=null)c.rawVal=c.record.rawVal;else delete c.rawVal;}
+  delete c.record;delete c.corrected;
+}
+/* 4.7.34: check the calls themselves, straight after they are read and
+   before anything is placed. Shape does not depend on placement, so the
+   figure is computed at an arbitrary origin with no swing. */
+function _deedPreCheck(calls,kind,statedAcres){
+  const f={kind:kind||"boundary",name:"Boundary",calls,pobE:0,pobN:0,
+    statedAcres:statedAcres||calls.statedAcres||null};
+  try{f.computed=computeDeed(calls,0,0,0);}catch(e){return null;}
+  if(!f.computed||!f.computed.verts||f.computed.verts.length<3)return null;
+  const s=_deedFlagCore([f],()=>0);
+  s.f=f;s.all=_deedBlunders(f,0);
+  return s;
+}
 function _deedCorrectedCount(){
   if(!_deedPlot||!_deedPlot.figures)return 0;
   return _deedPlot.figures.reduce((n,f)=>n+(f.calls||[]).filter(c=>c&&c.corrected).length,0);
@@ -10864,11 +10887,7 @@ function _deedRevertFixes(){
   if(!_deedPlot)return;
   const n=_deedCorrectedCount();if(!n)return;
   if(typeof _takeSnapshot==="function")_takeSnapshot("Revert deed fix");
-  _deedPlot.figures.forEach(f=>(f.calls||[]).forEach(c=>{
-    if(!c||!c.corrected)return;
-    if(c.record){c.dist=c.record.dist;if(c.record.bearing)c.bearing=c.record.bearing;if(c.record.rawVal!=null)c.rawVal=c.record.rawVal;else delete c.rawVal;}
-    delete c.record;delete c.corrected;
-  }));
+  _deedPlot.figures.forEach(f=>(f.calls||[]).forEach(c=>_deedUnpatchCall(c)));
   _deedRecompute();saveData();plotPoints();
   const s=_deedFlagSummary();
   showResult("\u21a9 Back to the record",[
@@ -11477,8 +11496,29 @@ function _deedReview(calls,opts){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>📜 "+(opts.title?opts.title+" — calls":"Review Calls")+"</h2><p class='info'>Parsed "+calls.length+" call"+(calls.length===1?"":"s")+". Check each against the deed — tap any to edit.</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b);return b;};
+    // 4.7.34: closure and Diagnostics on the calls, before any placement
+    const pc=(opts.kind==="easement")?null:_deedPreCheck(calls,opts.kind,opts.statedAcres);
+    if(pc){
+      const g=pc.f.computed,U=units,tol=U==="m"?0.15:0.5;
+      const box=document.createElement("div");box.className="result-box";
+      const row=(l,v)=>box.innerHTML+=`<span class="lbl">${l}</span>&nbsp;<span class="val">${v}</span><br>`;
+      row(g.closeDist<=tol?"\u2713 Closes:":"\u26a0 Misses by:",g.closeDist.toFixed(2)+" "+U+(g.precision?" (1:"+g.precision+")":""));
+      const ac=pc.all.find(d=>d.code==="acreage");
+      if(ac)row(ac.sev==="info"?"\u2713 Acreage:":"\u26a0 Acreage:",_esc(ac.msg));
+      _deedFlagRows(pc).forEach(r=>row(r.lbl,r.val));
+      modal.appendChild(box);
+      if(pc.fix)mk("\u270e Apply fix to course "+(pc.fix.call+1),"ok",()=>{
+        _deedPatchCall(calls[pc.fix.call],pc.fix);close();_deedReview(calls,window._deedRevOpts);});
+      if(pc.n)mk("\ud83d\udd0e Diagnostics \u2014 "+pc.n+" flagged","danger",()=>{
+        close();
+        const rows=pc.all.map(d=>({lbl:(d.sev==="error"?"\u26d4":d.sev==="warn"?"\u26a0":"\u2713")+" "+d.code+":",val:_esc(d.msg)+(d.detail?" \u2014 "+_esc(d.detail):"")}));
+        showResult("\ud83d\udd0e Deed Diagnostics",rows,[{txt:"\u2190 Back to the calls",cls:"ok",fn:()=>_deedReview(calls,window._deedRevOpts)}]);});
+    }
+    const nCorr=calls.filter(c=>c&&c.corrected).length;
+    if(nCorr)mk("\u21a9 Revert "+nCorr+" corrected course"+(nCorr===1?"":"s")+" to record","",()=>{
+      calls.forEach(c=>_deedUnpatchCall(c));close();_deedReview(calls,window._deedRevOpts);});
     calls.forEach((c,i)=>{
-      const b=mk(_deedCallLabel(c,i),c.type==="partial"?"danger":(c.tie?"":"blue"),()=>{
+      const b=mk(_deedCallLabel(c,i)+(c&&c.corrected?" (corr)":""),c.type==="partial"?"danger":(c.tie?"":"blue"),()=>{
         if(c.tie){
           confirmDialog("This looks like a commencement tie to the POINT OF BEGINNING and is excluded from the boundary. Include it as a boundary course instead?",yes=>{
             if(yes){c.tie=false;}
@@ -11720,7 +11760,7 @@ function _deedReviewFigures(figs){
       const good=f.calls.filter(c=>c.type!=="partial").length;
       mk((f.kind==="boundary"?"🟦 ":f.kind==="except"?"🟧 ":"🟪 ")+f.name+" — "+good+" call"+(good===1?"":"s"),
         "blue",()=>{close();
-          _deedReview(f.calls,{title:f.name,doneLabel:"✓ Done — back to figures",
+          _deedReview(f.calls,{title:f.name,kind:f.kind,statedAcres:f.statedAcres,doneLabel:"✓ Done — back to figures",
             onDone:()=>_deedReviewFigures(figs),
             removeFn:()=>{
               confirmDialog("Remove "+f.name+" entirely? (Use this for duplicates from overlapping photos.)",yes=>{
@@ -12730,7 +12770,7 @@ function deedPlotterMenu(){
           m2.innerHTML="<h2>Edit which figure?</h2>";
           _deedPlot.figures.forEach(f=>{
             const b=document.createElement("button");b.className="btn blue";b.textContent=f.name;
-            b.onclick=()=>{c2();_deedReview(f.calls,{title:f.name,doneLabel:"✓ Done",onDone:done.onDone,
+            b.onclick=()=>{c2();_deedReview(f.calls,{title:f.name,kind:f.kind,statedAcres:f.statedAcres,doneLabel:"✓ Done",onDone:done.onDone,
               removeFn:()=>{
                 confirmDialog("Remove "+f.name+" and its points entirely? (Use this for duplicate figures from overlapping photos.)",yes=>{
                   if(yes){
@@ -17193,7 +17233,7 @@ const HELP_TOPICS = [
   { id:"deed-blunder", section:"Deed Plotter", title:"Diagnostics: Why It Doesn't Close",
     preview:"The app reads the misclosure and names the likely cause",
     body:`<h3>Where It Is</h3>
-<p>When a deed is plotted or locked in and something is flagged, the result card names the <strong>likely cause</strong> right there, with a <strong>🔎 Diagnostics</strong> button for the full list. When exactly one single-course change closes the figure, the card also offers <strong>✎ Apply fix</strong>. Applying it keeps the deed's own value, marks the course <strong>(corr)</strong> on the plot, and <strong>↩ Revert to record</strong> (on the card, or in the Deed Plotter) puts it back. Later, open the plotted deed (Records → Open Deed Plotter): <strong>🔎 Diagnostics</strong> sits at the top, showing the number of flagged items or the word <strong>clear</strong>. Geometry is always plotted whether it closes or not — this layer explains the misclosure rather than hiding it.</p>
+<p>Diagnostics first runs on the <strong>Review Calls</strong> list, right after the deed is read and before anything is placed: the closure, the acreage check and the likely cause sit at the top, with <strong>✎ Apply fix</strong> when one single-course change closes it, so you plot the corrected shape. When a deed is plotted or locked in and something is flagged, the result card names the <strong>likely cause</strong> right there, with a <strong>🔎 Diagnostics</strong> button for the full list. When exactly one single-course change closes the figure, the card also offers <strong>✎ Apply fix</strong>. Applying it keeps the deed's own value, marks the course <strong>(corr)</strong> on the plot, and <strong>↩ Revert to record</strong> (on the card, or in the Deed Plotter) puts it back. Later, open the plotted deed (Records → Open Deed Plotter): <strong>🔎 Diagnostics</strong> sits at the top, showing the number of flagged items or the word <strong>clear</strong>. Geometry is always plotted whether it closes or not — this layer explains the misclosure rather than hiding it.</p>
 <h3>What It Checks</h3>
 <ul>
 <li><strong>Courses that couldn't be read</strong> — reported first, because they bound everything else. A dropped course makes every other finding provisional.</li>
