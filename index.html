@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.32">
+<meta name="application-name" content="ChainLink-v4.7.33">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.32</title>
+<title>ChainLink Survey v4.7.33</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1317,7 +1317,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.32";
+const APP_VERSION = "4.7.33";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -10763,7 +10763,7 @@ function _deedBlunders(f,rotDeg){
       trials.forEach(t=>{
         const r=_deedTrial(calls,i,t.patch,f.pobE,f.pobN,rotDeg);
         if(r&&r.closeDist<Math.min(tol,g.closeDist*0.1))
-          best.push({sev:"error",code:"repair",call:i,gain:g.closeDist-r.closeDist,
+          best.push({sev:"error",code:"repair",call:i,gain:g.closeDist-r.closeDist,patch:t.patch,what:t.what,
             msg:"course "+(i+1)+" closes the deed if the "+t.what.split(" ")[0]+" is corrected",
             detail:t.what+" \u2014 misclosure "+g.closeDist.toFixed(2)+" \u2192 "+r.closeDist.toFixed(2)+" "+U});
       });
@@ -10803,25 +10803,78 @@ function _deedFlagSummary(){
   const out={n:0,top:null,fig:null,rank:99};
   if(!_deedPlot||!_deedPlot.figures||!_deedPlot.figures.length)return out;
   const order={repair:0,distance:1,angle:2,partial:3,acreage:4};
+  const repairsBy=new Map();
   _deedPlot.figures.forEach(f=>{
     if(!f.computed)return;
     _deedBlunders(f,(_deedPlot.rot||0)+(f.recordRot||0)).filter(d=>d.sev!=="info").forEach(d=>{
       out.n++;
+      if(d.code==="repair")repairsBy.set(f,(repairsBy.get(f)||0)+1);
       const r=(d.code in order)?order[d.code]:9;
       if(r<out.rank){out.rank=r;out.top=d;out.fig=f;}
     });
   });
+  // a fix is offered only when it is the ONE single-course change that closes
+  // the figure; competing repairs are for a person to weigh in Diagnostics
+  out.repairs=out.fig?(repairsBy.get(out.fig)||0):0;
+  out.fix=(out.top&&out.top.code==="repair"&&out.top.patch&&out.repairs===1)?out.top:null;
   return out;
 }
 function _deedFlagRows(s){
   if(!s||!s.n||!s.top)return [];
   const who=(_deedPlot.figures.length>1&&s.fig)?_esc(s.fig.name)+": ":"";
   const rows=[{lbl:"⚠ Likely cause:",val:who+_esc(s.top.msg)+(s.top.detail?" — "+_esc(s.top.detail):"")}];
-  rows.push({lbl:"",val:(s.n>1?(s.n-1)+" more finding"+(s.n===2?"":"s")+" in Diagnostics. ":"")+"Nothing is changed for you — check it against the paper."});
+  if(s.top.code==="repair"&&s.repairs>1)rows.push({lbl:"",val:s.repairs+" different single-course fixes would close it \u2014 compare them in Diagnostics."});
+  rows.push({lbl:"",val:(s.n>1?(s.n-1)+" more finding"+(s.n===2?"":"s")+" in Diagnostics. ":"")+(s.fix?"Check it against the paper before applying.":"Nothing is changed for you \u2014 check it against the paper.")});
   return rows;
 }
 function _deedFlagAction(s){
-  return (s&&s.n)?[{txt:"🔎 Diagnostics — "+s.n+" flagged",cls:"danger",fn:_deedBlunderReport}]:[];
+  if(!s||!s.n)return [];
+  const out=[];
+  if(s.fix){const f=s.fig,d=s.fix;out.push({txt:"\u270e Apply fix to course "+(d.call+1),cls:"ok",fn:()=>_deedApplyFix(f,d)});}
+  out.push({txt:"\ud83d\udd0e Diagnostics \u2014 "+s.n+" flagged",cls:"danger",fn:_deedBlunderReport});
+  return out;
+}
+/* 4.7.33: apply a single verified repair on request. The deed's own value is
+   kept on the call (c.record) and the course is marked c.corrected, so the
+   plot labels it and Revert restores the record exactly. */
+function _deedApplyFix(fig,d){
+  if(!_deedPlot||!fig||!d||!d.patch)return;
+  const c=fig.calls[d.call];if(!c)return;
+  const before=fig.computed?fig.computed.closeDist:null;
+  if(typeof _takeSnapshot==="function")_takeSnapshot("Deed fix");
+  if(!c.record)c.record=JSON.parse(JSON.stringify({bearing:c.bearing||null,dist:c.dist,rawVal:c.rawVal==null?null:c.rawVal}));
+  Object.assign(c,JSON.parse(JSON.stringify(d.patch)));
+  c.corrected=d.what||"corrected";
+  _deedRecompute();saveData();plotPoints();
+  const g=fig.computed,U=units;
+  const ac=(fig.statedAcres&&g)?_deedBlunders(fig,(_deedPlot.rot||0)+(fig.recordRot||0)).find(x=>x.code==="acreage"):null;
+  showResult("\u270e Fix applied",[
+    {lbl:"Course "+(d.call+1)+":",val:_esc(c.corrected)},
+    ...(g?[{lbl:"Closure:",val:(before!=null?before.toFixed(2)+" \u2192 ":"")+g.closeDist.toFixed(2)+" "+U+(g.precision?" (1:"+g.precision+")":"")}]:[]),
+    ...(g?[{lbl:"Area:",val:_deedAc(_deedArea(g)).toFixed(3)+" acres"}]:[]),
+    ...(ac?[{lbl:ac.sev==="info"?"\u2713 Acreage:":"\u26a0 Acreage:",val:_esc(ac.msg)}]:[]),
+    {lbl:"",val:"The deed's own value is kept. The plot marks this course (corr)."}],
+    [{txt:"\u21a9 Revert to record",cls:"",fn:()=>_deedRevertFixes()}]);
+}
+function _deedCorrectedCount(){
+  if(!_deedPlot||!_deedPlot.figures)return 0;
+  return _deedPlot.figures.reduce((n,f)=>n+(f.calls||[]).filter(c=>c&&c.corrected).length,0);
+}
+function _deedRevertFixes(){
+  if(!_deedPlot)return;
+  const n=_deedCorrectedCount();if(!n)return;
+  if(typeof _takeSnapshot==="function")_takeSnapshot("Revert deed fix");
+  _deedPlot.figures.forEach(f=>(f.calls||[]).forEach(c=>{
+    if(!c||!c.corrected)return;
+    if(c.record){c.dist=c.record.dist;if(c.record.bearing)c.bearing=c.record.bearing;if(c.record.rawVal!=null)c.rawVal=c.record.rawVal;else delete c.rawVal;}
+    delete c.record;delete c.corrected;
+  }));
+  _deedRecompute();saveData();plotPoints();
+  const s=_deedFlagSummary();
+  showResult("\u21a9 Back to the record",[
+    {lbl:"Restored:",val:n+" course"+(n===1?"":"s")+" as the deed reads"},
+    ...(_deedPlot.computed?[{lbl:"Closure:",val:_deedPlot.computed.closeDist.toFixed(2)+" "+units}]:[]),
+    ..._deedFlagRows(s)],_deedFlagAction(s));
 }
 
 /* Device-appropriate press verb for prompts */
@@ -12612,6 +12665,7 @@ function deedPlotterMenu(){
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     (function(){const n=_deedPlot.figures.reduce((a,f)=>a+_deedBlunders(f,(_deedPlot.rot||0)+(f.recordRot||0)).filter(d=>d.sev!=="info").length,0);
       mk("\ud83d\udd0e Diagnostics"+(n?" \u2014 "+n+" flagged":" \u2014 clear"),n?"danger":"",()=>{close();_deedBlunderReport();});})();
+    if(_deedCorrectedCount())mk("\u21a9 Revert "+_deedCorrectedCount()+" corrected course"+(_deedCorrectedCount()===1?"":"s")+" to record","",()=>{close();_deedRevertFixes();});
     // swing slider — rotate record calls to fit found monuments
     const w=document.createElement("div");
     w.innerHTML="<div class='input-label'>Swing (±3° fine)</div>";
@@ -15107,7 +15161,8 @@ function plotPoints(extCtx,extW,extH){
           const dd=Math.hypot(v.E-u.E,v.N-u.N);
           ctx.fillStyle=st.col;
           const fs=fsFor(slen);
-          placeCourseLabel(fmtBrg(az),dd.toFixed(2)+unitSuf,(sx1+sx2)/2,(sy1+sy2)/2,ang,fs,slen);
+          const cc=(g.usable||[])[i-1];
+          placeCourseLabel(fmtBrg(az),dd.toFixed(2)+unitSuf+(cc&&cc.corrected?" (corr)":""),(sx1+sx2)/2,(sy1+sy2)/2,ang,fs,slen);
         });
         g.arcs.forEach(a=>{
           const sx1=X(a.sE),sy1=Y(a.sN),sx2=X(a.eE),sy2=Y(a.eN);
@@ -17138,7 +17193,7 @@ const HELP_TOPICS = [
   { id:"deed-blunder", section:"Deed Plotter", title:"Diagnostics: Why It Doesn't Close",
     preview:"The app reads the misclosure and names the likely cause",
     body:`<h3>Where It Is</h3>
-<p>When a deed is plotted or locked in and something is flagged, the result card names the <strong>likely cause</strong> right there, with a <strong>🔎 Diagnostics</strong> button for the full list. Later, open the plotted deed (Records → Open Deed Plotter): <strong>🔎 Diagnostics</strong> sits at the top, showing the number of flagged items or the word <strong>clear</strong>. Geometry is always plotted whether it closes or not — this layer explains the misclosure rather than hiding it.</p>
+<p>When a deed is plotted or locked in and something is flagged, the result card names the <strong>likely cause</strong> right there, with a <strong>🔎 Diagnostics</strong> button for the full list. When exactly one single-course change closes the figure, the card also offers <strong>✎ Apply fix</strong>. Applying it keeps the deed's own value, marks the course <strong>(corr)</strong> on the plot, and <strong>↩ Revert to record</strong> (on the card, or in the Deed Plotter) puts it back. Later, open the plotted deed (Records → Open Deed Plotter): <strong>🔎 Diagnostics</strong> sits at the top, showing the number of flagged items or the word <strong>clear</strong>. Geometry is always plotted whether it closes or not — this layer explains the misclosure rather than hiding it.</p>
 <h3>What It Checks</h3>
 <ul>
 <li><strong>Courses that couldn't be read</strong> — reported first, because they bound everything else. A dropped course makes every other finding provisional.</li>
