@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.34">
+<meta name="application-name" content="ChainLink-v4.7.35">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.34</title>
+<title>ChainLink Survey v4.7.35</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1317,7 +1317,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.34";
+const APP_VERSION = "4.7.35";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -10503,7 +10503,7 @@ function computeDeed(calls,pobE,pobN,rotDeg,_turnSide){
   }
   let E=pobE,N=pobN,tangent=null;
   const verts=[{E,N}], arcs=[], spirals=[], areaVerts=[{E,N}];
-  const usable=calls.filter(c=>(c.type==="line"||c.type==="curve"||c.type==="spiral")&&!c.tie);
+  const usable=calls.filter(c=>(c.type==="line"||c.type==="curve"||c.type==="spiral")&&!c.tie&&!c.omit);
   usable.forEach(c=>{
     if(c.type==="line"){
       let az;
@@ -10686,6 +10686,135 @@ function _deedDigitVariants(v){
   if(m)out.add(parseFloat(m[2]+(s.slice(m[0].length)||"")));
   return [...out];
 }
+/* ── 4.7.35 mistake search ───────────────────────────────────────────────
+   Every candidate is a concrete re-reading of the record, run as a full
+   traverse. One that closes the figure is reported with exactly what was
+   changed. When the deed recites its acreage, that is the independent
+   witness that breaks ties between candidates that close equally well. */
+function _deedTrialMulti(calls,patches,insert,pobE,pobN,rotDeg){
+  let trial=calls.map((c,i)=>{const p=patches.find(x=>x.call===i);return p?{...c,...p.patch}:c;});
+  if(insert){trial=trial.slice();trial.splice(insert.at,0,insert.call);}
+  try{ return computeDeed(trial,pobE,pobN,rotDeg); }catch(e){ return null; }
+}
+function _deedBrgStr(b){ return _deedAzToBearingStr(_deedBearingToAz(b)); }
+function _deedAzToBrgObj(az){
+  az=((az%360)+360)%360;let q1,q2,a;
+  if(az<=90){q1="N";q2="E";a=az;}else if(az<=180){q1="S";q2="E";a=180-az;}
+  else if(az<=270){q1="S";q2="W";a=az-180;}else{q1="N";q2="W";a=360-az;}
+  const p=_dmsParts(a);return {q1,q2,deg:p.d,min:p.m,sec:p.s};
+}
+/* An angle's typical misreadings: digits swapped, one field off by 1 or 10,
+   minutes/seconds swapped, degrees/minutes swapped, and (for bearings) the
+   angle taken from the wrong axis — N 30° E written for N 60° E. */
+function _deedAngleVariants(D,M,S,maxDeg,withComplement){
+  const out=[],seen=new Set([D+"/"+M+"/"+S]);
+  const add=(d,m,s,why)=>{
+    if(d==null||m==null||s==null)return;
+    if(!(d>=0&&d<=maxDeg&&m>=0&&m<60&&s>=0&&s<60))return;
+    if(d===maxDeg&&(m||s))return;
+    const k=d+"/"+m+"/"+s;if(seen.has(k))return;seen.add(k);out.push({d,m,s,why});
+  };
+  const swap2=v=>{const t=String(v).padStart(2,"0");return (t.length!==2||t[0]===t[1])?null:+(t[1]+t[0]);};
+  add(swap2(D),M,S,"degree digits swapped");
+  add(D,swap2(M),S,"minute digits swapped");
+  if(S)add(D,M,swap2(S),"second digits swapped");
+  [1,-1,10,-10].forEach(k=>{
+    const n=Math.abs(k);
+    add(D+k,M,S,"degrees off by "+n);
+    add(D,M+k,S,"minutes off by "+n);
+    if(S)add(D,M,S+k,"seconds off by "+n);
+  });
+  if(S!==M)add(D,S,M,"minutes and seconds swapped");
+  if(D!==M)add(M,D,S,"degrees and minutes swapped");
+  if(withComplement){
+    const tot=D*3600+M*60+S;
+    if(tot>0&&tot<324000){const c=324000-tot;add(Math.floor(c/3600),Math.floor((c%3600)/60),c%60,"angle taken from the wrong axis");}
+  }
+  return out;
+}
+function _deedBearingVariants(b){
+  if(!b||b.card||b.q1==null||b._wcb||b.deg==null)return [];
+  return _deedAngleVariants(b.deg,b.min||0,Math.round(b.sec||0),90,true).map(v=>{
+    const n={...b,deg:v.d,min:v.m,sec:v.s};delete n._az;return {b:n,why:v.why};
+  });
+}
+/* Distance slips: transposed digits, a dropped leading digit, a misplaced
+   decimal point, one digit off by one, and a number in the wrong unit. */
+function _deedDistVariants(c){
+  const out=[];if(!(c.dist>0))return out;
+  const rv=(typeof c.rawVal==="number"&&isFinite(c.rawVal))?c.rawVal:null;
+  const base=rv!=null?rv:+c.dist.toFixed(2), scale=c.dist/base;
+  const dec=(String(base).split(".")[1]||"").length;
+  const fx=v=>+v.toFixed(Math.max(dec,0));
+  const push=(n,why,extra)=>{if(!(n>0)||Math.abs(n-base)<1e-9)return;
+    const p={dist:n*scale};if(rv!=null)p.rawVal=n;Object.assign(p,extra||{});out.push({patch:p,shown:n,why});};
+  _deedDigitVariants(base).forEach(n=>push(n,"digits transposed"));
+  push(fx(base*10),"decimal point misplaced");push(+(base/10).toFixed(dec+1),"decimal point misplaced");
+  const s=String(base);
+  for(let i=0;i<s.length;i++){
+    if(!/[0-9]/.test(s[i]))continue;
+    [1,-1].forEach(k=>{const d=+s[i]+k;if(d<0||d>9)return;
+      if(i===0&&d===0)return;
+      push(parseFloat(s.slice(0,i)+d+s.slice(i+1)),"one digit off by one");});
+  }
+  if(rv!=null){
+    const toJob=(typeof units!=="undefined"&&units==="m")?1/3.280833333:1;
+    const have=(c.unit||"FEET").toUpperCase();
+    [["CHAINS",66],["RODS",16.5],["LINKS",0.66],["VARAS",33.3333333/12],["METERS",3.280833333],["FEET",1]].forEach(([nm,f])=>{
+      if(have.indexOf(nm.slice(0,3))===0)return;
+      const nd=rv*f*toJob;if(Math.abs(nd-c.dist)/c.dist<0.001)return;
+      out.push({patch:{dist:nd,unit:nm},shown:rv+" "+nm.toLowerCase(),why:"number is in "+nm.toLowerCase()+", not "+have.toLowerCase()});
+    });
+  }
+  return out;
+}
+function _deedCurveVariants(c){
+  const out=[];
+  if(c.dir)out.push({patch:{dir:c.dir==="L"?"R":"L"},why:"curve turns "+(c.dir==="L"?"RIGHT":"LEFT")+", not "+(c.dir==="L"?"LEFT":"RIGHT")});
+  if(c.arc&&!c.chordD&&c.radius&&c.delta==null)out.push({patch:{arc:null,chordD:c.arc},why:"the "+c.arc+" figure is the chord length, not the arc"});
+  if(c.chordD&&!c.arc&&c.radius&&c.delta==null)out.push({patch:{chordD:null,arc:c.chordD},why:"the "+c.chordD+" figure is the arc length, not the chord"});
+  [["radius","radius"],["arc","arc"],["chordD","chord"]].forEach(([k,nm])=>{
+    if(c[k]>0)_deedDigitVariants(c[k]).forEach(n=>out.push({patch:{[k]:n},why:nm+" read as "+n+" instead of "+c[k]}));
+  });
+  if(c.chordB&&!c.chordB.card){
+    ["ns","ew","both"].forEach(m=>{const b=_deedFlipBearing(c.chordB,m);if(b)out.push({patch:{chordB:b},why:"chord bearing read as "+_deedBrgStr(b)+" instead of "+_deedBrgStr(c.chordB)});});
+    _deedBearingVariants(c.chordB).forEach(v=>out.push({patch:{chordB:v.b},why:"chord bearing "+v.why+": "+_deedBrgStr(v.b)+" instead of "+_deedBrgStr(c.chordB)}));
+  }
+  return out;
+}
+/* A curve's own figures must agree with each other: arc = R·Δ and
+   chord = 2R·sin(Δ/2). A disagreement points at a misread curve call even
+   when the deed happens to close. */
+function _deedCurveCheck(c,i,U){
+  if(!c||c.type!=="curve"||!(c.radius>0))return null;
+  const R=c.radius,rad=Math.PI/180,issues=[];
+  const dRad=c.delta!=null?c.delta*rad:(c.arc?c.arc/R:null);
+  if(c.chordD&&c.chordD>2*R+1e-6)issues.push("chord "+c.chordD.toFixed(2)+" is longer than the circle's diameter");
+  if(c.arc&&c.delta!=null){const L=R*c.delta*rad;if(Math.abs(L-c.arc)>Math.max(0.05,c.arc*0.001))issues.push("arc "+c.arc.toFixed(2)+" but radius × delta gives "+L.toFixed(2));}
+  if(c.chordD&&dRad!=null&&c.chordD<=2*R){const ch=2*R*Math.sin(dRad/2);if(Math.abs(ch-c.chordD)>Math.max(0.05,c.chordD*0.001))issues.push("chord "+c.chordD.toFixed(2)+" but the radius and "+(c.delta!=null?"delta":"arc")+" give "+ch.toFixed(2));}
+  if(!issues.length)return null;
+  return {sev:"warn",code:"curve-data",call:i,msg:"course "+(i+1)+": the curve's own figures disagree",
+    detail:issues.join("; ")+" "+U+" — one of the radius, arc, chord or delta is misread"};
+}
+/* Is this misclosure a mistake, or just an old survey? Chains, rods or
+   varas, or bearings given only to the minute, mark older work where
+   1:500–1:2000 is ordinary. */
+function _deedVerdict(calls,g,tol){
+  if(!g||!(g.closeDist>tol))return null;
+  const prec=g.closeDist>0?g.perim/g.closeDist:Infinity;
+  const lines=calls.filter(c=>c.type==="line"&&!c.tie&&!c.omit);
+  const oldUnits=calls.some(c=>/CHAIN|ROD|POLE|PERCH|VARA|LINK/.test(String(c.unit||"").toUpperCase()));
+  const brgs=lines.filter(c=>c.bearing&&!c.bearing.card&&c.bearing.deg!=null);
+  const minuteOnly=brgs.length>0&&brgs.every(c=>!c.bearing.sec);
+  const oldStyle=oldUnits||minuteOnly;
+  const floor=oldStyle?500:2500;
+  const r="1:"+Math.round(prec).toLocaleString("en-US");
+  let honest,msg;
+  if(prec>=5000){honest=true;msg=r+" is within normal measurement and rounding — not a sign of a mistake";}
+  else if(prec>=floor){honest=true;msg=r+" is "+(oldStyle?"ordinary for an older chain-and-compass description":"loose for modern work but small enough to be honest measurement error")+" — probably not a typo";}
+  else {honest=false;msg=r+" is too large to be measurement error — a mistake in the record is likely";}
+  return {honest,prec,oldStyle,d:{sev:"info",code:"verdict",msg,detail:oldStyle?("older-style description ("+(oldUnits?"chains / rods / varas":"bearings to the minute")+")"):""}};
+}
 function _deedBlunders(f,rotDeg){
   const out=[];
   if(!f||!f.calls||f.pobE==null)return out;
@@ -10745,33 +10874,131 @@ function _deedBlunders(f,rotDeg){
           msg:"an angle blunder at station "+(i+1)+" would explain the misclosure",
           detail:"that station sits on the perpendicular bisector of the closure line \u2014 the courses after it appear rotated about it"});
     }
-    // brute-force repair search: quadrant flips and digit slips, one course at a time
-    const best=[];
-    calls.forEach((c,i)=>{
-      if(c.type!=="line"||c.tie)return;
-      const trials=[];
-      if(c.bearing&&!c.bearing.card){
-        ["ns","ew","both"].forEach(mode=>{
-          const b=_deedFlipBearing(c.bearing,mode);
-          if(b)trials.push({patch:{bearing:b},what:"bearing read as "+_deedAzToBearingStr(_deedBearingToAz(b))+" instead of "+_deedAzToBearingStr(_deedBearingToAz(c.bearing))});
-        });
+    // ── mistake search (4.7.35): every plausible misreading of one course,
+    //    swapped distances/bearings between two courses, a repeated course,
+    //    and a missing course — each run as a full traverse ──
+    const verdict=_deedVerdict(calls,g,tol);
+    const honest=!!(verdict&&verdict.honest);
+    const stated=f.statedAcres||null;
+    const acDiv=U==="m"?4046.8564224:43560;
+    const acreTol=stated?Math.max(0.011,stated*0.01):0;
+    const lim=Math.min(tol,g.closeDist*0.1);
+    const cands=[],seen=new Set();
+    const cn=i=>"course "+(i+1);
+    const tryFix=(patches,insert,msg,what,prior)=>{
+      const key=JSON.stringify([patches.map(p=>[p.call,p.patch]),insert?[insert.at,insert.call.bearing]:null]);
+      if(seen.has(key))return;seen.add(key);
+      const r=_deedTrialMulti(calls,patches,insert,f.pobE,f.pobN,rotDeg);
+      if(!r||!(r.closeDist<lim))return;
+      const d={sev:"error",code:"repair",call:patches.length?patches[0].call:insert.at,
+        gain:g.closeDist-r.closeDist,resid:r.closeDist,prior,msg,what,
+        detail:what+" — misclosure "+g.closeDist.toFixed(2)+" → "+r.closeDist.toFixed(2)+" "+U};
+      if(patches.length===1&&!insert)d.patch=patches[0].patch;else d.patches=patches;
+      if(insert)d.insert=insert;
+      if(stated){
+        const a=_deedArea(r)/acDiv;d.acres=a;d.acreOk=Math.abs(a-stated)<=acreTol;
+        d.detail+="; area then "+a.toFixed(3)+" ac (deed: "+stated+" ac)"+(d.acreOk?" ✓":"");
       }
-      _deedDigitVariants(c.rawVal!=null?c.rawVal:c.dist).forEach(nv=>{
-        const scale=(c.dist&&c.rawVal)?c.dist/c.rawVal:1;
-        trials.push({patch:{dist:nv*scale,rawVal:nv},what:"distance read as "+nv+" instead of "+(c.rawVal!=null?c.rawVal:c.dist)});
-      });
-      trials.forEach(t=>{
-        const r=_deedTrial(calls,i,t.patch,f.pobE,f.pobN,rotDeg);
-        if(r&&r.closeDist<Math.min(tol,g.closeDist*0.1))
-          best.push({sev:"error",code:"repair",call:i,gain:g.closeDist-r.closeDist,patch:t.patch,what:t.what,
-            msg:"course "+(i+1)+" closes the deed if the "+t.what.split(" ")[0]+" is corrected",
-            detail:t.what+" \u2014 misclosure "+g.closeDist.toFixed(2)+" \u2192 "+r.closeDist.toFixed(2)+" "+U});
-      });
+      cands.push(d);
+    };
+    const lineIdx=[];
+    calls.forEach((c,i)=>{
+      if(c.tie||c.omit||c.type==="partial")return;
+      if(c.type==="line"){
+        lineIdx.push(i);
+        if(c.bearing&&!c.bearing.card){
+          ["ns","ew","both"].forEach(mode=>{
+            const b=_deedFlipBearing(c.bearing,mode);if(!b)return;delete b._az;
+            tryFix([{call:i,patch:{bearing:b}}],null,cn(i)+" closes the deed if the bearing is corrected",
+              "bearing read as "+_deedBrgStr(b)+" instead of "+_deedBrgStr(c.bearing),3);
+          });
+          _deedBearingVariants(c.bearing).forEach(v=>tryFix([{call:i,patch:{bearing:v.b}}],null,
+            cn(i)+" closes the deed if the bearing is corrected",
+            "bearing read as "+_deedBrgStr(v.b)+" instead of "+_deedBrgStr(c.bearing)+" ("+v.why+")",/swapped/.test(v.why)?3:2));
+        }
+        if(c.defl&&c.defl.srcAng!=null&&!c.defl.assumed){
+          const p=_dmsParts(c.defl.srcAng),k=c.defl.kind;
+          const angOf=src=>k==="exterior"?src-180:(k==="deflection"?src:180-src);
+          _deedAngleVariants(p.d,p.m,p.s,360,false).forEach(v=>{
+            const src=v.d+v.m/60+v.s/3600;
+            tryFix([{call:i,patch:{defl:{...c.defl,srcAng:src,ang:angOf(src)}}}],null,
+              cn(i)+" closes the deed if the turned angle is corrected",
+              "angle read as "+v.d+"°"+String(v.m).padStart(2,"0")+"'"+String(v.s).padStart(2,"0")+'" instead of '+p.d+"°"+String(p.m).padStart(2,"0")+"'"+String(p.s).padStart(2,"0")+'" ('+v.why+")",2);
+          });
+        }
+        _deedDistVariants(c).forEach(v=>tryFix([{call:i,patch:v.patch}],null,
+          cn(i)+" closes the deed if the distance is corrected",
+          "distance read as "+v.shown+" instead of "+(c.rawVal!=null?c.rawVal:c.dist.toFixed(2))+" ("+v.why+")",
+          /transposed/.test(v.why)?3:(/one digit/.test(v.why)?1:2)));
+      }else if(c.type==="curve"){
+        _deedCurveVariants(c).forEach(v=>tryFix([{call:i,patch:v.patch}],null,
+          cn(i)+" closes the deed if the curve is corrected",v.why,/turns/.test(v.why)?3:2));
+      }
     });
-    best.sort((a,b)=>b.gain-a.gain);
-    best.slice(0,3).forEach(b=>out.push(b));
+    // two courses: distances swapped (or one copied from the other), bearings swapped
+    for(let a=0;a<lineIdx.length;a++)for(let b=a+1;b<lineIdx.length;b++){
+      const i=lineIdx[a],j=lineIdx[b],ci=calls[i],cj=calls[j];
+      if(ci.dist>0&&cj.dist>0&&Math.abs(ci.dist-cj.dist)>0.005){
+        const pi={dist:cj.dist},pj={dist:ci.dist};
+        if(ci.rawVal!=null&&cj.rawVal!=null){pi.rawVal=cj.rawVal;pj.rawVal=ci.rawVal;}
+        tryFix([{call:i,patch:pi},{call:j,patch:pj}],null,
+          "courses "+(i+1)+" and "+(j+1)+" close the deed if their distances are swapped",
+          "distances swapped: "+cn(i)+" is "+cj.dist.toFixed(2)+" and "+cn(j)+" is "+ci.dist.toFixed(2),2);
+      }
+      if(b===a+1&&ci.bearing&&cj.bearing&&!ci.bearing.card&&!cj.bearing.card&&_deedBrgStr(ci.bearing)!==_deedBrgStr(cj.bearing))
+        tryFix([{call:i,patch:{bearing:cj.bearing}},{call:j,patch:{bearing:ci.bearing}}],null,
+          "courses "+(i+1)+" and "+(j+1)+" close the deed if their bearings are swapped",
+          "bearings swapped between "+cn(i)+" and "+cn(j),2);
+      // a repeated course: same bearing and distance written twice
+      if(ci.bearing&&cj.bearing&&_deedBrgStr(ci.bearing)===_deedBrgStr(cj.bearing)&&Math.abs((ci.dist||0)-(cj.dist||0))<0.005)
+        tryFix([{call:j,patch:{omit:true}}],null,
+          cn(j)+" repeats "+cn(i)+" — dropping the repeat closes the deed",
+          cn(j)+" is a duplicate of "+cn(i)+" ("+_deedBrgStr(cj.bearing)+", "+cj.dist.toFixed(2)+" "+U+")",3);
+    }
+    // a missing course: the misclosure itself is the course that was dropped.
+    // It closes at ANY position, so only the recited acreage can place it.
+    const goodSingle=cands.some(d=>!stated||d.acreOk);
+    if(!honest&&!goodSingle&&g.closeDist>tol*4){
+      const mb=_deedAzToBrgObj(g.closeAz-rotDeg);
+      const mc={type:"line",bearing:mb,dist:g.closeDist,rawVal:+g.closeDist.toFixed(2),unit:U==="m"?"METERS":"FEET",raw:"(added) missing course"};
+      const desc=_deedBrgStr(mb)+", "+g.closeDist.toFixed(2)+" "+U;
+      const first=calls.findIndex(c=>!c.tie);
+      if(stated){
+        for(let k=Math.max(0,first);k<=calls.length;k++)
+          tryFix([],{at:k,call:mc},"a course missing "+(k>=calls.length?"at the end":"before "+cn(k))+" would close the deed",
+            "missing course "+desc+(k>=calls.length?" at the end":" before "+cn(k)),1);
+      }else{
+        out.push({sev:"warn",code:"missing",msg:"if a course was dropped, it runs "+desc,
+          detail:"a missing course closes the figure wherever it goes — the deed recites no acreage to place it"});
+      }
+    }
+    // a course missing at the very start or the very end gives the same
+    // boundary from a different corner; the closing call is the one usually
+    // left incomplete, so the end wins that tie
+    {const ins=cands.filter(d=>d.insert&&d.acreOk);
+     const atEnd=ins.find(d=>d.insert.at>=calls.length),atStart=ins.find(d=>d.insert.at===Math.max(0,calls.findIndex(c=>!c.tie)));
+     if(atEnd&&atStart&&Math.abs((atEnd.acres||0)-(atStart.acres||0))<Math.max(1e-4,(atEnd.acres||0)*1e-4))cands.splice(cands.indexOf(atStart),1);}
+    // rank: acreage agreement first (the independent witness), then how
+    // common the slip is, then how completely it closes
+    // decisive fit: of the candidates still in contention (the ones the
+    // acreage agrees with, when it agrees with any), one that closes to
+    // record precision while every rival leaves a visibly larger gap
+    {const live=cands.filter(d=>!d.insert||d.acreOk);
+     const pool=(stated&&live.some(d=>d.acreOk))?live.filter(d=>d.acreOk):live;
+     if(pool.length>1){const by=pool.slice().sort((a,b)=>a.resid-b.resid);
+       if(by[0].resid<=0.05&&by[1].resid>=Math.max(0.02,5*by[0].resid))by[0].decisive=true;}}
+    cands.sort((a,b)=>((b.acreOk?1:0)-(a.acreOk?1:0))||((b.decisive?1:0)-(a.decisive?1:0))||(b.prior-a.prior)||(b.gain-a.gain));
+    const nOk=cands.filter(d=>d.acreOk).length;
+    const nReal=cands.filter(d=>!d.insert||d.acreOk).length;
+    cands.forEach(d=>{d.total=nReal;d.acreOkCount=nOk;d.applyable=!honest||!!d.acreOk;});
+    // missing-course candidates only count if the acreage chose them
+    const shown=cands.filter(d=>!d.insert||d.acreOk).slice(0,5);
+    shown.forEach(d=>out.push(d));
+    if(verdict)out.push(verdict.d);
   }
 
+  // — a curve's own figures must agree (4.7.35) —
+  calls.forEach((c,i)=>{if(c.tie||c.omit)return;const cc=_deedCurveCheck(c,i,U);if(cc)out.push(cc);});
   // — stated acreage as an independent check on the whole read —
   if(f.statedAcres&&g.verts.length>2){
     const a=_deedArea(g),acres=U==="m"?a/4046.8564224:a/43560;
@@ -10804,67 +11031,110 @@ function _deedFlagSummary(){
   return _deedFlagCore(_deedPlot.figures,f=>(_deedPlot.rot||0)+(f.recordRot||0));
 }
 function _deedFlagCore(figs,rotOf){
-  const out={n:0,top:null,fig:null,rank:99,multi:figs.length>1};
-  const order={repair:0,distance:1,angle:2,partial:3,acreage:4};
-  const repairsBy=new Map();
+  const out={n:0,top:null,fig:null,rank:99,multi:figs.length>1,verdict:null,lists:[]};
+  const order={repair:0,distance:1,angle:2,missing:3,"curve-data":4,partial:5,acreage:6};
   figs.forEach(f=>{
     if(!f.computed)return;
-    _deedBlunders(f,rotOf(f)).filter(d=>d.sev!=="info").forEach(d=>{
+    const list=_deedBlunders(f,rotOf(f));out.lists.push(list);
+    const v=list.find(d=>d.code==="verdict");if(v&&!out.verdict)out.verdict=v;
+    list.filter(d=>d.sev!=="info").forEach(d=>{
       out.n++;
-      if(d.code==="repair")repairsBy.set(f,(repairsBy.get(f)||0)+1);
       const r=(d.code in order)?order[d.code]:9;
       if(r<out.rank){out.rank=r;out.top=d;out.fig=f;}
     });
   });
-  // a fix is offered only when it is the ONE single-course change that closes
-  // the figure; competing repairs are for a person to weigh in Diagnostics
-  out.repairs=out.fig?(repairsBy.get(out.fig)||0):0;
-  out.fix=(out.top&&out.top.code==="repair"&&out.top.patch&&out.repairs===1)?out.top:null;
+  // a fix is offered only when it is the ONE correction that closes the
+  // figure, or the one the deed's own acreage picks out of several; a
+  // misclosure that may be honest needs the acreage to agree before any fix
+  const t=out.top;
+  out.repairs=(t&&t.code==="repair")?(t.total||1):0;
+  out.byAcreage=!!(t&&t.code==="repair"&&t.acreOk&&t.acreOkCount===1&&t.total>1);
+  out.decisive=!!(t&&t.code==="repair"&&t.decisive&&!out.byAcreage&&out.repairs>1);
+  out.fix=(t&&t.code==="repair"&&t.applyable!==false&&(t.patch||t.patches||t.insert)&&(out.repairs===1||out.byAcreage||t.decisive))?t:null;
   return out;
 }
 function _deedFlagRows(s){
-  if(!s||!s.n||!s.top)return [];
-  const who=(s.multi&&s.fig)?_esc(s.fig.name)+": ":"";
-  const rows=[{lbl:"⚠ Likely cause:",val:who+_esc(s.top.msg)+(s.top.detail?" — "+_esc(s.top.detail):"")}];
-  if(s.top.code==="repair"&&s.repairs>1)rows.push({lbl:"",val:s.repairs+" different single-course fixes would close it \u2014 compare them in Diagnostics."});
-  rows.push({lbl:"",val:(s.n>1?(s.n-1)+" more finding"+(s.n===2?"":"s")+" in Diagnostics. ":"")+(s.fix?"Check it against the paper before applying.":"Nothing is changed for you \u2014 check it against the paper.")});
+  if(!s)return [];
+  const rows=[];
+  if(s.n&&s.top){
+    const who=(s.multi&&s.fig)?_esc(s.fig.name)+": ":"";
+    rows.push({lbl:"⚠ Likely cause:",val:who+_esc(s.top.msg)+(s.top.detail?" — "+_esc(s.top.detail):"")});
+    if(s.byAcreage)rows.push({lbl:"",val:s.repairs+" corrections would close it — the deed's recited acreage picks this one."});
+    else if(s.decisive)rows.push({lbl:"",val:s.repairs+" corrections would close it — this one fits the rest of the deed far more exactly."});
+    else if(s.top.code==="repair"&&s.repairs>1)rows.push({lbl:"",val:s.repairs+" different corrections would close it — compare them in Diagnostics."});
+    else if(s.top.code==="repair"&&s.top.applyable===false)rows.push({lbl:"",val:"This misclosure may be honest, so no fix is offered unless the acreage confirms it."});
+  }
+  if(s.verdict)rows.push({lbl:"Verdict:",val:_esc(s.verdict.msg)});
+  if(s.n&&s.top)rows.push({lbl:"",val:(s.n>1?(s.n-1)+" more finding"+(s.n===2?"":"s")+" in Diagnostics. ":"")+(s.fix?"Check it against the paper before applying.":"Nothing is changed for you — check it against the paper.")});
   return rows;
+}
+function _deedFixLabel(d){
+  if(!d)return "";
+  if(d.insert)return "✎ Add the missing course";
+  if(d.patch&&d.patch.omit)return "✎ Drop the repeated course "+(d.call+1);
+  if(d.patches&&d.patches.length>1)return "✎ Apply fix to courses "+d.patches.map(p=>p.call+1).join(" and ");
+  return "✎ Apply fix to course "+(d.call+1);
 }
 function _deedFlagAction(s){
   if(!s||!s.n)return [];
   const out=[];
-  if(s.fix){const f=s.fig,d=s.fix;out.push({txt:"\u270e Apply fix to course "+(d.call+1),cls:"ok",fn:()=>_deedApplyFix(f,d)});}
-  out.push({txt:"\ud83d\udd0e Diagnostics \u2014 "+s.n+" flagged",cls:"danger",fn:_deedBlunderReport});
+  if(s.fix){const f=s.fig,d=s.fix;out.push({txt:_deedFixLabel(d),cls:"ok",fn:()=>_deedApplyFix(f,d)});}
+  out.push({txt:"🔎 Diagnostics — "+s.n+" flagged",cls:"danger",fn:_deedBlunderReport});
   return out;
 }
-/* 4.7.33: apply a single verified repair on request. The deed's own value is
-   kept on the call (c.record) and the course is marked c.corrected, so the
-   plot labels it and Revert restores the record exactly. */
+/* Apply a verified correction to a list of calls. The deed's own values are
+   kept on each call (c.record, only the fields that changed), the course is
+   marked c.corrected, an added course is marked c.inserted, and a dropped
+   repeat is marked omit — so the plot labels them and Revert restores the
+   record exactly. */
+function _deedApplyFixToCalls(calls,d){
+  if(!calls||!d)return false;
+  const patches=d.patches||(d.patch?[{call:d.call,patch:d.patch}]:[]);
+  patches.forEach(p=>{const c=calls[p.call];if(c)_deedPatchCall(c,{patch:p.patch,what:d.what});});
+  if(d.insert){
+    const nc=JSON.parse(JSON.stringify(d.insert.call));
+    nc.inserted=true;nc.corrected=d.what||"missing course added";
+    calls.splice(Math.min(d.insert.at,calls.length),0,nc);
+  }
+  return true;
+}
+function _deedRevertCalls(calls){
+  if(!calls)return 0;let n=0;
+  for(let i=calls.length-1;i>=0;i--){
+    const c=calls[i];if(!c||!c.corrected)continue;n++;
+    if(c.inserted)calls.splice(i,1);else _deedUnpatchCall(c);
+  }
+  return n;
+}
 function _deedApplyFix(fig,d){
-  if(!_deedPlot||!fig||!d||!d.patch)return;
-  const c=fig.calls[d.call];if(!c)return;
+  if(!_deedPlot||!fig||!d||!(d.patch||d.patches||d.insert))return;
   const before=fig.computed?fig.computed.closeDist:null;
   if(typeof _takeSnapshot==="function")_takeSnapshot("Deed fix");
-  _deedPatchCall(c,d);
+  _deedApplyFixToCalls(fig.calls,d);
   _deedRecompute();saveData();plotPoints();
   const g=fig.computed,U=units;
   const ac=(fig.statedAcres&&g)?_deedBlunders(fig,(_deedPlot.rot||0)+(fig.recordRot||0)).find(x=>x.code==="acreage"):null;
-  showResult("\u270e Fix applied",[
-    {lbl:"Course "+(d.call+1)+":",val:_esc(c.corrected)},
-    ...(g?[{lbl:"Closure:",val:(before!=null?before.toFixed(2)+" \u2192 ":"")+g.closeDist.toFixed(2)+" "+U+(g.precision?" (1:"+g.precision+")":"")}]:[]),
+  showResult("✎ Fix applied",[
+    {lbl:"Change:",val:_esc(d.what||"corrected")},
+    ...(g?[{lbl:"Closure:",val:(before!=null?before.toFixed(2)+" → ":"")+g.closeDist.toFixed(2)+" "+U+(g.precision?" (1:"+g.precision+")":"")}]:[]),
     ...(g?[{lbl:"Area:",val:_deedAc(_deedArea(g)).toFixed(3)+" acres"}]:[]),
-    ...(ac?[{lbl:ac.sev==="info"?"\u2713 Acreage:":"\u26a0 Acreage:",val:_esc(ac.msg)}]:[]),
-    {lbl:"",val:"The deed's own value is kept. The plot marks this course (corr)."}],
-    [{txt:"\u21a9 Revert to record",cls:"",fn:()=>_deedRevertFixes()}]);
+    ...(ac?[{lbl:ac.sev==="info"?"✓ Acreage:":"⚠ Acreage:",val:_esc(ac.msg)}]:[]),
+    {lbl:"",val:"The deed's own values are kept. The plot marks the change (corr)."}],
+    [{txt:"↩ Revert to record",cls:"",fn:()=>_deedRevertFixes()}]);
 }
 function _deedPatchCall(c,d){
-  if(!c.record)c.record=JSON.parse(JSON.stringify({bearing:c.bearing||null,dist:c.dist,rawVal:c.rawVal==null?null:c.rawVal}));
-  Object.assign(c,JSON.parse(JSON.stringify(d.patch)));
-  c.corrected=d.what||"corrected";
+  const p=(d&&d.patch)||{};
+  if(!c.record)c.record={};
+  Object.keys(p).forEach(k=>{
+    if(k in c.record)return;
+    c.record[k]=(k in c&&c[k]!==undefined)?JSON.parse(JSON.stringify(c[k])):"__none__";
+  });
+  Object.assign(c,JSON.parse(JSON.stringify(p)));
+  c.corrected=(d&&d.what)||"corrected";
 }
 function _deedUnpatchCall(c){
   if(!c||!c.corrected)return;
-  if(c.record){c.dist=c.record.dist;if(c.record.bearing)c.bearing=c.record.bearing;if(c.record.rawVal!=null)c.rawVal=c.record.rawVal;else delete c.rawVal;}
+  if(c.record)Object.keys(c.record).forEach(k=>{const v=c.record[k];if(v==="__none__")delete c[k];else c[k]=v;});
   delete c.record;delete c.corrected;
 }
 /* 4.7.34: check the calls themselves, straight after they are read and
@@ -10876,7 +11146,7 @@ function _deedPreCheck(calls,kind,statedAcres){
   try{f.computed=computeDeed(calls,0,0,0);}catch(e){return null;}
   if(!f.computed||!f.computed.verts||f.computed.verts.length<3)return null;
   const s=_deedFlagCore([f],()=>0);
-  s.f=f;s.all=_deedBlunders(f,0);
+  s.f=f;s.all=s.lists[0]||[];
   return s;
 }
 function _deedCorrectedCount(){
@@ -10887,7 +11157,7 @@ function _deedRevertFixes(){
   if(!_deedPlot)return;
   const n=_deedCorrectedCount();if(!n)return;
   if(typeof _takeSnapshot==="function")_takeSnapshot("Revert deed fix");
-  _deedPlot.figures.forEach(f=>(f.calls||[]).forEach(c=>_deedUnpatchCall(c)));
+  _deedPlot.figures.forEach(f=>_deedRevertCalls(f.calls||[]));
   _deedRecompute();saveData();plotPoints();
   const s=_deedFlagSummary();
   showResult("\u21a9 Back to the record",[
@@ -11507,8 +11777,8 @@ function _deedReview(calls,opts){
       if(ac)row(ac.sev==="info"?"\u2713 Acreage:":"\u26a0 Acreage:",_esc(ac.msg));
       _deedFlagRows(pc).forEach(r=>row(r.lbl,r.val));
       modal.appendChild(box);
-      if(pc.fix)mk("\u270e Apply fix to course "+(pc.fix.call+1),"ok",()=>{
-        _deedPatchCall(calls[pc.fix.call],pc.fix);close();_deedReview(calls,window._deedRevOpts);});
+      if(pc.fix)mk(_deedFixLabel(pc.fix),"ok",()=>{
+        _deedApplyFixToCalls(calls,pc.fix);close();_deedReview(calls,window._deedRevOpts);});
       if(pc.n)mk("\ud83d\udd0e Diagnostics \u2014 "+pc.n+" flagged","danger",()=>{
         close();
         const rows=pc.all.map(d=>({lbl:(d.sev==="error"?"\u26d4":d.sev==="warn"?"\u26a0":"\u2713")+" "+d.code+":",val:_esc(d.msg)+(d.detail?" \u2014 "+_esc(d.detail):"")}));
@@ -11516,9 +11786,9 @@ function _deedReview(calls,opts){
     }
     const nCorr=calls.filter(c=>c&&c.corrected).length;
     if(nCorr)mk("\u21a9 Revert "+nCorr+" corrected course"+(nCorr===1?"":"s")+" to record","",()=>{
-      calls.forEach(c=>_deedUnpatchCall(c));close();_deedReview(calls,window._deedRevOpts);});
+      _deedRevertCalls(calls);close();_deedReview(calls,window._deedRevOpts);});
     calls.forEach((c,i)=>{
-      const b=mk(_deedCallLabel(c,i)+(c&&c.corrected?" (corr)":""),c.type==="partial"?"danger":(c.tie?"":"blue"),()=>{
+      const b=mk(_deedCallLabel(c,i)+(c&&c.corrected?(c.inserted?" (added)":c.omit?" (dropped)":" (corr)"):""),c.type==="partial"?"danger":(c.tie?"":"blue"),()=>{
         if(c.tie){
           confirmDialog("This looks like a commencement tie to the POINT OF BEGINNING and is excluded from the boundary. Include it as a boundary course instead?",yes=>{
             if(yes){c.tie=false;}
@@ -15202,7 +15472,7 @@ function plotPoints(extCtx,extW,extH){
           ctx.fillStyle=st.col;
           const fs=fsFor(slen);
           const cc=(g.usable||[])[i-1];
-          placeCourseLabel(fmtBrg(az),dd.toFixed(2)+unitSuf+(cc&&cc.corrected?" (corr)":""),(sx1+sx2)/2,(sy1+sy2)/2,ang,fs,slen);
+          placeCourseLabel(fmtBrg(az),dd.toFixed(2)+unitSuf+(cc&&cc.corrected?(cc.inserted?" (added)":" (corr)"):""),(sx1+sx2)/2,(sy1+sy2)/2,ang,fs,slen);
         });
         g.arcs.forEach(a=>{
           const sx1=X(a.sE),sy1=Y(a.sN),sx2=X(a.eE),sy2=Y(a.eN);
@@ -17241,11 +17511,22 @@ const HELP_TOPICS = [
 <li><strong>Unstated turn direction</strong> — resolved by whichever reading closes better, and it tells you what the other reading missed by. When the two are too close to call, it says so.</li>
 <li><strong>Distance blunders</strong> — a misclosure parallel to one course means that course's length is wrong, because only a length error leaves the direction alone.</li>
 <li><strong>Angle blunders</strong> — a misclosure whose perpendicular bisector passes through a station means everything after that station is rotated about it.</li>
-<li><strong>Repairs</strong> — a brute-force search over the ways a written course is commonly mistyped or misread: a flipped quadrant (N↔S, E↔W), transposed digits (132.45 for 123.45), a dropped or doubled leading digit (320 for 1320). Anything that would close the figure is reported with the exact correction and the misclosure before and after. The three biggest improvements are shown.</li>
+<li><strong>Repairs</strong> — a search over the ways a deed is commonly mistyped or misread, each one run as a full traverse:
+<ul>
+<li><em>Bearings:</em> a flipped quadrant (N↔S, E↔W), swapped digits (12°35' for 12°53'), degrees, minutes or seconds off by 1 or 10, minutes and seconds swapped, degrees and minutes swapped, and the angle taken from the wrong axis (N 30° E for N 60° E). Turned angles get the same checks.</li>
+<li><em>Distances:</em> transposed digits (360.26 for 306.26), a dropped or doubled leading digit, a misplaced decimal point (29.679 for 296.79), one digit off by one (307.26 for 306.26), and a number in the wrong unit (4.50 feet that should be 4.50 chains).</li>
+<li><em>Two courses:</em> distances swapped between courses, and bearings swapped between neighboring courses.</li>
+<li><em>Repeated and missing courses:</em> a course written twice, and a course left out entirely — the misclosure itself is the missing course; the recited acreage says where it goes.</li>
+<li><em>Curves:</em> a curve turning the wrong way, a chord length given where the arc belongs (or the reverse), and misread radius, arc, chord or chord bearing.</li>
+</ul>
+Anything that closes the figure is reported with the exact correction and the misclosure before and after.</li>
+<li><strong>The acreage decides ties</strong> — when several corrections would close the deed, the one whose area matches the recited acreage is chosen. When the acreage can't decide, a correction that closes to the record's own precision while every rival leaves a visibly larger gap is chosen. Otherwise nothing is chosen, and the candidates are listed for you to compare.</li>
+<li><strong>Curve figures that disagree</strong> — a curve's radius, arc, chord and delta must agree with one another (arc = R·Δ, chord = 2R·sin Δ/2). A curve whose own numbers conflict is flagged even when the deed closes.</li>
+<li><strong>Honest misclosure or a mistake?</strong> — the <strong>Verdict</strong> line weighs the misclosure against what the description can be expected to hold. 1:5,000 and tighter is ordinary rounding. Chains, rods, varas or bearings to the minute mark an older survey, where 1:500–1:2,000 is normal. Anything worse is too large to be measurement error. When a misclosure looks honest, no fix is offered unless the recited acreage confirms it.</li>
 <li><strong>Stated acreage</strong> — an independent check on the whole read. A figure that <em>closes</em> but disagrees with the recited acreage by more than a few percent usually means a course was dropped or duplicated, which closure alone can never see.</li>
 </ul>
-<h3>Nothing Is Applied For You</h3>
-<p>Every finding is a candidate with the correction that would close the figure — shown, never made. Neither the distance rule nor the angle rule is conclusive on its own, and a deed that closes on a repaired course is evidence about the <em>transcription</em>, not proof about the boundary. Check the candidate against the paper, then edit the call yourself if the record agrees.</p>
+<h3>Nothing Is Applied Without You</h3>
+<p>Every finding is a candidate with the correction that would close the figure. <strong>✎ Apply fix</strong> appears only when one correction is clearly the answer, and only you can tap it: the deed's own values are kept, the plot marks the course <strong>(corr)</strong> or <strong>(added)</strong>, and <strong>↩ Revert to record</strong> puts the deed back exactly as written. Neither the distance rule nor the angle rule is conclusive on its own, and a deed that closes on a repaired course is evidence about the <em>transcription</em>, not proof about the boundary. Check the candidate against the paper, then edit the call yourself if the record agrees.</p>
 <div class="tip">A closing deed is not a correct deed, and a misclosing one is not necessarily a wrong one — old descriptions misclose honestly. Diagnostics tells you which kind you're holding.</div>`},
 
   { id:"deed-keypad", section:"Deed Plotter", title:"The Bearing Keypad",
