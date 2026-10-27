@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.31">
+<meta name="application-name" content="ChainLink-v4.7.32">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.31</title>
+<title>ChainLink Survey v4.7.32</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1317,7 +1317,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.31";
+const APP_VERSION = "4.7.32";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -10796,6 +10796,33 @@ function _deedBlunderReport(){
   });
   showResult("\ud83d\udd0e Deed Diagnostics",rows.length?rows:[{lbl:"Status:",val:"nothing to report"}]);
 }
+/* 4.7.32: name the likely cause on the cards a crew actually sees — the
+   plot result and the lock-in result — instead of only behind
+   Deed Plotter → Diagnostics, where people may never look. */
+function _deedFlagSummary(){
+  const out={n:0,top:null,fig:null,rank:99};
+  if(!_deedPlot||!_deedPlot.figures||!_deedPlot.figures.length)return out;
+  const order={repair:0,distance:1,angle:2,partial:3,acreage:4};
+  _deedPlot.figures.forEach(f=>{
+    if(!f.computed)return;
+    _deedBlunders(f,(_deedPlot.rot||0)+(f.recordRot||0)).filter(d=>d.sev!=="info").forEach(d=>{
+      out.n++;
+      const r=(d.code in order)?order[d.code]:9;
+      if(r<out.rank){out.rank=r;out.top=d;out.fig=f;}
+    });
+  });
+  return out;
+}
+function _deedFlagRows(s){
+  if(!s||!s.n||!s.top)return [];
+  const who=(_deedPlot.figures.length>1&&s.fig)?_esc(s.fig.name)+": ":"";
+  const rows=[{lbl:"⚠ Likely cause:",val:who+_esc(s.top.msg)+(s.top.detail?" — "+_esc(s.top.detail):"")}];
+  rows.push({lbl:"",val:(s.n>1?(s.n-1)+" more finding"+(s.n===2?"":"s")+" in Diagnostics. ":"")+"Nothing is changed for you — check it against the paper."});
+  return rows;
+}
+function _deedFlagAction(s){
+  return (s&&s.n)?[{txt:"🔎 Diagnostics — "+s.n+" flagged",cls:"danger",fn:_deedBlunderReport}]:[];
+}
 
 /* Device-appropriate press verb for prompts */
 function _pressWord(cap){
@@ -11608,7 +11635,7 @@ function _deedPickPOB(calls){
     mk("🖐 Slide & rotate to fit the imagery","blue",()=>{close();
       const c=document.getElementById("plotCanvas");
       const mid=_screenToWorld(c.clientWidth/2,c.clientHeight/2);
-      _deedPlot=_mkDeed([{kind:"boundary",name:"Boundary",calls,pobE:mid?mid.E:0,pobN:mid?mid.N:0,ptNums:[]}],0);
+      _deedPlot=_mkDeed([{kind:"boundary",name:"Boundary",calls,pobE:mid?mid.E:0,pobN:mid?mid.N:0,ptNums:[],statedAcres:calls.statedAcres||null}],0);
       _deedRecompute();
       _deedAdjustStart();
     });
@@ -11618,16 +11645,18 @@ function _deedPickPOB(calls){
   });
 }
 function _deedSet(calls,E,N){
-  _deedPlot=_mkDeed([{kind:"boundary",name:"Boundary",calls,pobE:E,pobN:N,ptNums:[]}],0);
+  _deedPlot=_mkDeed([{kind:"boundary",name:"Boundary",calls,pobE:E,pobN:N,ptNums:[],statedAcres:(calls.statedAcres||(_deedPlot&&_deedPlot.calls===calls&&_deedPlot.figures[0].statedAcres))||null}],0);
   _deedRecompute();saveData();
   if(window._deferredJobSetup){window._pendingSetup=window._deferredJobSetup;window._deferredJobSetup=null;}
   const g=_deedPlot.computed;
+  const _dfs=_deedFlagSummary();
   showResult("📜 Deed Plotted",[
     {lbl:"Courses:",val:String(g.verts.length-1)+(g.skipped?" ("+g.skipped+" skipped)":"")},
     {lbl:"Perimeter:",val:g.perim.toFixed(1)+" "+units},
     {lbl:"Closure:",val:g.closeDist.toFixed(2)+" "+units+(g.precision?"  (1:"+g.precision+")":"")},
     {lbl:"Area:",val:_deedAc(_deedArea(g)).toFixed(2)+" acres"},
-    {lbl:"Next:",val:"COGO → Deed Plotter to swing / adjust"}]);
+    ..._deedFlagRows(_dfs),
+    {lbl:"Next:",val:"Records → Open Deed Plotter to swing / adjust"}],_deedFlagAction(_dfs));
 }
 function _deedReviewFigures(figs){
   openModal((modal,close)=>{
@@ -11983,6 +12012,7 @@ function _deedResolveFigures(figs,E,N){
     _deedAdjustStart();
     return;
   }
+  const _dfs=_deedFlagSummary();
   showResult("📜 Deed Plotted — "+figs.length+" figures",[
     {lbl:"Figures:",val:_deedPlot.figures.map(f=>f.name).join(", ")},
     ...(b&&b.computed?[{lbl:"Boundary closure:",val:b.computed.closeDist.toFixed(2)+" "+units+(b.computed.precision?" (1:"+b.computed.precision+")":"")}]:[]),
@@ -11990,10 +12020,9 @@ function _deedResolveFigures(figs,E,N){
     ...(_deedPlot.figures.some(f=>f.sectionAxes)?[{lbl:"PLSS fabric:",val:"aliquot geometry aligned to stated section-line bearings"}]:[]),
     ...(_deedPlot.figures.some(f=>f.kind==="boundary"&&f.computed&&f.computed.closeDist>1)?[{lbl:"⚠ Record closure:",val:"one or more described parcels misclose by over 1.00 "+units+"; geometry was not forced closed"}]:[]),
     ...(_deedPlot.figures.some(f=>f.placementReason&&f.placementReason!=="selected boundary POB")?[{lbl:"Resolved:",val:"named parcel corners and PLSS section corners used where stated"}]:[]),
-    ...(function(){const n=_deedPlot.figures.reduce((a,f)=>a+_deedBlunders(f,(_deedPlot.rot||0)+(f.recordRot||0)).filter(d=>d.sev!=="info").length,0);
-      return n?[{lbl:"\ud83d\udd0e Diagnostics:",val:n+" item"+(n===1?"":"s")+" flagged \u2014 open Deed \u2192 Diagnostics for the likely cause"}]:[];})(),
+    ..._deedFlagRows(_dfs),
     ...(stacked?[{lbl:"⚠ "+stacked+" figure"+(stacked>1?"s":"")+":",val:"reference could not be resolved automatically; stacked at selected POB"}]:[])],
-    (function(){const need=_deedPlot.figures.map((f,i)=>({f,i})).filter(x=>x.f.autoStacked);if(!need.length)return null;return [{txt:"🖐 Place "+(need.length===1?("“"+need[0].f.name.split(" (")[0]+"” now"):("the "+need.length+" unresolved figures now")),cls:"ok",fn:()=>{if(need.length===1){_deedAdjustScope=need[0].i;_deedAdjustStart();}else _deedMovePicker();}}];})());
+    _deedFlagAction(_dfs).concat((function(){const need=_deedPlot.figures.map((f,i)=>({f,i})).filter(x=>x.f.autoStacked);if(!need.length)return [];return [{txt:"🖐 Place "+(need.length===1?("“"+need[0].f.name.split(" (")[0]+"” now"):("the "+need.length+" unresolved figures now")),cls:"ok",fn:()=>{if(need.length===1){_deedAdjustScope=need[0].i;_deedAdjustStart();}else _deedMovePicker();}}];})()));
 }
 function _deedPlaceFigures(figs){
   openModal((modal,close)=>{
@@ -12276,7 +12305,9 @@ function _deedPasteModal(prefill){
       if(!figs.length){alert("No survey calls found — is the description text in the box?");return;}
       close();
       if(_deedAppendMode){_deedReviewFigures(figs);}
-      else if(figs.length===1&&figs[0].kind==="boundary")_deedReview(figs[0].calls);
+      // 4.7.32: carry the recited acreage through the single-boundary path so
+      // the acreage check runs there too (it was only reaching multi-figure deeds)
+      else if(figs.length===1&&figs[0].kind==="boundary"){figs[0].calls.statedAcres=figs[0].statedAcres||null;_deedReview(figs[0].calls);}
       else _deedReviewFigures(figs);
     };
     mk("Cancel","",()=>{
@@ -15677,10 +15708,12 @@ function zoomToOccupied(){
       if(inBtn(window._deedLockBtn)){
         _deedAdjustEnd(true);
         const g=(_deedPlot.figures.find(f=>f.kind==="boundary")||_deedPlot.figures[0]).computed;
+        const _dfs=_deedFlagSummary();
         showResult("✓ Deed locked in",[
           {lbl:"Swing:",val:(_deedPlot.rot||0).toFixed(3)+"°"},
           ...(g?[{lbl:"Closure:",val:g.closeDist.toFixed(2)+" "+units+(g.precision?" (1:"+g.precision+")":"")}]:[]),
-          {lbl:"Placement:",val:window._deedLastSnap||"placed without snap"}]);
+          {lbl:"Placement:",val:window._deedLastSnap||"placed without snap"},
+          ..._deedFlagRows(_dfs)],_deedFlagAction(_dfs));
         window._deedLastSnap=null;
       }
       else if(inBtn(window._deedCancelBtn)) _deedAdjustEnd(false);
@@ -17105,7 +17138,7 @@ const HELP_TOPICS = [
   { id:"deed-blunder", section:"Deed Plotter", title:"Diagnostics: Why It Doesn't Close",
     preview:"The app reads the misclosure and names the likely cause",
     body:`<h3>Where It Is</h3>
-<p>Open the plotted deed: <strong>🔎 Diagnostics</strong> sits at the top, showing the number of flagged items or the word <strong>clear</strong>. Geometry is always plotted whether it closes or not — this layer explains the misclosure rather than hiding it.</p>
+<p>When a deed is plotted or locked in and something is flagged, the result card names the <strong>likely cause</strong> right there, with a <strong>🔎 Diagnostics</strong> button for the full list. Later, open the plotted deed (Records → Open Deed Plotter): <strong>🔎 Diagnostics</strong> sits at the top, showing the number of flagged items or the word <strong>clear</strong>. Geometry is always plotted whether it closes or not — this layer explains the misclosure rather than hiding it.</p>
 <h3>What It Checks</h3>
 <ul>
 <li><strong>Courses that couldn't be read</strong> — reported first, because they bound everything else. A dropped course makes every other finding provisional.</li>
