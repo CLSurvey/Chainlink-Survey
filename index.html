@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.1">
+<meta name="application-name" content="ChainLink-v4.8.2">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.1</title>
+<title>ChainLink Survey v4.8.2</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1316,7 +1316,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.1";
+const APP_VERSION = "4.8.2";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -2054,16 +2054,18 @@ function _startNewJob(jn,N,E,Z,deferSetup,noStart){
   jobName=jn;
   saveData();
   updateStatus();plotPoints();
-  // Show orientation explainer, then offer auto-save folder.
+  // Atmospheric setup, then offer a CSV copy in a folder.
+  // 4.8.2: the orientation intro is gone (anyone running a gun knows to
+  // orient it); the folder prompt now says the job already saves itself.
   // deferSetup=true parks this chain until the caller is ready (e.g. after
   // the user long-presses the exact start point on imagery).
-  const _setupChain=()=>_showOrientationExplainer(()=>{
+  const _setupChain=()=>atmosphericSetup(()=>{
     if(typeof window.showDirectoryPicker==="function"){
       openModal((modal,close)=>{
-        modal.innerHTML="<h2>Auto-Save</h2><p class='info'>Pick a folder and ChainLink will automatically save your CSV there after every change.</p>";
+        modal.innerHTML="<h2>Keep a CSV Copy?</h2><p class='info'>Your job already saves on this device. Pick a folder too and ChainLink will also write a CSV copy there after every change \u2014 a file you can open, back up, or send to the office.</p>";
         const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-        mk("Pick Save Folder","ok",()=>{close();_getDir().then(()=>{_autoSaveToFile();});});
-        mk("Skip — I'll save manually","",()=>{close();});
+        mk("Pick Folder","ok",()=>{close();_getDir().then(()=>{_autoSaveToFile();});});
+        mk("No Thanks","",()=>{close();});
       });
     }
   });
@@ -16947,7 +16949,7 @@ const HELP_TOPICS = [
   { id:"save", section:"Getting Started", title:"Saving & Exporting",
     preview:"Auto-save, CSV backup, DXF, LandXML, PDF, SVG, GeoJSON",
     body:`<h3>Auto-Save</h3>
-<p>ChainLink saves to your phone's local storage after every action. You won't lose data if the app closes — and saved jobs survive app updates to new versions.</p>
+<p>ChainLink saves to your phone's local storage after every action. You won't lose data if the app closes — and saved jobs survive app updates to new versions. That copy lives inside the app, though: clearing the browser's data or uninstalling the app removes it. In Chrome on Android or a computer, a new job offers <strong>Keep a CSV Copy?</strong> — pick a folder and a CSV is also written there after every change, a real file you can open, back up or send.</p>
 <h3>CSV Backup</h3>
 <p>Tap <strong>Project → Export → CSV to Folder</strong>. The CSV includes all points plus an embedded metadata line that restores connections, settings, flags, and raw observation data (instrument readings, slope distances, zenith angles, HI/TH) when loaded back. Descriptions containing commas are quoted properly.</p>
 <h3>DXF Export</h3>
