@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.35">
+<meta name="application-name" content="ChainLink-v4.7.36">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.35</title>
+<title>ChainLink Survey v4.7.36</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1171,16 +1171,15 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 
   <div id="plotControls">
     <button id="plotControlsToggle" title="Hide map controls" aria-label="Hide map controls" aria-expanded="true" onclick="togglePlotControls()">HIDE</button>
-    <button title="Zoom In" aria-label="Zoom in" onclick="zoomBy(1.5)">+</button>
-    <button title="Zoom Out" aria-label="Zoom out" onclick="zoomBy(1/1.5)">−</button>
+    <!-- 4.7.36: pinch zooms; the panel carries imagery and the label cycle -->
+    <button id="btnSat" title="Satellite imagery on / off" aria-label="Satellite imagery on or off" onclick="toggleSatAndGps()" style="font-size:1.05rem;letter-spacing:0">🛰</button>
+    <button id="btnLabels" title="Point labels: number → number + elevation → elevation" aria-label="Cycle point labels" onclick="cyclePointLabels()" style="letter-spacing:0">PT</button>
     <button title="Fit All" aria-label="Fit all" onclick="resetPlot()">FIT</button>
     <button title="Zoom to Occupied" aria-label="Locate occupied point" onclick="zoomToOccupied()">OCC</button>
     <button title="Pan N"      onclick="panBy(0,60)">▲</button>
     <button title="Pan S"      onclick="panBy(0,-60)">▼</button>
     <button title="Pan W"      onclick="panBy(-60,0)">◀</button>
     <button title="Pan E"      onclick="panBy(60,0)">▶</button>
-    <!-- 4.7.28: satellite, labels and elevations moved off the map panel;
-         they live in Map workspace and Project Explorer → Layers -->
   </div>
 </div>
 
@@ -1317,7 +1316,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.35";
+const APP_VERSION = "4.7.36";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1635,6 +1634,7 @@ let combinedScaleFactor = 1;    // grid/ground CSF — multiplies measured dista
 let jobName           = "survey";
 let units             = "ft";   // "ft"|"m"
 let showLabels        = true;
+let showPtNames       = true;   // 4.7.36: point number/description, separate from elevations
 let showElevations    = false;
 let lightMode         = false;
 let bearingMode       = "az";   // "az" = azimuth DDD.MMSS | "quad" = N/S xx°mm'ss" E/W
@@ -1959,6 +1959,7 @@ function _jobWriteLegacyKeys(){
   _lsSet("cl_jobName",     jobName||"survey");
   _lsSet("cl_units",       units||"ft");
   _lsSet("cl_showLabels",  String(showLabels));
+  _lsSet("cl_showPtNames", String(showPtNames));
   _lsSet("cl_showElev",    String(showElevations));
   _lsSet("cl_lightMode",   String(lightMode));
   _lsSet("cl_bearingMode", bearingMode);
@@ -2079,6 +2080,9 @@ function loadData() {
   viewScale=1;viewOffsetX=0;viewOffsetY=0; // a loaded job starts at its fitted view
   try { showLabels=_lsGet("cl_showLabels")!=="false"; } catch(e){ showLabels=true; }
   try { showElevations=_lsGet("cl_showElev")==="true"; } catch(e){ showElevations=false; }
+  try { showPtNames=_lsGet("cl_showPtNames")!=="false"; } catch(e){ showPtNames=true; }
+  if(!showPtNames&&!showElevations)showPtNames=true;   // never leave points with no label mode
+  try { _syncLblBtn(); } catch(e){}
   try { lightMode=_lsGet("cl_lightMode")==="true"; } catch(e){ lightMode=false; }
   try { bearingMode=_lsGet("cl_bearingMode")||"az"; } catch(e){ bearingMode="az"; }
   _applyLightMode();
@@ -2147,6 +2151,7 @@ function saveData() {
   }
   _lsSet("cl_version",    APP_VERSION);
   _lsSet("cl_showLabels", String(showLabels));
+  _lsSet("cl_showPtNames",String(showPtNames));
   _lsSet("cl_showElev",   String(showElevations));
   _lsSet("cl_lightMode",  String(lightMode));
   _lsSet("cl_bearingMode",bearingMode);
@@ -14969,7 +14974,8 @@ function plotPoints(extCtx,extW,extH){
       const ez=p.Elevation.toFixed(2);
       const elvFontSize=Math.max(8,Math.min(11,8+viewScale*0.5));
       const ex=cx+dotR+4;
-      const ey=cy+descFontSize+ptFontSize+4;
+      // with names hidden the elevation takes the label's place beside the dot
+      const ey=(showLabels&&showPtNames)?cy+descFontSize+2:cy-elvFontSize/2-1;   // just under the description
       ctx.save();
       ctx.font=elvFontSize+"px 'Share Tech Mono',monospace";
       ctx.textAlign="left";
@@ -14980,7 +14986,7 @@ function plotPoints(extCtx,extW,extH){
       ctx.restore();
     }
 
-    if(showLabels){
+    if(showLabels&&showPtNames){
       ctx.shadowColor="rgba(0,0,0,.9)";ctx.shadowBlur=4;
       const lx=cx+dotR+3, ly=cy-1;
       const cellKey=`${Math.round(lx/cellW)},${Math.round(ly/cellH)}`;
@@ -15689,14 +15695,33 @@ function toggleLightMode(){
 
 function toggleLabels(){
   showLabels=!showLabels;
-  const b=document.getElementById("btnLabels");
-  if(b)b.style.color=showLabels?"var(--ok)":"var(--danger)";
+  _syncLblBtn();
   saveData(); plotPoints();
+}
+/* 4.7.36: one panel button cycles what each point shows:
+   number (with description) → number + elevation → elevation only */
+function _ptLabelMode(){ return (!showPtNames&&showElevations)?2:(showElevations?1:0); }
+function _syncLblBtn(){
+  const b=document.getElementById("btnLabels");if(!b)return;
+  const m=_ptLabelMode();
+  b.textContent=["PT","PT+Z","Z"][m];
+  b.title=["Showing point numbers — tap for numbers + elevations","Showing numbers + elevations — tap for elevations only","Showing elevations only — tap for point numbers"][m];
+  b.style.fontSize=m===1?".62rem":"";
+  b.style.color=showLabels?"":"var(--muted)";
+}
+function cyclePointLabels(){
+  const next=(_ptLabelMode()+1)%3;
+  showLabels=true;
+  showPtNames=next!==2;
+  showElevations=next!==0;
+  _syncLblBtn();saveData();plotPoints();
 }
 function toggleElevations(){
   showElevations=!showElevations;
   const b=document.getElementById("btnElev");
   if(b)b.style.color=showElevations?"var(--ok)":"var(--muted)";
+  if(!showElevations)showPtNames=true;
+  _syncLblBtn();saveData();
   plotPoints();
 }
 // Zoom canvas to frame a bounding box defined by world coords with padding
@@ -16917,14 +16942,15 @@ const HELP_TOPICS = [
 <ul>
 <li>Drag one finger to pan</li>
 <li>Pinch two fingers to zoom toward the midpoint</li>
-<li><strong>+ / −</strong> step zoom, centered on the middle of the screen</li>
+<li><strong>🛰</strong> turns satellite imagery on or off (the first tap on a new job runs imagery setup)</li>
+<li><strong>PT</strong> cycles what each point shows: <strong>PT</strong> point number and description → <strong>PT+Z</strong> number and elevation → <strong>Z</strong> elevation only</li>
 <li><strong>FIT</strong> — zoom to show everything</li>
 <li><strong>OCC</strong> — center on the occupied point</li>
 <li><strong>HIDE</strong> folds the panel away; tap <strong>MAP</strong> to bring it back</li>
 <li>On a computer, arrow buttons on the panel (and the arrow keys) pan</li>
 </ul>
 <h3>Labels</h3>
-<p>Turn point number and description labels on or off in <strong>Map → Show/Hide Labels</strong>, or <strong>☰ → Layers → Labels</strong>. Labels scale with zoom and hide automatically when points are too close. Distances read in feet as <strong>200.00'</strong> (meters as <strong>61.00 m</strong>) everywhere on the map.</p>
+<p>The <strong>PT</strong> button on the map panel cycles point numbers, numbers with elevations, and elevations alone. To hide every label — points, lines and records — use <strong>Map → Show/Hide Labels</strong> or <strong>☰ → Layers → Labels</strong>. Labels scale with zoom and hide automatically when points are too close. Distances read in feet as <strong>200.00'</strong> (meters as <strong>61.00 m</strong>) everywhere on the map.</p>
 <h3>Elevation Display</h3>
 <p>Turn elevation labels on or off in <strong>Map → Show/Hide Elevations</strong>, or <strong>☰ → Layers → Elevations</strong>. They show in green below each point, only in 3D mode with valid elevations.</p>
 <h3>Line Annotations</h3>
