@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.7.36">
+<meta name="application-name" content="ChainLink-v4.7.37">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.7.36</title>
+<title>ChainLink Survey v4.7.37</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1316,7 +1316,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.7.36";
+const APP_VERSION = "4.7.37";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7786,6 +7786,54 @@ function _deedAreaArcs(){
       else{sweep=((a.a1-a.a2)%(2*Math.PI)+2*Math.PI)%(2*Math.PI);
         out.push({type:"arc",centerE:a.cE,centerN:a.cN,R:a.r,startAngle:a.a1,endAngle:a.a1-sweep,_deed:true});}
     });
+  });
+  return out;
+}
+/* 4.7.37: deed courses as connection-shaped objects, so a deed line or curve
+   answers a tap exactly like a drawn line or arc — inverse, stake, offset,
+   divide, prorate, intersect, area and polylines all work on it. They are
+   built from the computed record on demand (never stored), so they always
+   follow the deed and can't be deleted or reversed out from under it. */
+function _deedConns(){
+  const out=[];
+  if(typeof _deedPlot==="undefined"||!_deedPlot||!_deedPlot.figures)return out;
+  const ptByNum=n=>n==null?null:points.find(p=>p.Point===n);
+  const near=(a,E,N)=>a&&Math.hypot(a.Easting-E,a.Northing-N)<0.05;
+  const toBrg=ang=>((90-ang*180/Math.PI)%360+360)%360;
+  _deedPlot.figures.forEach((f,fi)=>{
+    const g=f.computed;if(!g||!g.verts||g.verts.length<2)return;
+    const nums=f.ptNums||[];
+    // vertex i is point ptNums[i]; the closing vertex is the POB again
+    const ptFor=i=>{const p=ptByNum(i<nums.length?nums[i]:nums[0]);return p;};
+    const arcs=g.arcs||[],sps=g.spirals||[];
+    // the closing course ends on the POB when the figure returns home within
+    // the same tolerance the corner sync uses; a badly misclosed end has no
+    // corner to tap
+    const closesHome=g.closeDist<=Math.max(units==="m"?0.6:2,0.02*(g.perim||0));
+    for(let i=1;i<g.verts.length;i++){
+      const u=g.verts[i-1],v=g.verts[i];if(!u||!v||v.skip)continue;
+      if(sps.some(sp=>Math.hypot(sp.startE-u.E,sp.startN-u.N)<0.01&&Math.hypot(sp.endE-v.E,sp.endN-v.N)<0.01))continue;
+      const pu=ptFor(i-1),pv=ptFor(i);
+      const a=arcs.find(x=>Math.hypot(x.sE-u.E,x.sN-u.N)<0.01&&Math.hypot(x.eE-v.E,x.eN-v.N)<0.01);
+      if(a){
+        const sw=a.ccw?((a.a2-a.a1)%(2*Math.PI)+2*Math.PI)%(2*Math.PI):((a.a1-a.a2)%(2*Math.PI)+2*Math.PI)%(2*Math.PI);
+        const sA=a.a1,eA=a.ccw?a.a1+sw:a.a1-sw;
+        out.push({type:"arc",centerE:a.cE,centerN:a.cN,R:a.r,startAngle:sA,endAngle:eA,dir:a.ccw?"ccw":"cw",style:"solid",
+          startBrg:toBrg(sA),endBrg:toBrg(eA),arcLen:sw*a.r,delta:sw*180/Math.PI,chord:2*a.r*Math.sin(sw/2),
+          from:pu?pu.Point:null,to:pv?pv.Point:null,_deed:true,_fig:fi,_key:"d"+fi+":"+i,_name:f.name});
+      }else if(pu&&pv&&pu.Point!==pv.Point&&near(pu,u.E,u.N)&&(near(pv,v.E,v.N)||(i===g.verts.length-1&&i>=nums.length&&closesHome))){
+        out.push({from:pu.Point,to:pv.Point,style:"solid",_deed:true,_fig:fi,_key:"d"+fi+":"+i,_name:f.name});
+      }
+    }
+    // the commencement tie, corner to corner
+    const tv=(typeof _deedTieVerts==="function")?_deedTieVerts(f):null;
+    if(tv&&tv.length>1){
+      const tn=(f.tiePtNums||[]).concat(nums.length?[nums[0]]:[]);
+      for(let i=1;i<tv.length;i++){
+        const pu=ptByNum(tn[i-1]),pv=ptByNum(tn[i]);
+        if(pu&&pv&&pu.Point!==pv.Point)out.push({from:pu.Point,to:pv.Point,style:"solid",_deed:true,_tie:true,_fig:fi,_key:"t"+fi+":"+i,_name:f.name});
+      }
+    }
   });
   return out;
 }
@@ -14993,9 +15041,15 @@ function plotPoints(extCtx,extW,extH){
       if(!_labelCells.has(cellKey)){
         _labelCells.add(cellKey);
         _labelCells.add(`${Math.round(lx/cellW)+1},${Math.round(ly/cellH)}`);
-        ctx.fillStyle=lightMode?"#000000":lightMode?"#000000":"#dde2f0";
+        // 4.7.37: deed labels sit on imagery more than anything else — give
+        // them bright ink and a solid outline instead of a soft gray glow
+        const _isDeedPt=p.Type==="Deed";
+        const _halo=(txt,x,y)=>{if(!_isDeedPt)return;ctx.save();ctx.shadowBlur=0;ctx.lineJoin="round";
+          ctx.lineWidth=3.5;ctx.strokeStyle=lightMode?"rgba(255,255,255,.95)":"rgba(0,0,0,.9)";ctx.strokeText(txt,x,y);ctx.restore();};
+        ctx.fillStyle=_isDeedPt?(lightMode?"#000000":"#ffffff"):(lightMode?"#000000":"#dde2f0");
         ctx.font=`bold ${ptFontSize}px 'Courier New',monospace`;
         ctx.textAlign="left";ctx.textBaseline="bottom";
+        _halo(`${p.Point}`,lx,ly);
         ctx.fillText(`${p.Point}`,lx,ly);
         let dispDesc=p.Description||"";
         const isTiePt=p.Type==="Deed"&&/COMMENCE|\bTIE\s*\d*\b/i.test(dispDesc);
@@ -15004,8 +15058,11 @@ function plotPoints(extCtx,extW,extH){
           dispDesc=/COMMENCE/i.test(dispDesc)?"Commence":("Tie"+(tm&&tm[1]?" "+tm[1]:""));
         }
         if(dispDesc&&viewScale>0.6){
-          ctx.fillStyle=isTiePt?(lightMode?_lmInk("#ffe66d"):"#ffe66d"):(lightMode?"#000000":"#9ab0c8");
-          ctx.font=`${descFontSize}px 'Courier New',monospace`;
+          ctx.fillStyle=isTiePt?(lightMode?_lmInk("#ffe66d"):"#ffe66d")
+            :_isDeedPt?(lightMode?_lmInk("#25c8d8"):"#8ff1fa")
+            :(lightMode?"#000000":"#9ab0c8");
+          ctx.font=(_isDeedPt?"bold ":"")+`${descFontSize}px 'Courier New',monospace`;
+          _halo(dispDesc,lx,ly+descFontSize+1);
           ctx.fillText(dispDesc,lx,ly+descFontSize+1);
         }
         // Register the approximate occupied rectangle so deed line labels can
@@ -15538,6 +15595,17 @@ function plotPoints(extCtx,extW,extH){
       }
       ctx.restore();
     });
+    // 4.7.37: a tapped deed line or curve highlights like a drawn one
+    if(!extCtx&&typeof selectedConn==="number"&&selectedConn>=plotConnections.length){
+      const dc=_deedConns()[selectedConn-plotConnections.length];
+      if(dc){
+        ctx.save();ctx.strokeStyle=lightMode?"#000000":"#ffffff";ctx.lineWidth=3.5;ctx.setLineDash([]);ctx.beginPath();
+        if(dc.type==="arc")ctx.arc(X(dc.centerE),Y(dc.centerN),dc.R*scale,-dc.startAngle,-dc.endAngle,dc.dir==="ccw");
+        else{const a=points.find(p=>p.Point===dc.from),b=points.find(p=>p.Point===dc.to);
+          if(a&&b){ctx.moveTo(X(a.Easting),Y(a.Northing));ctx.lineTo(X(b.Easting),Y(b.Northing));}}
+        ctx.stroke();ctx.restore();
+      }
+    }
   }catch(e){}
   if(_deedAdjust&&!extCtx){
     ctx.save();
@@ -16161,10 +16229,20 @@ function zoomToOccupied(){
     // Find best connection hit. Spiral hit-testing is enabled during Area
     // selection; other tools keep their existing line/arc contracts.
     let hitConnIdx=-1, bestDist=LINE_THRESH;
-    plotConnections.forEach((conn,i)=>{
+    // 4.7.37: deed lines and curves are tappable like drawn ones
+    const _dConns=(typeof _deedConns==="function")?_deedConns():[];
+    const allConns=plotConnections.concat(_dConns);
+    allConns.forEach((conn,i)=>{
       let d;
       if(conn.type==="arc"){
         d=ptArcDist(mx,my,conn);
+        // a deed curve answers only along its own sweep, not the whole circle
+        if(conn._deed&&d<Infinity){
+          let t=Math.atan2(-(my-Y(conn.centerN)),mx-X(conn.centerE));
+          const lo=Math.min(conn.startAngle,conn.endAngle),hi=Math.max(conn.startAngle,conn.endAngle);
+          while(t<lo)t+=2*Math.PI;while(t>hi+1e-9&&t-2*Math.PI>=lo-1e-9)t-=2*Math.PI;
+          if(t<lo-0.02||t>hi+0.02)d=Infinity;
+        }
       } else if(conn.type==="spiral"){
         if(!window._areaClickActive)return;
         d=ptSpiralDist(mx,my,conn);
@@ -16180,8 +16258,8 @@ function zoomToOccupied(){
     // ── INTERSECT MODE: waiting for second geometry ──────────────
     if(intersectMode){
       if(hitConnIdx>=0){
-        const second=plotConnections[hitConnIdx];
-        if(second===intersectFirst.conn){
+        const second=allConns[hitConnIdx];
+        if(second===intersectFirst.conn||(second._key&&second._key===intersectFirst.conn._key)){
           // Tapped the same geometry — cancel
           _clearIntersectMode();
         } else {
@@ -16204,7 +16282,7 @@ function zoomToOccupied(){
       bn.textContent="\u2295 TAP SECOND LINE OR ARC — or tap empty space to cancel";
       window._stlPickActive=false;
       if(hitConnIdx>=0){
-        _stlSelectGeom(plotConnections[hitConnIdx]);
+        _stlSelectGeom(allConns[hitConnIdx]);
       } else {
         // Tapped empty space — cancel
         window._stlActive=false; tempGeom=[]; tempIntersections=[]; plotPoints();
@@ -16229,7 +16307,7 @@ function zoomToOccupied(){
       }
       // No point hit — a tapped line or arc contributes its endpoints
       if(hitConnIdx>=0){
-        _areaTapConn(plotConnections[hitConnIdx]);
+        _areaTapConn(allConns[hitConnIdx]);
         return;
       }
       // Tap empty space — cancel the ENTIRE area selection state.
@@ -16245,7 +16323,7 @@ function zoomToOccupied(){
       // Among connections prefer an ARC over a coincident LINE — capturing
       // curves is the goal here, and a line is redundant with tapping points.
       let _aIdx=-1,_aBest=ARC_THRESH,_lIdx=-1,_lBest=LINE_THRESH;
-      plotConnections.forEach((c,i)=>{
+      allConns.forEach((c,i)=>{
         if(c.type==="arc"){ const d=ptArcDist(mx,my,c); if(d<_aBest){_aBest=d;_aIdx=i;} }
         else {
           const f=points.find(p=>p.Point==c.from), t=points.find(p=>p.Point==c.to);
@@ -16255,7 +16333,7 @@ function zoomToOccupied(){
         }
       });
       const _ci=_aIdx>=0?_aIdx:_lIdx;
-      if(_ci>=0){ window._plTap({kind:"conn",conn:plotConnections[_ci]}); return; }
+      if(_ci>=0){ window._plTap({kind:"conn",conn:allConns[_ci]}); return; }
       return; // empty space while building — ignore
     }
 
@@ -16296,7 +16374,7 @@ function zoomToOccupied(){
       selectedPoint=null;
       plotPoints();
       if(selectedConn>=0){
-        const conn=plotConnections[hitConnIdx];
+        const conn=allConns[hitConnIdx];
         if(conn.type==="arc") _showArcQuickActions(conn,hitConnIdx);
         else                  _showLineQuickActions(conn,hitConnIdx);
       }
@@ -16557,7 +16635,7 @@ function flagPoint_pt(p){
 
 function _arcContextMenu(conn, connIdx){
   openModal((modal,close)=>{
-    modal.innerHTML=`<h2>🌀 Arc</h2>`;
+    modal.innerHTML=`<h2>🌀 ${conn._deed?"Deed curve":"Arc"}</h2>`+(conn._deed?"<p class='info'>Part of the deed record — it follows the deed and can't be deleted here.</p>":"");
     const box=document.createElement("div");box.className="result-box";
     box.innerHTML=
       `<span class="lbl">Center N:</span>&nbsp;<span class="val">${conn.centerN.toFixed(3)}</span><br>`+
@@ -16628,7 +16706,7 @@ function _arcContextMenu(conn, connIdx){
     });
 
     // Delete arc
-    mk("🗑 Delete This Arc","danger",()=>{
+    if(!conn._deed)mk("🗑 Delete This Arc","danger",()=>{
       _takeSnapshot("Delete Arc");
       plotConnections.splice(connIdx,1);
       saveData();
@@ -16648,7 +16726,7 @@ function _lineContextMenu(conn, connIdx){
   const azBack=((az+180)%360);
 
   openModal((modal,close)=>{
-    modal.innerHTML=`<h2>📏 Line #${conn.from} → #${conn.to}</h2>`;
+    modal.innerHTML=`<h2>📏 ${conn._deed?(conn._tie?"Deed tie":"Deed line"):"Line"} #${conn.from} → #${conn.to}</h2>`+(conn._deed?"<p class='info'>Part of the deed record — it follows the deed and can't be deleted here.</p>":"");
     const box=document.createElement("div");box.className="result-box";
     box.innerHTML=
       `<span class="lbl">Dist:</span>&nbsp;<span class="val">${hd.toFixed(3)} ${units}</span><br>`+
@@ -16684,7 +16762,7 @@ function _lineContextMenu(conn, connIdx){
         nxt++;
         _takeSnapshot("Offset Line"); points.push(pA);points.push(pB);
         pointCounter=nxt;
-        plotConnections.push({from:pA.Point,to:pB.Point,style:conn.style});
+        plotConnections.push({from:pA.Point,to:pB.Point,style:conn._deed?"solid":conn.style});
         saveData();
         showResult("✓ Offset Line Created",[
           {lbl:"From Pt:",val:`#${pA.Point}`},
@@ -16694,8 +16772,8 @@ function _lineContextMenu(conn, connIdx){
       });
     });
 
-    // Reverse azimuth — flip from/to
-    mk("🔄 Reverse Direction","",()=>{
+    // Reverse azimuth — flip from/to (a deed course runs the way the deed reads)
+    if(!conn._deed)mk("🔄 Reverse Direction","",()=>{
       _takeSnapshot("Reverse Line"); const tmp=conn.from; conn.from=conn.to; conn.to=tmp;
       saveData();
     });
@@ -16760,7 +16838,7 @@ function _lineContextMenu(conn, connIdx){
     });
 
     // Delete connection
-    mk("🗑 Delete This Line","danger",()=>{
+    if(!conn._deed)mk("🗑 Delete This Line","danger",()=>{
       _takeSnapshot("Delete Line");
       plotConnections.splice(connIdx,1);
       saveData();
@@ -16964,6 +17042,8 @@ const HELP_TOPICS = [
 <p>Highlights the line. Menu shows distance, both azimuths, and options: Offset Line, Reverse, Prorate, Intersect, Delete.</p>
 <h3>Tap an Arc</h3>
 <p>Shows center, radius, arc length, delta, chord, and direction. Options: Offset Arc, Intersect with Another, Delete. If the arc belongs to a polyline, a polyline action button appears.</p>
+<h3>Tap a Deed Line, Curve or Corner</h3>
+<p>Plotted deed courses work like your own lines and arcs: inverse, stake, offset, divide, midpoint, prorate, intersect, area and polylines all take a deed course. Deed corners are ordinary points. Two things differ: a deed course keeps its cyan deed color, and it can't be deleted or reversed from its menu, because it follows the record — change the deed itself in the Deed Plotter.</p>
 <h3>Long Press on Empty Space</h3>
 <p>Hold your finger on empty canvas for ~0.6 seconds. Phone vibrates, then a dialog lets you add a point at that world location. Enter a description and save.</p>`},
 
@@ -18001,8 +18081,8 @@ function openWorkspace(name){
 function _hideContextDock(){const d=document.getElementById("contextDock");if(d)d.classList.remove("open")}
 function _contextDock(kind,name,actions){const d=document.getElementById("contextDock"),a=document.getElementById("contextActions");document.getElementById("contextKind").textContent=kind;document.getElementById("contextName").textContent=name;a.innerHTML="";actions.forEach(x=>{const b=document.createElement("button");b.textContent=x[0];b.className=x[2]||"";b.onclick=()=>{_hideContextDock();x[1]()};a.appendChild(b)});const c=document.createElement("button");c.textContent="Close";c.onclick=_hideContextDock;a.appendChild(c);d.classList.add("open")}
 function _showPointQuickActions(p){selectedPoint=p;plotPoints();_contextDock("Point","#"+p.Point+(p.Description?" · "+p.Description:""),[["Details",()=>_pointContextMenu(p)],["Occupy",()=>{_takeSnapshot("Occupy Point");currentPoint=p;saveData();updateStatus();plotPoints()},"primary"],["Stake",()=>{if(!currentPoint){alert("Occupy a point first.");return}_doStakeout(p,"#"+p.Point,_lastTHValue||0)},"primary"],["Connect",()=>{selectedPoint=null;_connectFromPoint(p)}]]);}
-function _showLineQuickActions(conn,idx){selectedConn=idx;plotPoints();_contextDock("Line","#"+conn.from+" → #"+conn.to,[["Details",()=>_lineContextMenu(conn,idx)],["Stake",()=>{window._stlActive=true;_stlMeasure({kind:"line",conn})},"primary"],["Offset",()=>_lineContextMenu(conn,idx)],["Delete",()=>{_takeSnapshot("Delete Line");plotConnections.splice(idx,1);saveData()},"danger"]]);}
-function _showArcQuickActions(conn,idx){selectedConn=idx;plotPoints();_contextDock("Arc","R "+Number(conn.R||0).toFixed(2),[["Details",()=>_arcContextMenu(conn,idx)],["Stake",()=>{window._stlActive=true;_stlMeasure({kind:"arc",conn})},"primary"],["Tools",()=>_arcContextMenu(conn,idx)],["Delete",()=>{_takeSnapshot("Delete Arc");plotConnections.splice(idx,1);saveData()},"danger"]]);}
+function _showLineQuickActions(conn,idx){selectedConn=idx;plotPoints();_contextDock(conn._deed?(conn._tie?"Deed tie":"Deed line"):"Line","#"+conn.from+" → #"+conn.to,[["Details",()=>_lineContextMenu(conn,idx)],["Stake",()=>{window._stlActive=true;_stlMeasure({kind:"line",conn})},"primary"],["Offset",()=>_lineContextMenu(conn,idx)],...(conn._deed?[]:[["Delete",()=>{_takeSnapshot("Delete Line");plotConnections.splice(idx,1);saveData()},"danger"]])]);}
+function _showArcQuickActions(conn,idx){selectedConn=idx;plotPoints();_contextDock(conn._deed?"Deed curve":"Arc","R "+Number(conn.R||0).toFixed(2),[["Details",()=>_arcContextMenu(conn,idx)],["Stake",()=>{window._stlActive=true;_stlMeasure({kind:"arc",conn})},"primary"],["Tools",()=>_arcContextMenu(conn,idx)],...(conn._deed?[]:[["Delete",()=>{_takeSnapshot("Delete Arc");plotConnections.splice(idx,1);saveData()},"danger"]])]);}
 
 // Keep the explorer counters current whenever the app status refreshes.
 const _updateStatusWorkspaceBase=updateStatus;
