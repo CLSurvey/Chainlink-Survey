@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8">
+<meta name="application-name" content="ChainLink-v4.8.1">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8</title>
+<title>ChainLink Survey v4.8.1</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1316,7 +1316,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8";
+const APP_VERSION = "4.8.1";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -11442,7 +11442,10 @@ function _deedAliquot(txt){
   // of the parent can re-execute the subdivision later (calibration).
   let u0=0,u1=1,v0=0,v1=1,hasAbs=false;
   const baseSize=w;
-  const stages=[{r:[0,1,0,1],w:w,h:h}];       // stage 0 = the base tract itself
+  // 4.8.1: each stage is named so calibration can ask which tract was measured
+  const secNo=(t.slice(bm[0].length).match(/^\s*(\d{1,2})\b/)||[])[1];
+  const baseLbl=/SECTION/.test(bm[1])?("Section"+(secNo?" "+secNo:"")):(/QUARTER[\s-]QUARTER|FORTY|^40$/.test(bm[1])?"the forty":"the quarter");
+  const stages=[{r:[0,1,0,1],w:w,h:h,lbl:baseLbl}];       // stage 0 = the base tract itself
   for(let i=ops.length-1;i>=0;i--){          // innermost (nearest base) first
     const o=ops[i],d=o.dir?D[o.dir]:null;
     let frac=null;
@@ -11466,7 +11469,9 @@ function _deedAliquot(txt){
       else if(frac!=null){w*=frac;if(d==="E")u0=u1-sU*frac;else u1=u0+sU*frac;}
       else return null;
     }else return null;                       // directionless — ambiguous
-    stages.push({r:[u0,u1,v0,v1],w:w,h:h});
+    const part=(d.length===2)?d+"\u00bc"
+      :(o.abs!=null?d+" "+o.abs+"'":(frac===0.5?d+"\u00bd":frac===0.25?d+"\u00bc":d+" "+o.fn+"/"+o.fd));
+    stages.push({r:[u0,u1,v0,v1],w:w,h:h,lbl:part+" of "+stages[stages.length-1].lbl});
   }
   w=Math.round(w*100)/100;h=Math.round(h*100)/100;
   const mk=(az,dd,lbl)=>({type:"line",compassAz:az,bearing:null,dist:dd,unit:"FT",rawVal:dd,
@@ -11545,6 +11550,28 @@ function _deedAliquotCalibrate(spec,SW,SE,NE,NW){
   return {A,B,C,D,calls:[crs(A,B,"S LINE"),crs(B,C,"E LINE"),crs(C,D,"N LINE"),crs(D,A,"W LINE")]};
 }
 
+/* 4.8.1: calibrate against the corners of ANY tract in the breakdown — the
+   section, the quarter, or the half the parcel is cut from. The parcel's
+   place is re-expressed as fractions of that tract, then proportioned along
+   its measured lines. Calibrating to a section and calibrating to its
+   proportioned quarter give the identical parcel. */
+function _deedAliquotStageCalibrate(spec,k,SW,SE,NE,NW){
+  const st=(spec.stages||[])[k]||{r:[0,1,0,1]};
+  const R=st.r,du=(R[1]-R[0])||1,dv=(R[3]-R[2])||1;
+  const rel={u0:(spec.u0-R[0])/du,u1:(spec.u1-R[0])/du,v0:(spec.v0-R[2])/dv,v1:(spec.v1-R[2])/dv};
+  return _deedAliquotCalibrate(rel,SW,SE,NE,NW);
+}
+/* the tracts a user can have measured: every stage above the parcel itself */
+function _deedAliquotStageChoices(spec){
+  const st=spec.stages||[{r:[0,1,0,1],w:spec.base,h:spec.base}];
+  const out=[];
+  for(let k=0;k<st.length-1;k++){
+    const s=st[k];
+    out.push({k,lbl:(s.lbl||("Tract "+(k+1)))+" (nominal "+Math.round(s.w)+"\u2032 \u00d7 "+Math.round(s.h)+"\u2032)"});
+  }
+  if(!out.length)out.push({k:0,lbl:"the parent tract"});
+  return out;
+}
 function _deedParcelKey(v){
   const s=String(v||"").toUpperCase().replace(/[^A-Z0-9 -]/g," ").replace(/\s+/g," ").trim();
   if(!s)return null;
@@ -13048,7 +13075,17 @@ function deedPlotterMenu(){
       if(!f.aliquot||!f.aliquotSpec||f.aliquotSpec.hasAbs)return;
       mk("\u2316 Calibrate "+f.name.split(" (")[0]+" to measured corners","blue",()=>{close();
         openModal((m2,c2)=>{
-          m2.innerHTML="<h2>\u2316 Calibrate aliquot</h2><p class='info'>Enter the point numbers of the four measured corners of the <b>parent tract</b> (the forty / quarter the deed subdivides). The fractional parcel is re-derived by proportion along the actual lines \u2014 lopsided parents give the correct lopsided parcel.</p>";
+          m2.innerHTML="<h2>\u2316 Calibrate aliquot</h2><p class='info'>Pick the tract whose four corners you measured, then enter their point numbers. The parcel is re-derived by proportion along those measured lines (the GLO method), and lands on them with no seating needed.</p>";
+          // 4.8.1: which tract are these corners of? (it used to assume the
+          // last-named one, so quarter corners entered for a section deed
+          // produced a parcel a quarter of the right size)
+          const choices=_deedAliquotStageChoices(f.aliquotSpec);
+          const sd=document.createElement("div");sd.innerHTML="<div class='input-label'>The corners are of</div>";
+          const sel=document.createElement("select");sel.style.cssText="width:100%;padding:10px;font-size:1rem";
+          choices.forEach(c=>{const o=document.createElement("option");o.value=c.k;o.textContent=c.lbl;sel.appendChild(o);});
+          const prevK=f.aliquotCal&&f.aliquotCal.stage!=null?f.aliquotCal.stage:choices[choices.length-1].k;
+          sel.value=String(prevK);
+          sd.appendChild(sel);m2.appendChild(sd);
           const ids=["SW corner pt #","SE corner pt #","NE corner pt #","NW corner pt #"],inp=[];
           ids.forEach(lb=>{const d=document.createElement("div");d.innerHTML="<div class='input-label'>"+lb+"</div>";
             const x=document.createElement("input");x.type="number";x.inputMode="numeric";x.style.width="100%";
@@ -13058,13 +13095,15 @@ function deedPlotterMenu(){
             const ps=inp.map(x=>points.find(p=>p.Point===parseInt(x.value,10)));
             if(ps.some(p=>!p)){alert("All four corner points must exist.");return;}
             const [pSW,pSE,pNE,pNW]=ps.map(p=>({E:p.Easting,N:p.Northing}));
-            const cal=_deedAliquotCalibrate(f.aliquotSpec,pSW,pSE,pNE,pNW);
+            const stageK=parseInt(sel.value,10)||0;
+            const cal=_deedAliquotStageCalibrate(f.aliquotSpec,stageK,pSW,pSE,pNE,pNW);
             // courses are stored record-frame; recompute re-applies the global swing
             const rot=_deedPlot.rot||0;
             cal.calls.forEach(c=>c.compassAz=((c.compassAz-rot)%360+360)%360);
             f.calls=cal.calls;f.pobE=cal.A.E;f.pobN=cal.A.N;f.autoStacked=false;
-            f.aliquotCal={pts:inp.map(x=>parseInt(x.value,10))};
-            f.name=f.name.split(" (")[0].replace(/^Aliquot/,"Aliquot")+" (calibrated to pts "+f.aliquotCal.pts.join(",")+")";
+            f.aliquotCal={pts:inp.map(x=>parseInt(x.value,10)),stage:stageK};
+            const _st=f.aliquotSpec.stages,_desc=_st&&_st.length?_st[_st.length-1].lbl:null;
+            f.name=(_desc?"Aliquot "+_desc:f.name.split(" (")[0])+" (calibrated to pts "+f.aliquotCal.pts.join(",")+")";
             _deedRecompute();saveData();c2();
             const sL=cal.calls.map(c=>c.dist.toFixed(1));
             alert("Calibrated by proportion along the measured lines.\nS "+sL[0]+" \u00b7 E "+sL[1]+" \u00b7 N "+sL[2]+" \u00b7 W "+sL[3]+" ft\nThe parcel now sits on the measured parent \u2014 no seating needed.");
@@ -17600,7 +17639,7 @@ const HELP_TOPICS = [
 <h3>Plotted at Nominal Dimensions</h3>
 <p>The figure is drawn at <strong>nominal GLO dimensions</strong> — section 5280', quarter 2640', forty 1320' — and labeled as such. That is a labeled approximation, exactly like any other record: you seat it and fit it to what you find on the ground. Compound descriptions are read innermost-first, each term cutting one dimension of the parent.</p>
 <h3>⌖ Calibrate to Measured Corners</h3>
-<p>This is where it stops being an approximation. Once you have the four corners of the <strong>parent tract</strong> — the forty or quarter the deed subdivides — open the deed and tap <strong>⌖ Calibrate … to measured corners</strong>, then enter those four point numbers (SW, SE, NE, NW).</p>
+<p>This is where it stops being an approximation. Once you have four measured corners of <strong>a tract the parcel is cut from</strong> — its section, its quarter, or the half or forty it sits in — open the deed and tap <strong>⌖ Calibrate … to measured corners</strong>, then pick <strong>which tract those corners belong to</strong> — the section, the quarter, or whichever piece the parcel is cut from (the list comes from the deed's own wording, with nominal sizes) — and enter the four point numbers (SW, SE, NE, NW).</p>
 <p>The fractional parcel is re-derived by <strong>proportional measurement along the actual lines</strong> — the GLO method. A parent that is 40 feet short on its south line and skewed on its east gives you the correspondingly lopsided parcel, not a clean rectangle in the wrong place. The parcel lands on the measured parent with no seating needed.</p>
 <h3>When It Declines</h3>
 <p>The reader deliberately fails safe and hands the description back to you rather than guessing. It stands down on metes-and-bounds text, on government lots and fractional or riparian language, on directionless fractions (“the 9/20ths of the southern half” — by area or by frontage? the deed doesn't say), and on strips wider than the parent they're cut from.</p>
