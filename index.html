@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.2">
+<meta name="application-name" content="ChainLink-v4.8.3">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.2</title>
+<title>ChainLink Survey v4.8.3</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1316,7 +1316,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.2";
+const APP_VERSION = "4.8.3";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1631,6 +1631,7 @@ let surveyMode        = "2D";   // "2D"|"3D"
 let distMode          = "SD";   // "SD"|"HD" — slope dist or horiz dist input
 let prismConstant     = 0;      // added to every measured distance (e.g. -0.098 for -30mm prism)
 let combinedScaleFactor = 1;    // grid/ground CSF — multiplies measured distances (1 = off)
+let footKind = "us";             // 4.8.3: which foot a ft job is in — "us" (GPS/state plane, default) or "intl"
 let jobName           = "survey";
 let units             = "ft";   // "ft"|"m"
 let showLabels        = true;
@@ -1760,6 +1761,7 @@ function _jobCapture(){
     distMode: distMode||"SD",
     prismConstant: prismConstant||0,
     combinedScaleFactor: combinedScaleFactor||1,
+    footKind: footKind==="intl"?"intl":"us",
     orientationOffset: orientationOffset||0,
     occupied: currentPoint?currentPoint.Point:null,
     ngsMarks: JSON.parse(JSON.stringify((typeof _ngsMarks!=="undefined"&&_ngsMarks)||[])),
@@ -1783,6 +1785,7 @@ function _jobApply(blob){
   distMode=blob.distMode||"SD";
   prismConstant=typeof blob.prismConstant==="number"?blob.prismConstant:0;
   combinedScaleFactor=blob.combinedScaleFactor>0?blob.combinedScaleFactor:1;
+  footKind=blob.footKind==="intl"?"intl":"us";
   orientationOffset=blob.orientationOffset||0;
   if(typeof geoAnchor!=="undefined") geoAnchor=blob.geoAnchor||null;
   if(typeof satOn!=="undefined"){
@@ -2059,7 +2062,18 @@ function _startNewJob(jn,N,E,Z,deferSetup,noStart){
   // orient it); the folder prompt now says the job already saves itself.
   // deferSetup=true parks this chain until the caller is ready (e.g. after
   // the user long-presses the exact start point on imagery).
-  const _setupChain=()=>atmosphericSetup(()=>{
+  const _csfAsk=next=>{
+    // 4.8.3: the grid scale factor belongs to a location — a new job used to
+    // inherit the last job's without a word
+    if(combinedScaleFactor&&combinedScaleFactor!==1){
+      const was=combinedScaleFactor;
+      confirmDialog("The last job used a grid scale factor of "+was.toFixed(8)+". Keep it for this job?",keep=>{
+        if(!keep){combinedScaleFactor=1;saveData();try{_syncSetupStrip();}catch(e){}}
+        next();
+      });
+    } else next();
+  };
+  const _setupChain=()=>_csfAsk(()=>atmosphericSetup(()=>{
     if(typeof window.showDirectoryPicker==="function"){
       openModal((modal,close)=>{
         modal.innerHTML="<h2>Keep a CSV Copy?</h2><p class='info'>Your job already saves on this device. Pick a folder too and ChainLink will also write a CSV copy there after every change \u2014 a file you can open, back up, or send to the office.</p>";
@@ -2068,7 +2082,7 @@ function _startNewJob(jn,N,E,Z,deferSetup,noStart){
         mk("No Thanks","",()=>{close();});
       });
     }
-  });
+  }));
   if(deferSetup) window._deferredJobSetup=_setupChain;
   else _setupChain();
 }
@@ -2207,6 +2221,10 @@ function _buildCSV(){
     if(Object.keys(extra).length) raw[p.Point]=extra;
   });
   const meta={connections:plotConnections,surveyMode,units,v:APP_VERSION};
+  // 4.8.3: the plotted deed rides along, so a job restored from its CSV copy
+  // still has its calls, closure and diagnostics — not just corner points
+  if(typeof _deedPlot!=="undefined"&&_deedPlot&&_deedPlot.figures&&_deedPlot.figures.length)
+    meta.deed={v:2,rot:_deedPlot.rot||0,figures:_deedPlot.figures.map(_deedFigSerialize)};
   if(Object.keys(raw).length) meta.raw=raw;
   if(typeof _polylines!=="undefined"&&_polylines.length) meta.polylines=_polylines;
   csv+="#CHAINLINK:"+JSON.stringify(meta)+"\n";
@@ -2284,21 +2302,25 @@ const parseDMS = s => {
   }
   const [deg,minsec=""]=s.split(".");
   const pad=minsec.padEnd(4,"0");
-  const mm=+pad.slice(0,2), ss=+pad.slice(2,4);
-  if(mm>=60||ss>=60) return NaN; // reject garbage
+  // 4.8.3: digits after the seconds are tenths/hundredths of a second
+  // (45.30155 = 45°30'15.5") — they used to be dropped
+  const mm=+pad.slice(0,2), ss=+(pad.slice(2,4)+"."+(pad.slice(4)||"0"));
+  if(isNaN(mm)||isNaN(ss)||mm>=60||ss>=60) return NaN; // reject garbage
   const dd=+deg+mm/60+ss/3600;
   return neg?-dd:dd;
 };
 const toDMS = deg => {
   if(isNaN(deg)) return "NaN";
   const sign=deg<0?"-":""; deg=Math.abs(deg);
+  const below360=deg<360;
   let d=Math.floor(deg);
   let m=Math.floor((deg-d)*60);
   let s=Math.round(((deg-d)*60-m)*60);
   // Carry rounding overflow
   if(s>=60){s-=60;m+=1;}
   if(m>=60){m-=60;d+=1;}
-  return sign+d+"°"+String(m).padStart(2,"0")+"'"+String(s).padStart(2,"0")+'"';
+  if(below360&&d>=360&&!sign)d-=360; // 4.8.3: 359°59'59.99" showed as 360°00'00"
+  return (sign&&d===0&&m===0&&s===0?"":sign)+d+"°"+String(m).padStart(2,"0")+"'"+String(s).padStart(2,"0")+'"';
 };
 
 // Quadrant bearing formatter: azimuth → "N35°22'42\"W"
@@ -2745,6 +2767,34 @@ function _deliverFile(blob,fname){
     modal.appendChild(cl);
   });
 }
+/* 4.8.3 export helpers. Plotted deed courses are drawn on the fly from the
+   deed record (they are not in plotConnections), and polylines live in their
+   own list — DXF and GeoJSON used to skip both, and LandXML / KML skipped
+   the deed. Polyline arc segments were exported as straight chords. */
+function _exportDeedConns(){
+  try{ return (typeof _deedConns==="function")?_deedConns():[]; }catch(e){ return []; }
+}
+function _plSegConns(pl){
+  const out=[],vs=(pl&&pl.verts)||[],sg=(pl&&pl.segs)||[];
+  for(let i=0;i<vs.length-1;i++){
+    const P=vs[i],Q=vs[i+1],s=sg[i]||{type:"line"};
+    if(!P||!Q)continue;
+    if(s.type==="arc"&&s.centerE!=null&&s.R>0){
+      const bP=_plBearing(s.centerE,s.centerN,P.E,P.N),bQ=_plBearing(s.centerE,s.centerN,Q.E,Q.N);
+      out.push({P,Q,arc:_buildArcConn(s.centerE,s.centerN,s.R,bP,bQ,s.dir,"solid")});
+    } else out.push({P,Q});
+  }
+  return out;
+}
+function _plPath(pl,maxDeg){
+  const pts=[];
+  _plSegConns(pl).forEach((g,k)=>{
+    const seq=g.arc?_arcPathPoints(g.arc,maxDeg):[g.P,g.Q];
+    seq.forEach((q,j)=>{ if(k>0&&j===0)return; pts.push({E:q.E,N:q.N}); });
+    if(g.arc){pts[pts.length-1]={E:g.Q.E,N:g.Q.N};}
+  });
+  return pts;
+}
 async function exportDXF(){
   if(!requirePro("DXF export")) return;
   // Generate a simple DXF with points and lines
@@ -2752,29 +2802,40 @@ async function exportDXF(){
   dxf+="0\nSECTION\n2\nENTITIES\n";
   // Points as POINT entities
   points.forEach(p=>{
-    dxf+=`0\nPOINT\n8\nPOINTS\n10\n${p.Easting.toFixed(4)}\n20\n${p.Northing.toFixed(4)}\n30\n${p.Elevation.toFixed(4)}\n`;
+    dxf+=`0\nPOINT\n8\nPOINTS\n10\n${p.Easting.toFixed(4)}\n20\n${p.Northing.toFixed(4)}\n30\n${(isFinite(p.Elevation)?+p.Elevation:0).toFixed(4)}\n`;
     dxf+=`0\nTEXT\n8\nLABELS\n10\n${p.Easting.toFixed(4)}\n20\n${p.Northing.toFixed(4)}\n30\n0\n40\n0.5\n1\n${p.Point} ${String(p.Description||"").replace(/[\r\n]+/g," ")}\n`;
   });
   // Lines and arcs
-  plotConnections.forEach(c=>{
-    if(c.type==="arc"){
-      // DXF arcs run CCW from angle 50 to 51, measured from +X (east).
-      // conn angles are already math-space radians; sweep<0 means CW,
-      // so for CW arcs swap start/end to express the same arc CCW.
-      const norm=d=>{d=d%360;return d<0?d+360:d;};
-      const aStart=norm(c.startAngle*180/Math.PI);
-      const aEnd  =norm(c.endAngle  *180/Math.PI);
-      const cw=(c.endAngle-c.startAngle)<0;
-      const a50=cw?aEnd:aStart, a51=cw?aStart:aEnd;
-      const layer=c.style==="dashed"?"DASHED":"LINES";
-      dxf+=`0\nARC\n8\n${layer}\n10\n${c.centerE.toFixed(4)}\n20\n${c.centerN.toFixed(4)}\n30\n0\n40\n${c.R.toFixed(4)}\n50\n${a50.toFixed(4)}\n51\n${a51.toFixed(4)}\n`;
+  // DXF arcs run CCW from angle 50 to 51, measured from +X (east).
+  // conn angles are already math-space radians; sweep<0 means CW,
+  // so for CW arcs swap start/end to express the same arc CCW.
+  const dxfArc=(c,layer)=>{
+    const norm=d=>{d=d%360;return d<0?d+360:d;};
+    const aStart=norm(c.startAngle*180/Math.PI);
+    const aEnd  =norm(c.endAngle  *180/Math.PI);
+    const cw=(c.endAngle-c.startAngle)<0;
+    const a50=cw?aEnd:aStart, a51=cw?aStart:aEnd;
+    dxf+=`0\nARC\n8\n${layer}\n10\n${c.centerE.toFixed(4)}\n20\n${c.centerN.toFixed(4)}\n30\n0\n40\n${c.R.toFixed(4)}\n50\n${a50.toFixed(4)}\n51\n${a51.toFixed(4)}\n`;
+  };
+  const dxfLine=(E1,N1,E2,N2,layer)=>{
+    dxf+=`0\nLINE\n8\n${layer}\n10\n${E1.toFixed(4)}\n20\n${N1.toFixed(4)}\n30\n0\n11\n${E2.toFixed(4)}\n21\n${N2.toFixed(4)}\n31\n0\n`;
+  };
+  const connOut=(c,layer)=>{
+    if(c.type==="arc"){ dxfArc(c,layer); return; }
+    if(c.type==="spiral"){
+      const sm=c.samples||[];
+      for(let k=1;k<sm.length;k++)dxfLine(sm[k-1].E,sm[k-1].N,sm[k].E,sm[k].N,layer);
       return;
     }
     const pa=points.find(p=>p.Point===c.from);
     const pb=points.find(p=>p.Point===c.to);
     if(!pa||!pb)return;
-    const layer=c.style==="dashed"?"DASHED":"LINES";
-    dxf+=`0\nLINE\n8\n${layer}\n10\n${pa.Easting.toFixed(4)}\n20\n${pa.Northing.toFixed(4)}\n30\n0\n11\n${pb.Easting.toFixed(4)}\n21\n${pb.Northing.toFixed(4)}\n31\n0\n`;
+    dxfLine(pa.Easting,pa.Northing,pb.Easting,pb.Northing,layer);
+  };
+  plotConnections.forEach(c=>connOut(c,c.style==="dashed"?"DASHED":"LINES"));
+  _exportDeedConns().forEach(c=>connOut(c,c._tie?"DEED_TIE":"DEED"));
+  (typeof _polylines!=="undefined"?_polylines:[]).forEach(pl=>{
+    _plSegConns(pl).forEach(g=>{ if(g.arc)dxfArc(g.arc,"POLYLINES"); else dxfLine(g.P.E,g.P.N,g.Q.E,g.Q.N,"POLYLINES"); });
   });
   dxf+="0\nENDSEC\n0\nEOF\n";
   const blob=new Blob([dxf],{type:"application/octet-stream"});
@@ -2795,7 +2856,7 @@ function exportLandXML(){
   // 4.7.25: the app's foot is the US survey foot (GPS/state plane use 3937/1200).
   // Plain "foot" means international foot to most importers — 2 ppm off.
   xml+=units==="ft"
-    ?`  <Units><Imperial linearUnit="USSurveyFoot" areaUnit="squareFoot" volumeUnit="cubicFeet" temperatureUnit="fahrenheit" pressureUnit="inHG" angularUnit="decimal degrees" directionUnit="decimal degrees"/></Units>\n`
+    ?`  <Units><Imperial linearUnit="${footKind==="intl"?"foot":"USSurveyFoot"}" areaUnit="squareFoot" volumeUnit="cubicFeet" temperatureUnit="fahrenheit" pressureUnit="inHG" angularUnit="decimal degrees" directionUnit="decimal degrees"/></Units>\n`
     :`  <Units><Metric linearUnit="meter" areaUnit="squareMeter" volumeUnit="cubicMeter" temperatureUnit="celsius" pressureUnit="HPA" angularUnit="decimal degrees" directionUnit="decimal degrees"/></Units>\n`;
   xml+=`  <CgPoints name="${jn}">\n`;
   points.forEach(p=>{
@@ -2806,24 +2867,30 @@ function exportLandXML(){
   // 4.7.25: linework — lines by point reference, arcs by coordinates
   const nz=(N,E)=>`${N.toFixed(4)} ${E.toFixed(4)}`;
   let feats="";
-  plotConnections.forEach((c,i)=>{
-    if(c.type==="arc"){
-      const sE=c.centerE+c.R*Math.cos(c.startAngle), sN=c.centerN+c.R*Math.sin(c.startAngle);
-      const eE=c.centerE+c.R*Math.cos(c.endAngle),   eN=c.centerN+c.R*Math.sin(c.endAngle);
-      const rot=(c.endAngle-c.startAngle)<0?"cw":"ccw";
-      feats+=`      <PlanFeature name="A${i+1}"><CoordGeom><Curve rot="${rot}" radius="${c.R.toFixed(4)}"><Start>${nz(sN,sE)}</Start><Center>${nz(c.centerN,c.centerE)}</Center><End>${nz(eN,eE)}</End></Curve></CoordGeom></PlanFeature>\n`;
-      return;
+  const curveXml=c=>{
+    const sE=c.centerE+c.R*Math.cos(c.startAngle), sN=c.centerN+c.R*Math.sin(c.startAngle);
+    const eE=c.centerE+c.R*Math.cos(c.endAngle),   eN=c.centerN+c.R*Math.sin(c.endAngle);
+    const rot=(c.endAngle-c.startAngle)<0?"cw":"ccw";
+    return `<Curve rot="${rot}" radius="${c.R.toFixed(4)}"><Start>${nz(sN,sE)}</Start><Center>${nz(c.centerN,c.centerE)}</Center><End>${nz(eN,eE)}</End></Curve>`;
+  };
+  const featOut=(c,name,desc)=>{
+    const d=desc?` desc="${_xmlEsc(desc)}"`:"";
+    if(c.type==="arc"){ feats+=`      <PlanFeature name="${name}"${d}><CoordGeom>${curveXml(c)}</CoordGeom></PlanFeature>\n`; return; }
+    if(c.type==="spiral"){
+      const sm=c.samples||[]; if(sm.length<2)return; let g="";
+      for(let k=1;k<sm.length;k++)g+=`<Line><Start>${nz(sm[k-1].N,sm[k-1].E)}</Start><End>${nz(sm[k].N,sm[k].E)}</End></Line>`;
+      feats+=`      <PlanFeature name="${name}"${d}><CoordGeom>${g}</CoordGeom></PlanFeature>\n`; return;
     }
-    if(c.type==="spiral")return;
     if(c.from==null||c.to==null)return;
     if(!points.some(p=>p.Point===c.from)||!points.some(p=>p.Point===c.to))return;
-    feats+=`      <PlanFeature name="L${i+1}"><CoordGeom><Line><Start pntRef="${c.from}"/><End pntRef="${c.to}"/></Line></CoordGeom></PlanFeature>\n`;
-  });
+    feats+=`      <PlanFeature name="${name}"${d}><CoordGeom><Line><Start pntRef="${c.from}"/><End pntRef="${c.to}"/></Line></CoordGeom></PlanFeature>\n`;
+  };
+  plotConnections.forEach((c,i)=>featOut(c,(c.type==="arc"?"A":"L")+(i+1)));
+  _exportDeedConns().forEach((c,i)=>featOut(c,"D"+(i+1),(c._tie?"Deed tie":"Deed")+(c._name?" — "+c._name:"")));
   (typeof _polylines!=="undefined"?_polylines:[]).forEach((pl,j)=>{
-    const vs=pl.verts||[]; if(vs.length<2)return;
-    let g="";
-    for(let k=0;k<vs.length-1;k++)g+=`<Line><Start>${nz(vs[k].N,vs[k].E)}</Start><End>${nz(vs[k+1].N,vs[k+1].E)}</End></Line>`;
-    feats+=`      <PlanFeature name="PL${j+1}"><CoordGeom>${g}</CoordGeom></PlanFeature>\n`;
+    const sg=_plSegConns(pl); if(!sg.length)return;
+    const g=sg.map(q=>q.arc?curveXml(q.arc):`<Line><Start>${nz(q.P.N,q.P.E)}</Start><End>${nz(q.Q.N,q.Q.E)}</End></Line>`).join("");
+    feats+=`      <PlanFeature name="PL${j+1}"${pl.name?` desc="${_xmlEsc(pl.name)}"`:""}><CoordGeom>${g}</CoordGeom></PlanFeature>\n`;
   });
   if(feats)xml+=`  <PlanFeatures name="${jn}">\n${feats}  </PlanFeatures>\n`;
   xml+=`</LandXML>\n`;
@@ -3055,23 +3122,20 @@ function exportKML(){
     if(p.Description)k+="<description>"+esc(p.Description)+"</description>";
     k+="<Point><coordinates>"+co(p.Easting,p.Northing)+"</coordinates></Point></Placemark>";
   });
-  plotConnections.forEach(c=>{
-    if(c.type==="arc"){ // 4.7.25: were silently dropped
-      k+='<Placemark><styleUrl>#ln</styleUrl><LineString><tessellate>1</tessellate><coordinates>'+
-         _arcPathPoints(c,2).map(q=>co(q.E,q.N)).join(" ")+"</coordinates></LineString></Placemark>";
-      return;
-    }
+  const kmlLine=(pts,name)=>{
+    if(pts.length<2)return;
+    k+='<Placemark>'+(name?'<name>'+esc(name)+'</name>':'')+'<styleUrl>#ln</styleUrl><LineString><tessellate>1</tessellate><coordinates>'+
+       pts.map(q=>co(q.E,q.N)).join(" ")+"</coordinates></LineString></Placemark>";
+  };
+  const connPts=c=>{
+    if(c.type==="arc")return _arcPathPoints(c,2); // 4.7.25: were silently dropped
+    if(c.type==="spiral")return (c.samples||[]).map(q=>({E:q.E,N:q.N}));
     const a=points.find(p=>p.Point===c.from),b=points.find(p=>p.Point===c.to);
-    if(!a||!b)return;
-    k+='<Placemark><styleUrl>#ln</styleUrl><LineString><tessellate>1</tessellate><coordinates>'+
-       co(a.Easting,a.Northing)+" "+co(b.Easting,b.Northing)+"</coordinates></LineString></Placemark>";
-  });
-  (typeof _polylines!=="undefined"?_polylines:[]).forEach(pl=>{
-    const vs=(pl.verts||[]);
-    if(vs.length<2)return;
-    k+='<Placemark><styleUrl>#ln</styleUrl><LineString><tessellate>1</tessellate><coordinates>'+
-       vs.map(v=>co(v.E,v.N)).join(" ")+"</coordinates></LineString></Placemark>";
-  });
+    return (a&&b)?[{E:a.Easting,N:a.Northing},{E:b.Easting,N:b.Northing}]:[];
+  };
+  plotConnections.forEach(c=>kmlLine(connPts(c)));
+  _exportDeedConns().forEach(c=>kmlLine(connPts(c),c._tie?"Deed tie":"Deed"));
+  (typeof _polylines!=="undefined"?_polylines:[]).forEach(pl=>kmlLine(_plPath(pl,2),pl.name||""));
   k+="</Document></kml>";
   const blob=new Blob([k],{type:"application/vnd.google-earth.kml+xml"});
   _deliverFile(blob,(jobName||"survey")+".kml");
@@ -3089,10 +3153,13 @@ function exportGeoJSON(){
       geometry:{type:"Point",coordinates:[+p.Easting.toFixed(4),+p.Northing.toFixed(4),+((p.Elevation||0).toFixed(4))]},
       properties:{point:p.Point,desc:p.Description||"",type:p.Type||""}});
   });
-  plotConnections.forEach(c=>{
+  const xy=q=>[+q.E.toFixed(4),+q.N.toFixed(4)];
+  const connFeat=(c,kind)=>{
     let coords;
     if(c.type==="arc"){
-      coords=_arcPathPoints(c,4).map(q=>[+q.E.toFixed(4),+q.N.toFixed(4)]);
+      coords=_arcPathPoints(c,4).map(xy);
+    } else if(c.type==="spiral"){
+      coords=(c.samples||[]).map(xy); if(coords.length<2)return;
     } else {
       const pa=points.find(p=>p.Point===c.from), pb=points.find(p=>p.Point===c.to);
       if(!pa||!pb)return;
@@ -3100,7 +3167,13 @@ function exportGeoJSON(){
     }
     feats.push({type:"Feature",
       geometry:{type:"LineString",coordinates:coords},
-      properties:{style:c.style||"solid",kind:c.type==="arc"?"arc":"line",from:c.from!=null?c.from:null,to:c.to!=null?c.to:null}});
+      properties:{style:c.style||"solid",kind:kind||(c.type==="arc"?"arc":(c.type==="spiral"?"spiral":"line")),from:c.from!=null?c.from:null,to:c.to!=null?c.to:null}});
+  };
+  plotConnections.forEach(c=>connFeat(c));
+  _exportDeedConns().forEach(c=>connFeat(c,c._tie?"deed-tie":(c.type==="arc"?"deed-arc":"deed")));
+  (typeof _polylines!=="undefined"?_polylines:[]).forEach(pl=>{
+    const pts=_plPath(pl,4); if(pts.length<2)return;
+    feats.push({type:"Feature",geometry:{type:"LineString",coordinates:pts.map(xy)},properties:{kind:"polyline",name:pl.name||""}});
   });
   const gj={type:"FeatureCollection",
     crs_note:"Local grid coordinates (Easting, Northing"+(surveyMode==="3D"?", Elevation":"")+") in "+units+" — not lon/lat",
@@ -3812,14 +3885,17 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
       return true;
     });
     const rawMap=(embeddedMeta&&embeddedMeta.raw)||{};
+    let noZ=0;
     const newPts=lines.map(l=>{
       const p=_splitCSVLine(l);
       const pt=parseInt(p[colMap.pt]);
       const n=parseFloat(p[colMap.n]);
       const e=parseFloat(p[colMap.e]);
-      const z=parseFloat(p[colMap.z])||0;
+      const zf=parseFloat(p[colMap.z]);
+      const z=isNaN(zf)?0:zf;
       const desc=(p[colMap.desc]||"").trim();
       if(isNaN(pt)||isNaN(n)||isNaN(e)) return null;
+      if(isNaN(zf)&&!colMap._native) noZ++;
       const rec={Point:pt,Northing:n,Easting:e,Elevation:z,Description:desc,Type:"Import",Flag:"",ih:0};
       if(colMap._native){
         rec.Type=(p[colMap.type]||"").trim()||"Import";
@@ -3829,6 +3905,15 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
       return rec;
     }).filter(Boolean);
     if(!newPts.length){alert("No valid points found. Check column mapping.");return}
+    // 4.8.3: a repeated point number used to come in twice, and every
+    // lookup after that found only the first. Repeats get the next free
+    // number and are listed in the result.
+    const used=new Set(),dups=[];
+    let nextFree=newPts.reduce((m,q)=>q.Point>m?q.Point:m,0)+1;
+    newPts.forEach(q=>{
+      if(used.has(q.Point)){const was=q.Point;q.Point=nextFree++;dups.push(was+"→"+q.Point);}
+      used.add(q.Point);
+    });
     if(_jobFileAsNew){
       _jobCommitActive();
       _jobPendingNew=true;
@@ -3844,11 +3929,26 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
       surveyMode=embeddedMeta.surveyMode||"2D";
       units=embeddedMeta.units||"ft";
     } else {plotConnections=[];_polylines=[];}
+    // 4.8.3: restore the deed from the file, or clear it — the previous
+    // job's deed used to stay on screen after loading a different file
+    if(typeof _deedPlot!=="undefined"){
+      const raw=embeddedMeta&&embeddedMeta.deed;
+      try{
+        _deedPlot=(raw&&raw.v===2&&Array.isArray(raw.figures))?_mkDeed(raw.figures,raw.rot||0):null;
+        if(_deedPlot){
+          _deedPlot.figures.forEach(f=>{f.recordId=f.recordId||"deed-1";f.recordName=f.recordName||"Deed 1";f.recordRot=f.recordRot||0;});
+          _deedRecompute();
+        }
+      }catch(e){_deedPlot=null;}
+    }
     saveData();
     showResult("\u2713 Loaded",[
       {lbl:"Points:",  val:String(newPts.length)},
       {lbl:"Job:",     val:jobName},
       {lbl:"Mapping:", val:"Pt="+colMap.pt+" N="+colMap.n+" E="+colMap.e+" Z="+colMap.z+" Desc="+colMap.desc},
+      ...(dups.length?[{lbl:"⚠ Renumbered:",val:dups.length+" repeated point #"+(dups.length===1?"":"s")+" ("+dups.slice(0,6).join(", ")+(dups.length>6?", …":"")+")"}]:[]),
+      ...(noZ?[{lbl:"⚠ No elevation:",val:noZ+" point"+(noZ===1?"":"s")+" had a blank elevation — set to 0"}]:[]),
+      ...(typeof _deedPlot!=="undefined"&&_deedPlot?[{lbl:"Deed:",val:"plotted deed restored"}]:[]),
     ]);
   }catch(err){alert("Load error: "+err.message)}
 }
@@ -4410,7 +4510,10 @@ function _showOrientationExplainer(onDone){
 
 
 function _computePPM(T_C, P_hPa){
-  return 281.77 - (79.661 * P_hPa) / (273.15 + T_C);
+  // 4.8.3: 279.85 − 79.585·P/(273.15+t), P in hPa — 0 ppm at the standard
+  // atmosphere (15 °C, 1013.25 hPa), the reference most guns use. The old
+  // constants read +1.65 ppm there.
+  return 279.85 - (79.585 * P_hPa) / (273.15 + T_C);
 }
 
 function _applyPPM(dist){
@@ -5407,12 +5510,15 @@ function deletePoint(){
   calculatorInput("Point # to delete:","",num=>{
     if(!num)return; const p=points.find(pt=>pt.Point===parseInt(num));
     if(!p){alert("Not found.");return}
-    confirmDialog(`Delete Point #${p.Point} (${p.Description||"no desc"})?`,yes=>{
+    confirmDialog(`Delete Point #${p.Point} (${p.Description||"no desc"})?`+(p===currentPoint?" It is the occupied station.":""),yes=>{
       if(!yes)return;
       _takeSnapshot("Delete Pt #"+p.Point);
       points=points.filter(x=>x!==p); undoStack=undoStack.filter(x=>x!==p);
       plotConnections=plotConnections.filter(c=>c.to!==p.Point&&c.from!==p.Point);
-      if(p===currentPoint)currentPoint=points[0]||null; saveData();
+      const wasOcc=(p===currentPoint);
+      if(wasOcc)currentPoint=points[0]||null; saveData();
+      // 4.8.3: say where the instrument now is — it used to move silently
+      if(wasOcc){updateStatus();alert("#"+p.Point+" was the occupied station. "+(currentPoint?"Now occupying #"+currentPoint.Point+" — use Occupy Point if that's not right.":"No station is occupied now — use Occupy Point."));}
     });
   });
 }
@@ -5517,7 +5623,9 @@ function stakeToLine(){
   if(!requirePro("Stake to Line / Arc")) return;
   _helpContext="stake-to-line";
   if(!currentPoint){alert("Occupy a point first.");return}
-  if(!plotConnections.length){alert("No lines or arcs drawn yet. Draw one first, then stake to it.");return}
+  // 4.8.3: plotted deed courses are stakeable lines too
+  const _nDeed=(typeof _deedConns==="function")?_deedConns().length:0;
+  if(!plotConnections.length&&!_nDeed){alert("No lines or arcs drawn yet. Draw one first, then stake to it.");return}
   window._stlActive=true;
   window._stlPickActive=true;   // waiting for a line/arc tap on the plot
   const bn=document.getElementById("intersectBanner");
@@ -5529,6 +5637,7 @@ function stakeToLine(){
 // Geometry chosen — set up the staking session for a line or an arc.
 function _stlSelectGeom(conn){
   const occ=currentPoint;
+  if(!occ){alert("Occupy a point first.");window._stlActive=false;return;}
   if(conn.type==="arc"){
     const geom={kind:"arc",conn};
     tempGeom=[{type:"bndarc",cx:conn.centerE,cy:conn.centerN,R:conn.R,
@@ -5592,6 +5701,13 @@ const _PL_SNAP=0.05;      // world units: a line/arc endpoint within this of the
 function _stlMeasure(geom){
   const occ=currentPoint;
   if(!occ){alert("Occupy a point first.");return;}
+  // 4.8.3: the Stake button on a tapped line passes {kind:"line",conn} — it
+  // crashed here because only the menu path supplied the end points.
+  if(geom&&geom.kind==="line"&&!(geom.pA&&geom.pB)&&geom.conn){
+    const pA=points.find(p=>p.Point==geom.conn.from), pB=points.find(p=>p.Point==geom.conn.to);
+    if(!pA||!pB){alert("Could not resolve line endpoints.");window._stlActive=false;return;}
+    geom={kind:"line",pA,pB};
+  }
   calculatorInput("Instrument reading to rodman (DDD.MMSS):",_lastStlAz,azStr=>{
     if(!azStr)return;
     const rawAz=parseDMS(azStr);
@@ -6339,11 +6455,18 @@ function _editPointMenu(pt){
 function _editPointCoords(pt){
   calculatorInput(`Northing [${pt.Northing.toFixed(3)}]:`,pt.Northing.toFixed(3),n=>{if(n===null)return;
     calculatorInput(`Easting [${pt.Easting.toFixed(3)}]:`,pt.Easting.toFixed(3),e=>{if(e===null)return;
-      calculatorInput(`Elevation [${pt.Elevation.toFixed(3)}]:`,pt.Elevation.toFixed(3),z=>{if(z===null)return;
+      const z0=(isFinite(pt.Elevation)?+pt.Elevation:0).toFixed(3);
+      calculatorInput(`Elevation [${z0}]:`,z0,z=>{if(z===null)return;
         alphaInput(`Description [${pt.Description}]:`,pt.Description,desc=>{if(desc===null)return;
+          // 4.8.3: "0" used to be ignored (0 || old value), so an elevation
+          // could never be set to 0.000. Blank keeps the old value; anything
+          // that isn't a number is refused instead of being half-read.
+          const num=(t,old)=>{t=String(t).trim();if(t==="")return old;const v=Number(t);return isFinite(v)?v:NaN;};
+          const nN=num(n,pt.Northing),nE=num(e,pt.Easting),nZ=num(z,pt.Elevation);
+          if(isNaN(nN)||isNaN(nE)||isNaN(nZ)){alert("Not a number: "+(isNaN(nN)?n:isNaN(nE)?e:z)+" — nothing was changed.");return;}
           _takeSnapshot("Edit Pt #"+pt.Point);
-          pt.Northing=parseFloat(n)||pt.Northing; pt.Easting=parseFloat(e)||pt.Easting;
-          pt.Elevation=parseFloat(z)||pt.Elevation; pt.Description=desc;
+          pt.Northing=nN; pt.Easting=nE;
+          pt.Elevation=nZ; pt.Description=desc;
           _recomputeAreaLabels(); saveData(); plotPoints();
           showResult(`✓ Pt #${pt.Point} Updated`,[{lbl:"N:",val:pt.Northing.toFixed(3)},{lbl:"E:",val:pt.Easting.toFixed(3)},{lbl:"Z:",val:pt.Elevation.toFixed(3)},{lbl:"Desc:",val:pt.Description}]);
         });
@@ -6457,19 +6580,21 @@ function settingsMenu(){
         modal.innerHTML=`<h2>Units: ${from} → ${to}</h2>
 <p class="info">Convert every stored value — coordinates, elevations, distances, radii, HI/TH, prism constant — or just change the label and keep the numbers?</p>`;
         const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-        const doConvert=f=>{
+        const doConvert=(f,fk)=>{
           _takeSnapshot("Convert "+from+"→"+to);
           _convertLinearUnits(f);
           units=to; btn.textContent=units;
+          if(fk)footKind=fk;
           try{_recomputeAreaLabels();}catch(e){}
           saveData();
         };
         if(to==="m"){
-          mk("Convert — International ft (× 0.3048)","ok",()=>{close();doConvert(0.3048);});
-          mk("Convert — US Survey ft (× 1200/3937)","blue",()=>{close();doConvert(1200/3937);});
+          // 4.8.3: US survey ft first — it is the foot GPS / state plane use here
+          mk("Convert — from US Survey ft (× 1200/3937)","ok",()=>{close();doConvert(1200/3937);});
+          mk("Convert — from International ft (× 0.3048)","blue",()=>{close();doConvert(0.3048);});
         } else {
-          mk("Convert — to International ft (÷ 0.3048)","ok",()=>{close();doConvert(1/0.3048);});
-          mk("Convert — to US Survey ft (÷ 1200/3937)","blue",()=>{close();doConvert(3937/1200);});
+          mk("Convert — to US Survey ft (÷ 1200/3937)","ok",()=>{close();doConvert(3937/1200,"us");});
+          mk("Convert — to International ft (÷ 0.3048)","blue",()=>{close();doConvert(1/0.3048,"intl");});
         }
         mk("Relabel only — keep numbers","",()=>{close();units=to;btn.textContent=units;saveData();});
         mk("Cancel","",close);
@@ -7184,6 +7309,10 @@ function intBearBear(){
           if(Math.abs(den)<1e-10)return alert("Lines are parallel.");
           const t=((p2.Easting-p1.Easting)*Math.cos(r2)-(p2.Northing-p1.Northing)*Math.sin(r2))/den;
           const ei=p1.Easting+t*Math.sin(r1), ni=p1.Northing+t*Math.cos(r1);
+          // 4.8.3: distance along the 2nd azimuth; a negative distance means
+          // the lines cross BEHIND that point (on the back azimuth)
+          const t2=(ei-p2.Easting)*Math.sin(r2)+(ni-p2.Northing)*Math.cos(r2);
+          const behind=[t<0?"#"+p1.Point:null,t2<0?"#"+p2.Point:null].filter(Boolean);
           tempGeom=[
             {type:"ray",E:p1.Easting,N:p1.Northing,az:a1,color:"rgba(74,158,255,.5)"},
             {type:"ray",E:p2.Easting,N:p2.Northing,az:a2,color:"rgba(62,207,116,.5)"},
@@ -7192,6 +7321,9 @@ function intBearBear(){
           zoomToPoints([{E:p1.Easting,N:p1.Northing},{E:p2.Easting,N:p2.Northing},{E:ei,N:ni}]);
           showResult("Bearing–Bearing Intersection",[
             {lbl:"N:",val:ni.toFixed(4)},{lbl:"E:",val:ei.toFixed(4)},
+            {lbl:"Dist from #"+p1.Point+":",val:Math.abs(t).toFixed(3)+" "+units+(t<0?" (behind)":"")},
+            {lbl:"Dist from #"+p2.Point+":",val:Math.abs(t2).toFixed(3)+" "+units+(t2<0?" (behind)":"")},
+            ...(behind.length?[{lbl:"⚠ Check:",val:"the lines cross BEHIND "+behind.join(" and ")+" — on the back azimuth. Check the azimuths you entered."}]:[]),
           ],[
             {txt:"Save as Point",cls:"ok",fn:()=>{tempGeom=[];tempIntersections=[];plotPoints();_promptSaveInt(ei,ni,p1.Point,p2.Point)}},
             {txt:"Cancel",cls:"",fn:()=>{tempGeom=[];tempIntersections=[];plotPoints()}},
@@ -7211,6 +7343,7 @@ function intDistDist(){
           const dB=parseFloat(rB);if(isNaN(dB)||dB<=0)return alert("Bad radius");
           const dx=p2.Easting-p1.Easting,dy=p2.Northing-p1.Northing;
           const d=Math.hypot(dx,dy);
+          if(d<1e-9)return alert("Both radii are from the same point — pick two different centre points.");
           if(d<Math.abs(dA-dB)||d>dA+dB)return alert("Circles don’t intersect.");
           const a=(dA*dA-dB*dB+d*d)/(2*d);
           const h=Math.sqrt(Math.max(0,dA*dA-a*a));
@@ -9249,8 +9382,10 @@ function _cutFillFlat(){
     const pa=points.find(p=>p.Point==+a);if(!pa)return alert("Not found");
     calculatorInput(`Design Elevation (${units}):` ,"",dz=>{if(!dz)return;
       const design=parseFloat(dz);if(isNaN(design))return alert("Bad value");
-      const diff=design-pa.Elevation;
-      const label=diff>0?"CUT":"FILL";
+      // 4.8.3: CUT = ground above grade, FILL = ground below — the same
+      // convention as Stakeout → Measure Rod. It was the other way round.
+      const diff=pa.Elevation-design;
+      const label=Math.abs(diff)<0.005?"On grade":(diff>0?"CUT":"FILL");
       showResult("Cut / Fill",[
         {lbl:"Ground Pt:",val:`#${pa.Point}`},
         {lbl:"Ground Z:",val:pa.Elevation.toFixed(3)+" "+units},
@@ -9282,8 +9417,8 @@ function _cutFillPlane(){
     const _query=()=>{
       _pickPoint("Tap GROUND point to check",g=>{
         const design=pl.z(g.Easting,g.Northing);
-        const diff=design-g.Elevation;
-        const label=diff>0?"CUT":"FILL";
+        const diff=g.Elevation-design;
+        const label=Math.abs(diff)<0.005?"On grade":(diff>0?"CUT":"FILL");
         showResult("Cut / Fill — plane",[
           {lbl:"Plane Pts:",val:pp.map(p=>"#"+p.Point).join(", ")},
           {lbl:"Max Grade:",val:grade.toFixed(2)+"%"},
@@ -9335,6 +9470,21 @@ function _scaleDeedModel(px,py,factor){
   _deedRecompute();
 }
 
+/* 4.8.3: COGO Rotate / Translate / Scale moved points and lines but left
+   polylines and area labels behind. f maps {E,N}→{E,N}; rot is the clockwise
+   rotation in degrees (arc-segment angles are not stored on polylines, so
+   only their centres move); k scales polyline arc radii. */
+function _cogoXformExtras(f,rot,k){
+  if(typeof _polylines!=="undefined")(_polylines||[]).forEach(pl=>{
+    (pl.verts||[]).forEach(v=>{const q=f(v);v.E=q.E;v.N=q.N;});
+    (pl.segs||[]).forEach(sg=>{
+      if(sg.centerE!=null){const q=f({E:sg.centerE,N:sg.centerN});sg.centerE=q.E;sg.centerN=q.N;}
+      if(k&&typeof sg.R==="number")sg.R*=k;
+    });
+  });
+  if(typeof _areaLabels!=="undefined")(_areaLabels||[]).forEach(a=>{if(a.E!=null){const q=f(a);a.E=q.E;a.N=q.N;}});
+  try{_recomputeAreaLabels();}catch(e){}
+}
 function cogoRotateAlign(){
   _helpContext="cogo-rotate";
   calculatorInput("Pivot point # (stays fixed):","",a=>{if(!a)return;
@@ -9352,12 +9502,15 @@ function cogoRotateAlign(){
         const px=p1.Easting,py=p1.Northing;
         _takeSnapshot("Rotate");
         const deedNums=_deedPointNumberSet();
-        const newPts=points.map(p=>{
-          if(deedNums.has(p.Point))return p;
+        // 4.8.3: rotate the points in place. Copies used to replace them, so
+        // the occupied station kept its old coordinates and the next shot
+        // was computed from where the station no longer was.
+        points.forEach(p=>{
+          if(deedNums.has(p.Point))return;
           const q=_rotateEN(p.Easting,p.Northing,px,py,cosT,sinT);
-          return{...p,Easting:q.E,Northing:q.N};
+          p.Easting=q.E;p.Northing=q.N;
         });
-        points.splice(0,points.length,...newPts);
+        _cogoXformExtras(q=>_rotateEN(q.E,q.N,px,py,cosT,sinT),rot);
         _rotateDeedModel(px,py,rot,cosT,sinT);
 
         // Rotate arc connections — center point and start/end angles
@@ -9406,6 +9559,7 @@ function cogoTranslate(){
           p.Elevation+=dZ_;
         });
         _translateDeedModel(dE_,dN_);
+        _cogoXformExtras(q=>({E:q.E+dE_,N:q.N+dN_}),0);
         // Translate arc connection centers too
         plotConnections.forEach(conn=>{
           if(conn.type==="spiral"){
@@ -9427,14 +9581,20 @@ function cogoScale(){
   _helpContext="cogo-scale";
   calculatorInput("Scale factor (e.g. 0.9996):","1.0",sf=>{
     if(!sf)return;const factor=parseFloat(sf);if(isNaN(factor)||factor<=0)return alert("Bad factor");
-    calculatorInput("Scale about Point #:","1",pn=>{
-      const pivot=points.find(p=>p.Point==+pn)||{Northing:0,Easting:0,Point:"origin"};
-      confirmDialog(`Scale all points by ${factor}?`,yes=>{
+    calculatorInput("Scale about Point # (blank = grid origin 0,0):","1",pn=>{
+      if(pn===null)return;
+      // 4.8.3: a point number that isn't in the job used to scale about 0,0
+      // without saying so. Blank still means the grid origin, on purpose.
+      const blank=!String(pn).trim();
+      const pivot=blank?{Northing:0,Easting:0,Point:"origin"}:points.find(p=>p.Point==+pn);
+      if(!pivot){alert("Point #"+pn+" is not in this job.");return;}
+      confirmDialog(`Scale all points by ${factor} about ${blank?"the grid origin (0, 0)":"#"+pivot.Point}?`,yes=>{
         if(!yes)return;
         _takeSnapshot("Scale x"+factor);
         const deedNums=_deedPointNumberSet();
         points.forEach(p=>{if(!deedNums.has(p.Point)){p.Easting=(p.Easting-pivot.Easting)*factor+pivot.Easting;p.Northing=(p.Northing-pivot.Northing)*factor+pivot.Northing;}});
         _scaleDeedModel(pivot.Easting,pivot.Northing,factor);
+        _cogoXformExtras(q=>({E:(q.E-pivot.Easting)*factor+pivot.Easting,N:(q.N-pivot.Northing)*factor+pivot.Northing}),0,factor);
         // Scale arc centers and radii
         plotConnections.forEach(conn=>{
           if(conn.type==="spiral"){
@@ -17271,7 +17431,7 @@ const HELP_TOPICS = [
 
   { id:"cogo-cutfill", section:"COGO", title:"Cut / Fill",
     preview:"Elevation comparison against a design grade or plane",
-    body:`<h3>Cut / Fill</h3><p>Compares ground elevations against a design surface. Each point is flagged cut or fill with the magnitude (cut when design is above ground).</p>
+    body:`<h3>Cut / Fill</h3><p>Compares ground elevations against a design surface. Each point is flagged cut or fill with the magnitude (<strong>CUT</strong> when the ground is above the design, <strong>FILL</strong> when it is below — the same as Stakeout → Measure Rod).</p>
 <p><strong>Flat Design Elevation</strong> — one ground point against a single design height.</p>
 <p><strong>3-Point Design Plane</strong> — tap three design points to define a tilted plane, then check any number of ground points against it. The plane's maximum grade is reported. Useful for rough grading and sloped pads.</p>`},
 
