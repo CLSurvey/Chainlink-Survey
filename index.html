@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.3">
+<meta name="application-name" content="ChainLink-v4.8.4">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.3</title>
+<title>ChainLink Survey v4.8.4</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -383,6 +383,16 @@ body{
   margin-bottom:3px;
 }
 .calc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:3px}
+.calc-grid.calc-grid4{grid-template-columns:repeat(4,1fr)}
+.modal.has-foot.more{-webkit-mask-image:none !important;mask-image:none !important}
+/* 4.8.4: quadrant bearing pop-up — shorter keys so OK / Cancel stay on screen */
+.qb-pop .sf-numpad button{min-height:44px !important;padding:6px 3px !important}
+.qb-pop [data-qns],.qb-pop [data-qew]{padding:7px 4px !important}
+.modal:has(.qb-pop) .disp-input{min-height:36px !important;padding-top:6px !important;padding-bottom:6px !important}
+.modal:has(.qb-pop){max-height:min(68vh,580px) !important}
+@media(max-height:720px){.qb-pop .sf-numpad button{min-height:38px !important}
+  .modal:has(.calc-grid4),.modal:has(.qb-pop){max-height:min(72vh,580px) !important}}
+@media(max-height:720px){.calc-grid button{padding:10px 4px !important}.disp-input{min-height:0 !important;padding-top:6px !important;padding-bottom:6px !important}}
 .calc-grid button{
   padding:15px 6px;
   background:var(--surface2);border:1px solid var(--border);
@@ -970,6 +980,8 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 #plotCanvas{position:relative;z-index:1;background:transparent}
 #recentTicker{top:12px;left:12px;padding:10px 12px;background:linear-gradient(145deg,rgba(19,30,34,.88),rgba(10,16,19,.82));border:1px solid var(--border2);border-radius:14px;backdrop-filter:blur(16px);box-shadow:0 14px 35px rgba(0,0,0,.24);line-height:1.75}
 #intersectBanner{top:12px;background:rgba(16,25,29,.92);border:1px solid rgba(230,183,95,.38);border-radius:999px;padding:8px 18px;box-shadow:0 12px 32px rgba(0,0,0,.24);backdrop-filter:blur(14px);color:var(--accent-bright)}
+/* 4.8.4: long pick instructions wrap instead of running off the screen under the ? button */
+#intersectBanner{white-space:normal;max-width:calc(100% - 124px);width:max-content;line-height:1.35;border-radius:16px}
 #northArrow{top:14px;right:66px;opacity:.92;filter:drop-shadow(0 5px 10px rgba(0,0,0,.65))}
 #helpBtn{top:12px;right:12px;width:42px;height:42px;border-radius:14px;background:linear-gradient(145deg,rgba(26,40,45,.94),rgba(11,18,21,.94));border:1px solid var(--border2);color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,.24)}
 #plotControls{right:10px;bottom:12px;display:grid;grid-template-columns:repeat(2,46px);gap:6px;padding:7px;border-radius:18px;background:linear-gradient(145deg,rgba(18,28,32,.86),rgba(8,13,15,.84));border:1px solid var(--border2);backdrop-filter:blur(18px);box-shadow:0 18px 48px rgba(0,0,0,.32)}
@@ -1316,7 +1328,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.3";
+const APP_VERSION = "4.8.4";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1774,6 +1786,7 @@ function _jobCapture(){
 }
 function _jobApply(blob){
   if(!blob) return;
+  window._relocateNew=null; if(typeof _relocateTarget!=="undefined")_relocateTarget=null;
   points=Array.isArray(blob.points)?blob.points:[];
   pointCounter=points.length?points.reduce((m,p)=>p.Point>m?p.Point:m,0)+1:1;
   plotConnections=Array.isArray(blob.plotConnections)?blob.plotConnections:[];
@@ -2044,6 +2057,7 @@ function jobNew(){
 }
 function _startNewJob(jn,N,E,Z,deferSetup,noStart){
   _clearTransientMapSelections(false);
+  window._relocateNew=null;
   _resetViewState();
   _orientationOffset_unused=0;orientationChosen=false;viewScale=1;viewOffsetX=viewOffsetY=0;
   // noStart: deed-first job — no point dropped where the user happens to be
@@ -2297,6 +2311,17 @@ const uLabel = () => units; // "ft" or "m"
 const parseDMS = s => {
   if(!s||!s.trim()) return NaN;
   const neg=s.trim().startsWith("-"); s=s.trim().replace(/^-/,"");
+  // 4.8.4: also read the app's own display form, 45°30'15" — the bearing
+  // pop-up hands that back on OK (quadrant entry, or an untouched default),
+  // and it used to be read as 45°00'00"
+  if(/[°'"′″]/.test(s)){
+    const m=s.replace(/\s+/g,"").match(/^(\d+(?:\.\d+)?)°(?:(\d+(?:\.\d+)?)['′])?(?:(\d+(?:\.\d+)?)(?:"|″|''))?$/);
+    if(!m) return NaN;
+    const mm=+(m[2]||0), ss=+(m[3]||0);
+    if(mm>=60||ss>=60) return NaN;
+    const dd=+m[1]+mm/60+ss/3600;
+    return neg?-dd:dd;
+  }
   if(!s.includes(".")){
     const v=parseFloat(s); return isNaN(v)?NaN:(neg?-v:v);
   }
@@ -2357,8 +2382,9 @@ function fmtBrg(deg){ return bearingMode==="quad" ? toQuadrant(deg) : toDMS(deg)
 // Returns NaN if unparseable.
 function parseQuadrant(str){
   if(!str||!str.trim()) return NaN;
+  // 4.8.4: the middle may be DDD.MMSS or the display form 45°30'15"
   const m = str.trim().toUpperCase().replace(/\s/g,"")
-    .match(/^([NS])(\d+(?:\.\d+)?)([EW])$/);
+    .match(/^([NS])(\d+(?:\.\d+)?(?:°(?:\d+(?:\.\d+)?['′])?(?:\d+(?:\.\d+)?(?:"|″))?)?)([EW])$/);
   if(!m) return NaN;
   const ns=m[1], ew=m[3];
   const workDeg = parseDMS(m[2]);   // reuse DDD.MMSS parser
@@ -2444,7 +2470,9 @@ function _buildQuadKeyboard(container, onUpdate, opts){
   // DDD.MMSS numpad (same layout as the main numpad)
   const np=document.createElement("div"); np.className="sf-numpad";
   ["7","8","9","⌫","4","5","6","+/-","1","2","3","CLR","0","."].forEach(k=>{
-    if(k==="+/-"&&opts.onStore) return;
+    // 4.8.4: the unused +/- keeps its cell. It was skipped / display:none,
+    // which slid every key after it one place — 1 landed beside 6.
+    if(k==="+/-"){const ph=document.createElement("span");ph.setAttribute("aria-hidden","true");np.appendChild(ph);return;}
     const b=document.createElement("button"); b.textContent=k;
     if(k==="CLR") b.className="np-clr";
     else if(k==="⌫") b.className="np-back";
@@ -2462,6 +2490,8 @@ function _buildQuadKeyboard(container, onUpdate, opts){
     const sb=document.createElement("button"); sb.textContent="✓ STORE SHOT"; sb.className="np-ok";
     sb.onclick=opts.onStore; np.appendChild(sb);
   }
+  // keys appended after "." (bearing pop-up puts OK / Cancel here so they stay on screen)
+  (opts.tail||[]).forEach(t=>{const b=document.createElement("button");b.textContent=t.t;if(t.cls)b.className=t.cls;b.onclick=t.fn;np.appendChild(b);});
   wrap.appendChild(np);
 
   // E/W row
@@ -2508,11 +2538,17 @@ let _modalStack=[];
 function openModal(buildFn, opts){
   if(typeof _relocateTarget!=="undefined"&&_relocateTarget!=null){
     _relocateTarget=null;setTimeout(plotPoints,0);
+    // GPS start + tap abandoned before a spot was picked: Point 1 goes at
+    // the GPS fix after all, so the job still has its start point
+    if(window._relocateNew){const f=window._relocateNew;window._relocateNew=null;_placeStartPoint(f.N,f.E,f.Z);saveData();updateStatus();}
     if(window._deferredJobSetup){window._pendingSetup=window._deferredJobSetup;window._deferredJobSetup=null;}
   }
   if(window._deedPobCalls){window._deedPobCalls=null;setTimeout(plotPoints,0);}
   if(window._deedPobCb){window._deedPobCb=null;window._deedPobLabel=null;setTimeout(plotPoints,0);}
   const ov=document.createElement("div"); ov.className="modal-overlay";
+  // 4.8.4: Job Manager (z 8000) covered every modal (z 500) it opened — the
+  // ✕ delete confirm appeared behind it, so the button seemed dead
+  try{const js=document.getElementById("jobScreen");if(js&&getComputedStyle(js).display!=="none")ov.style.zIndex="8100";}catch(e){}
   const m=document.createElement("div"); m.className="modal";
   ov.appendChild(m); document.body.appendChild(ov); _modalStack.push(ov);
   const close=()=>{ov.remove();_modalStack=_modalStack.filter(x=>x!==ov);
@@ -2555,10 +2591,8 @@ function calculatorInput(label,defaultVal,cb){
     modal.innerHTML=`<h2>Input</h2><div class="input-label">${label}</div><div class="disp-input" id="calcDisp">${defaultVal||""}</div>`;
     const disp=()=>modal.querySelector("#calcDisp"); // was missing — caused silent failures
     let fresh = !!defaultVal;
-    const grid=document.createElement("div"); grid.className="calc-grid";
-    [["7","8","9"],["4","5","6"],["1","2","3"],["-","0","."]].forEach(row=>row.forEach(k=>{
-      const b=document.createElement("button"); b.textContent=k;
-      b.onclick=()=>{
+    const grid=document.createElement("div"); grid.className="calc-grid calc-grid4";
+    const digit=k=>{
         if(k==="-"){
           // If fresh, start fresh with just "-"
           if(fresh){ disp().textContent="-"; fresh=false; }
@@ -2570,13 +2604,19 @@ function calculatorInput(label,defaultVal,cb){
           if(fresh){ disp().textContent=""; fresh=false; }
           disp().textContent+=k;
         }
-      }; grid.appendChild(b);
+    };
+    // 4.8.4: four columns, actions down the right like the shot keypad —
+    // OK and CANCEL were a fifth and sixth row below the fold
+    const ctl={"⌫":["",()=>{fresh=false;const v=disp().textContent;disp().textContent=v.slice(0,-1)}],
+      "CLR":["danger-btn",()=>{fresh=false;disp().textContent=""}],
+      "CANCEL":["accent-btn",()=>{close();cb(null)}],
+      "OK":["ok-btn",()=>{const v=disp().textContent;close();cb(v||null)}]};
+    [["7","8","9","⌫"],["4","5","6","CLR"],["1","2","3","CANCEL"],["-","0",".","OK"]].forEach(row=>row.forEach(k=>{
+      const b=document.createElement("button"); b.textContent=k;
+      if(ctl[k]){b.className=ctl[k][0];b.onclick=ctl[k][1];}
+      else b.onclick=()=>digit(k);
+      grid.appendChild(b);
     }));
-    const mkB=(t,cls,fn)=>{const b=document.createElement("button");b.textContent=t;b.className=cls;b.onclick=fn;grid.appendChild(b)};
-    mkB("⌫","",()=>{fresh=false;const v=disp().textContent;disp().textContent=v.slice(0,-1)});
-    mkB("CLR","danger-btn",()=>{fresh=false;disp().textContent=""});
-    mkB("OK","ok-btn",()=>{const v=disp().textContent;close();cb(v||null)});
-    mkB("CANCEL","accent-btn",()=>{close();cb(null)});
     modal.appendChild(grid);
   });
 }
@@ -2633,28 +2673,21 @@ function bearingInput(label, defaultVal, cb){
 
       if(_mode==="quad"){
         // Quad keyboard — fills display and tracks _azDec
-        const qwrap=document.createElement("div");
+        const qwrap=document.createElement("div"); qwrap.className="qb-pop";
         _buildQuadKeyboard(qwrap, (azDec, previewStr)=>{
           _azDec = azDec;
           const d=modal.querySelector("#brngDisp");
           if(d) d.textContent = isNaN(azDec) ? "" : previewStr;
-        });
+        },{compact:true,tail:[   // 4.8.4: N S E W on one row, OK / Cancel beside 0 . — they were below the fold
+          {t:"Cancel",cls:"np-back",fn:()=>{ close(); cb(null); }},
+          {t:"OK",cls:"np-ok",fn:()=>{ close(); cb(isNaN(_azDec)?null:toDMS(_azDec)); }}]});
         modal.appendChild(qwrap);
-        // OK / Cancel
-        const row=document.createElement("div"); row.className="btn-row";
-        const ok=document.createElement("button"); ok.className="btn ok"; ok.textContent="OK";
-        ok.onclick=()=>{ close(); cb(isNaN(_azDec)?null:toDMS(_azDec)); };
-        const can=document.createElement("button"); can.className="btn"; can.textContent="Cancel";
-        can.onclick=()=>{ close(); cb(null); };
-        row.appendChild(ok); row.appendChild(can); modal.appendChild(row);
       } else {
         // Standard numpad
         let fresh = (defaultVal!=null && defaultVal!=="");
-        const grid=document.createElement("div"); grid.className="calc-grid";
+        const grid=document.createElement("div"); grid.className="calc-grid calc-grid4";
         const getDisp=()=>modal.querySelector("#brngDisp");
-        [["7","8","9"],["4","5","6"],["1","2","3"],["-","0","."]].forEach(r=>r.forEach(k=>{
-          const b=document.createElement("button"); b.textContent=k;
-          b.onclick=()=>{
+        const digit=k=>{
             if(k==="-"){
               if(fresh){ getDisp().textContent="-"; fresh=false; }
               else { const v=getDisp().textContent; getDisp().textContent=v.startsWith("-")?v.slice(1):"-"+v; }
@@ -2662,13 +2695,17 @@ function bearingInput(label, defaultVal, cb){
               if(fresh){ getDisp().textContent=""; fresh=false; }
               getDisp().textContent+=k;
             }
-          }; grid.appendChild(b);
+        };
+        const ctl={"⌫":["",()=>{fresh=false;const v=getDisp().textContent;getDisp().textContent=v.slice(0,-1)}],
+          "CLR":["danger-btn",()=>{fresh=false;getDisp().textContent=""}],
+          "CANCEL":["accent-btn",()=>{close();cb(null)}],
+          "OK":["ok-btn",()=>{const v=getDisp().textContent;close();cb(v||null)}]};
+        [["7","8","9","⌫"],["4","5","6","CLR"],["1","2","3","CANCEL"],["-","0",".","OK"]].forEach(r=>r.forEach(k=>{
+          const b=document.createElement("button"); b.textContent=k;
+          if(ctl[k]){b.className=ctl[k][0];b.onclick=ctl[k][1];}
+          else b.onclick=()=>digit(k);
+          grid.appendChild(b);
         }));
-        const mkB=(t,cls,fn)=>{const b=document.createElement("button");b.textContent=t;b.className=cls;b.onclick=fn;grid.appendChild(b)};
-        mkB("⌫","",()=>{fresh=false;const v=getDisp().textContent;getDisp().textContent=v.slice(0,-1)});
-        mkB("CLR","danger-btn",()=>{fresh=false;getDisp().textContent=""});
-        mkB("OK","ok-btn",()=>{const v=getDisp().textContent;close();cb(v||null)});
-        mkB("CANCEL","accent-btn",()=>{close();cb(null)});
         modal.appendChild(grid);
       }
     }
@@ -2686,12 +2723,18 @@ function alphaInput(label,defaultVal,cb){
       const b=document.createElement("button"); b.textContent=k===" "?"SPC":k;
       b.onclick=()=>disp().textContent+=(k===" "?" ":k); grid.appendChild(b);
     });
-    const mw=(t,cls,fn)=>{const b=document.createElement("button");b.textContent=t;b.className=cls;b.onclick=fn;grid.appendChild(b)};
-    mw("⌫ DEL","wide2 danger-btn",()=>{const v=disp().textContent;disp().textContent=v.slice(0,-1)});
-    mw("CLR","wide2 danger-btn",()=>disp().textContent="");
-    mw("OK","wide3 ok-btn",()=>{const v=disp().textContent;close();cb(v)});
-    mw("CANCEL","wide3 accent-btn",()=>{close();cb(null)});
-    modal.appendChild(grid);
+    // 4.8.4: DEL / CLR / OK / CANCEL sit in a fixed row under the keys. They
+    // were the last row of the scrolling key grid — on an iPhone-size screen
+    // OK and CANCEL were out of sight with nothing to say the grid scrolled.
+    grid.style.maxHeight="max(150px, calc(58vh - 215px))";
+    const ctl=document.createElement("div"); ctl.className="calc-grid";
+    ctl.style.cssText="grid-template-columns:1fr 1fr 1.3fr 1.3fr;margin-top:6px";
+    const mw=(t,cls,fn)=>{const b=document.createElement("button");b.textContent=t;b.className=cls;b.onclick=fn;ctl.appendChild(b)};
+    mw("⌫ DEL","danger-btn",()=>{const v=disp().textContent;disp().textContent=v.slice(0,-1)});
+    mw("CLR","danger-btn",()=>disp().textContent="");
+    mw("OK","ok-btn",()=>{const v=disp().textContent;close();cb(v)});
+    mw("CANCEL","accent-btn",()=>{close();cb(null)});
+    modal.appendChild(grid); modal.appendChild(ctl);
   });
 }
 
@@ -4615,19 +4658,38 @@ function setKnownStation(){
     if(i>=seq.length){
       const N=parseFloat(vals[0]), E=parseFloat(vals[1]), Z=parseFloat(vals[2]);
       if(isNaN(N)||isNaN(E)){alert("Invalid coordinates.");return}
-      _takeSnapshot("Set Station Coords");
       if(isStart){
-        // Point 1 — update in place (original behavior)
-        occ.Northing=N; occ.Easting=E; occ.Elevation=Z;
-        currentPoint=occ;
-        saveData(); updateStatus(); plotPoints();
-        showResult("✓ Station Coords Set",[
-          {lbl:"Point:",    val:"#"+occ.Point},
-          {lbl:"Northing:", val:N.toFixed(4)},
-          {lbl:"Easting:",  val:E.toFixed(4)},
-          {lbl:"Elevation:",val:Z.toFixed(4)},
-        ]);
+        // Point 1 — update in place (original behavior). 4.8.4: when shots
+        // were already taken from it, ask whether they move with it — they
+        // used to stay put while their station moved.
+        const chain=(typeof _getDownstreamChain==="function")?_getDownstreamChain(occ.Point):[];
+        const apply=moveChain=>{
+          _takeSnapshot("Set Station Coords");
+          const dN=N-occ.Northing, dE=E-occ.Easting, dZ=(isNaN(Z)?occ.Elevation:Z)-occ.Elevation;
+          occ.Northing=N; occ.Easting=E; if(!isNaN(Z))occ.Elevation=Z;
+          if(moveChain)chain.forEach(c=>{c.Northing+=dN;c.Easting+=dE;if(typeof c.Elevation==="number")c.Elevation+=dZ;});
+          currentPoint=occ;
+          try{_recomputeAreaLabels();}catch(e){}
+          saveData(); updateStatus(); plotPoints();
+          showResult("✓ Station Coords Set",[
+            {lbl:"Point:",    val:"#"+occ.Point},
+            {lbl:"Northing:", val:N.toFixed(4)},
+            {lbl:"Easting:",  val:E.toFixed(4)},
+            {lbl:"Elevation:",val:occ.Elevation.toFixed(4)},
+            ...(chain.length?[{lbl:"Shots from #"+occ.Point+":",val:moveChain?chain.length+" moved with it":"left where they were"}]:[]),
+          ]);
+        };
+        if(!chain.length){apply(false);return;}
+        openModal((modal,close)=>{
+          modal.innerHTML="<h2>Move the shots too?</h2><p class='info'>"+chain.length+" point"+(chain.length===1?" was":"s were")+" shot from #"+occ.Point+" (or from stations shot from it). Moving #"+occ.Point+" alone leaves them where they are.</p>";
+          const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+          mk("Move #"+occ.Point+" and its "+chain.length+" shot"+(chain.length===1?"":"s"),"ok",()=>{close();apply(true);});
+          mk("Move #"+occ.Point+" only","",()=>{close();apply(false);});
+          mk("Cancel","",close);
+        });
+        return;
       } else {
+      _takeSnapshot("Set Station Coords");
         // Not point 1 — create a new point and occupy it
         const newPt={
           Point:pointCounter++,
@@ -5080,7 +5142,10 @@ function _setupTapHI(thenShot){
 }
 function _setupTapPrism(){
   openModal((modal,close)=>{
-    modal.innerHTML="<h2>Prism Constant</h2><p class='info'>Added to every measured distance. -30 mm is a typical offset prism.</p>";
+    // 4.8.4: shows the current value, and Cancel keeps it — there was no way out
+    // except choosing a value, and the first choice reset it to 0
+    const curMm=Math.round((prismConstant||0)*(units==="m"?1000:304.8));
+    modal.innerHTML="<h2>Prism Constant</h2><p class='info'>Now: <b>"+(prismConstant?(curMm>0?"+":"")+curMm+" mm ("+(prismConstant||0).toFixed(4)+" "+units+")":"0 (none)")+"</b>. Added to every measured distance. -30 mm is a typical offset prism.</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+(cls||"");b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     const applyMm=mm=>{
       prismConstant=_prismMmToUnits(mm);
@@ -5097,6 +5162,7 @@ function _setupTapPrism(){
         saveData(); _syncSetupStrip();
       });
     });
+    mk("Cancel — keep current","",close);
   });
 }
 function _setupTapCSF(){
@@ -5201,7 +5267,7 @@ function _processShot(fields, is3D, ih, occ){
   ];
   showResult(`✓ Shot #${ptNum}`, resultRows,[
     {txt:"▶ Next Shot",           cls:"ok",  fn:()=>{ pointCounter=ptNum+1; takeShot(); }},
-    {txt:`⬛ Occupy #${ptNum}`,   cls:"blue", fn:()=>{ currentPoint=p; updateStatus(); takeShot(); }},
+    {txt:`⬛ Occupy #${ptNum}`,   cls:"blue", fn:()=>{ if(currentPoint)currentPoint._hiSet=false; currentPoint=p; saveData(); updateStatus(); takeShot(); }},
     {txt:"↩ Undo",                cls:"danger",fn:undo},
   ]);
 }
@@ -5418,6 +5484,13 @@ function occupyPoint(){
   calculatorInput("Point # to occupy:","",num=>{
     if(!num)return; const p=points.find(pt=>pt.Point===parseInt(num));
     if(!p){alert("Point not found.");return}
+    _occupyAt(p);
+  });
+}
+/* 4.8.4: one path for every Occupy — the point action bar used to switch the
+   station silently, with no HI prompt in 3D */
+function _occupyAt(p){
+  {
     // Clear _hiSet so takeShot prompts HI for the new occupation
     if(currentPoint) currentPoint._hiSet = false;
     if(surveyMode==="3D"){
@@ -5425,7 +5498,7 @@ function occupyPoint(){
       const prevHI = p.ih!=null&&p.ih>0 ? p.ih.toFixed(3) : "0.000";
       calculatorInput(`Instrument Height HI (${units}):`, prevHI, hiVal=>{
         if(hiVal===null)return;
-        p.ih=parseFloat(hiVal)||0; p._hiSet=true; currentPoint=p; saveData();
+        p.ih=parseFloat(hiVal)||0; p._hiSet=true; currentPoint=p; saveData(); updateStatus(); plotPoints();
         showResult(`✓ Occupying #${p.Point}`,[
           {lbl:"N:",val:p.Northing.toFixed(3)},
           {lbl:"E:",val:p.Easting.toFixed(3)},
@@ -5434,13 +5507,13 @@ function occupyPoint(){
         ]);
       });
     } else {
-      currentPoint=p; saveData();
+      currentPoint=p; saveData(); updateStatus(); plotPoints();
       showResult(`✓ Occupying #${p.Point}`,[
         {lbl:"N:",val:p.Northing.toFixed(3)},
         {lbl:"E:",val:p.Easting.toFixed(3)},
       ]);
     }
-  });
+  }
 }
 
 function _updateUndoBtn(){
@@ -6240,7 +6313,7 @@ function _pointDetail(p){
         });
       }
 
-      mk("Occupy This Point","ok",()=>{currentPoint=p;saveData();updateStatus();close();});
+      mk("Occupy This Point","ok",()=>{close();_occupyAt(p);});
       mk("Stakeout to Here","ok",()=>{close();_doStakeout(p,"#"+p.Point);});
       mk("Flag / Mark","",()=>{close();flagPoint_pt(p);});
       mk("Delete Point","danger",()=>{
@@ -6395,7 +6468,7 @@ function enterPointManually(){
             {lbl:"Desc:",val:fields.desc||"—"},
           ],[
             {txt:"➕ Enter Another",cls:"ok",fn:enterPointManually},
-            {txt:"⬛ Occupy This Point",cls:"blue",fn:()=>{currentPoint=p;updateStatus();}},
+            {txt:"⬛ Occupy This Point",cls:"blue",fn:()=>_occupyAt(p)},
           ]);
         };
         np.appendChild(storeBtn);
@@ -7000,7 +7073,8 @@ function importCoordList(prefill){
 function projectImportMenu(){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>Import</h2>";
-    _wsButton(modal,"Load ChainLink CSV","ok",()=>{close();loadFromFile()});
+    // 4.8.4: opens as its own job — it used to replace the open job's points
+    _wsButton(modal,"Load ChainLink CSV (as new job)","ok",()=>{close();loadFromFile(true)});
     _wsButton(modal,"Import Coordinate List","",()=>{close();importCoordList()});
     _wsButton(modal,"Import DXF","",()=>{close();importDXF()});
     _wsButton(modal,"Import LandXML","",()=>{close();importLandXML()});
@@ -7045,7 +7119,7 @@ function moreMenu(){
     mk("🖼 Export SVG","blue",()=>{close();exportSVG()});
     mk("🌐 Export GeoJSON","blue",()=>{close();exportGeoJSON()});
     if(geoAnchor)mk("🌍 Export KML (Google Earth)","blue",()=>{close();exportKML()});
-    mk("📥 Load CSV from File","blue",()=>{close();loadFromFile()});
+    mk("📥 Load CSV as New Job","blue",()=>{close();loadFromFile(true)});
     mk("📥 Import DXF","blue",()=>{close();importDXF()});
     mk("📥 Import LandXML","blue",()=>{close();importLandXML()});
     mk("🌍 Import KML (Google Earth)","blue",()=>{close();importKML()});
@@ -8285,7 +8359,7 @@ function cogoTraverseClosure(){
     const n=poly.length;
     if(banner){
       banner.textContent=n===0
-        ?"Tap first traverse point"
+        ?"Tap the first traverse point — finish on your closing shot, not the start point"
         :"Tap next point (✓ "+n+" selected) — end on your closing shot, then tap Done";
       banner.classList.add("visible");
     }
@@ -8295,9 +8369,15 @@ function cogoTraverseClosure(){
       // point object would telescope the leg sum to a perfect zero closure.
       // A closed loop is closed by its re-measured closing shot, not the start.
       if(poly.length>0 && pt.Point===poly[0].Point){
-        const banner=document.getElementById("intersectBanner");
-        if(banner) banner.textContent="That's the start point — tap your closing shot instead, then Done";
-        return;
+        // 4.8.4: the closing shot is usually under the same spot on screen —
+        // take it when it is within reach of the tap
+        const alt=(window._connClickNear||[]).find(q=>q.Point!==poly[0].Point&&!poly.some(x=>x.Point===q.Point));
+        if(alt){ pt=alt; }
+        else{
+          const banner=document.getElementById("intersectBanner");
+          if(banner) banner.textContent="That's the start point — tap your closing shot instead, then Done";
+          return;
+        }
       }
       // Avoid duplicate consecutive points
       if(poly.length>0 && poly[poly.length-1].Point===pt.Point) return;
@@ -8306,20 +8386,18 @@ function cogoTraverseClosure(){
       _tvNextPick();
     };
     window._connClickCancelCb=()=>{
+      _hideContextDock();
       _pickedPts=[];
       tempGeom=tempGeom.filter(g=>g._tv!==true);
       plotPoints();
     };
   }
 
-  // Show a "Done" button that floats while picking
-  openModal((modal,close)=>{
-    modal.innerHTML="<h2>Traverse Correction</h2>"+
-      "<p class='info'>Tap traverse points in order, ending on your closing shot (the separate re-observation of the start), then tap Done. Don't re-tap the original start point — that forces a zero closure.</p>";
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk("Done — Compute","ok",()=>{close();_tvFinish();});
-    mk("Cancel","",()=>{
-      close();
+  // 4.8.4: Done / Cancel ride in the slim action bar. They were a sheet that
+  // covered the lower third of the map — points under it could not be tapped.
+  _contextDock("Traverse","Tap points in order, then Done",[
+    ["Done — Compute",()=>{_tvFinish();},"primary"],
+    ["Cancel",()=>{
       _pickedPts=[];
       tempGeom=tempGeom.filter(g=>g._tv!==true);
       window._connClickActive=false;
@@ -8328,10 +8406,8 @@ function cogoTraverseClosure(){
       const banner=document.getElementById("intersectBanner");
       if(banner) banner.classList.remove("visible");
       plotPoints();
-    });
-    // Start picking after modal opens
-    setTimeout(_tvNextPick, 100);
-  });
+    }]],{noClose:true});
+  setTimeout(_tvNextPick, 100);
 }
 function _bowditchAdjust(poly,errN,errE,totalD){
   _takeSnapshot("Bowditch Adjust");
@@ -8759,8 +8835,8 @@ function cogoSpiral(){
     m.innerHTML="<h2>Spiral / Transition Curve</h2><p class='info'>Construct a design spiral, or fit a true clothoid to measured field points stored in the job.</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b);};
     mk("Construct from L + R + tangent","ok",()=>{c();_cogoSpiralDesign();});
-    mk("Fit measured points — known tangent","blue",()=>{c();_cogoSpiralFitStart(true);});
-    mk("Fit measured points — solve tangent","accent",()=>{c();_cogoSpiralFitStart(false);});
+    mk("Fit measured points — known tangent","blue",()=>{c();_spiralFitStart(true);});
+    mk("Fit measured points — solve tangent","accent",()=>{c();_spiralFitStart(false);});
     mk("Cancel","",c);
   });
 }
@@ -11170,6 +11246,18 @@ function _deedBlunders(f,rotDeg){
           cn(j)+" repeats "+cn(i)+" — dropping the repeat closes the deed",
           cn(j)+" is a duplicate of "+cn(i)+" ("+_deedBrgStr(cj.bearing)+", "+cj.dist.toFixed(2)+" "+U+")",3);
     }
+    // 4.8.4: a course that doesn't belong — a commencement tie counted as a
+    // boundary course, or a stray call. Dropping it alone closes the figure.
+    calls.forEach((c,i)=>{
+      if(c.tie||c.omit||c.type==="partial")return;
+      if(calls.filter(x=>!x.tie&&!x.omit&&x.type!=="partial").length<4)return;
+      // an exact twin is the repeated-course case, handled above
+      if(c.bearing&&calls.some((x,j)=>j!==i&&x.bearing&&!x.tie&&_deedBrgStr(x.bearing)===_deedBrgStr(c.bearing)&&Math.abs((x.dist||0)-(c.dist||0))<0.005))return;
+      tryFix([{call:i,patch:{omit:true}}],null,
+        cn(i)+" closes the deed if it is left out — it may be a tie or a stray call",
+        cn(i)+" does not belong to the boundary ("+(c.bearing?_deedBrgStr(c.bearing)+", ":"")+(c.dist?c.dist.toFixed(2)+" "+U:"")+")",
+        i===calls.findIndex(x=>!x.tie&&!x.omit)?3:1);
+    });
     // a missing course: the misclosure itself is the course that was dropped.
     // It closes at ANY position, so only the recited acreage can place it.
     const goodSingle=cands.some(d=>!stated||d.acreOk);
@@ -11286,7 +11374,7 @@ function _deedFlagRows(s){
 function _deedFixLabel(d){
   if(!d)return "";
   if(d.insert)return "✎ Add the missing course";
-  if(d.patch&&d.patch.omit)return "✎ Drop the repeated course "+(d.call+1);
+  if(d.patch&&d.patch.omit)return /repeats/.test(d.msg||"")?"✎ Drop the repeated course "+(d.call+1):"✎ Leave out course "+(d.call+1);
   if(d.patches&&d.patches.length>1)return "✎ Apply fix to courses "+d.patches.map(p=>p.call+1).join(" and ");
   return "✎ Apply fix to course "+(d.call+1);
 }
@@ -12072,7 +12160,10 @@ function _padKey(row,label,cls,fn,wide){
     "border:1px solid #3a4150;border-radius:7px;font-family:'Courier New',monospace;"+
     "font-size:1.05em;font-weight:bold;touch-action:manipulation;-webkit-user-select:none;user-select:none";
   b.onmousedown=e=>e.preventDefault();   // never steal the caret
-  b.ontouchstart=e=>{e.preventDefault();};
+  // 4.8.4: was ontouchstart+preventDefault — on a phone that cancels the
+  // tap itself, so no key in the call editor ever fired. Cancelling
+  // pointerdown keeps the caret (no focus change) and still delivers click.
+  b.onpointerdown=e=>{e.preventDefault();};
   b.onclick=e=>{e.preventDefault();fn();};
   row.appendChild(b); return b;
 }
@@ -12197,7 +12288,12 @@ function _deedEditCall(calls,i){
       c.type==="spiral"?("SPIRAL "+c.dir+" "+(c.transition||"AUTO").toUpperCase()+(c.length?" L="+c.length:"")+(c.radius?" R="+c.radius:"")):"","bearing");
     const dIn=fld("Distance ("+units+", or e.g. '12 chains')",
       c.type==="line"?(c.rawVal!=null?c.rawVal+" "+(c.unit||""):c.dist):"","distance");
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    // 4.8.4: Save / Delete / Back stay pinned to the bottom of the sheet —
+    // they were two screens of scrolling below the keypads
+    const foot=document.createElement("div");
+    foot.style.cssText="position:sticky;bottom:-13px;margin:6px -11px -13px;padding:8px 11px 10px;background:var(--surface,#10191d);border-top:1px solid var(--border2);display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;z-index:2";
+    modal.appendChild(foot); modal.classList.add("has-foot");
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.style.margin="0";b.textContent=t;b.onclick=fn;foot.appendChild(b)};
     mk("Save call","ok",()=>{
       const bt=_deedNormalize(bIn.value), dt=_deedNormalize(dIn.value);
       if(/^SPIRAL/.test(bt)){
@@ -14917,13 +15013,16 @@ function _gpsStartFlow(jn,fineTune){
       const zone=_spcCandidates(lat,lon)[0]||_utmZoneFor(lat,lon);
       const p=_projForward(lat,lon,zone), u=_m2u();
       _fetchGroundElev(lat,lon,(ge)=>{
-        _startNewJob(jn,p.N*u,p.E*u,ge!=null?parseFloat(ge.toFixed(1)):100,true,fineTune==="deed");
+        const startZ=ge!=null?parseFloat(ge.toFixed(1)):100;
+        // 4.8.4: no Point 1 yet — it is created where the user long-presses
+        // (it used to appear at the GPS fix first and then jump)
+        _startNewJob(jn,p.N*u,p.E*u,startZ,true,true);
         _setAnchor(lat,lon,zone,p.E*u,p.N*u);
         satOn=true;saveData();_syncSatBtn();
         _zoomToGround(units==="ft"?300:100);
         closeAllModals();
         if(fineTune==="deed"){ _deedPasteModal(""); }
-        else { _relocateTarget=1; plotPoints(); }
+        else { window._relocateNew={N:p.N*u,E:p.E*u,Z:startZ}; _relocateTarget=1; plotPoints(); }
       });
       return;
     }
@@ -14946,6 +15045,16 @@ function _gpsStartFlow(jn,fineTune){
       });
     });
   });
+}
+/* 4.8.4: the start point of a GPS-start-and-tap job, created only once the
+   user has picked the spot (or at the GPS fix if they leave without picking). */
+function _placeStartPoint(N,E,Z){
+  let num=1; while(points.some(p=>p.Point===num))num++;
+  const pt={Point:num,Northing:N,Easting:E,Elevation:Z,Type:"Setup",Description:"Start",Flag:"",ih:0};
+  points.unshift(pt);
+  pointCounter=Math.max(pointCounter,num+1);
+  currentPoint=pt;
+  return pt;
 }
 function _zoomToGround(unitsAcross){
   const apply=()=>{
@@ -16074,10 +16183,12 @@ function zoomToOccupied(){
     }
     // Relocate mode: move the target point here instead of adding one
     if(_relocateTarget!=null){
-      const pt=points.find(p=>p.Point===_relocateTarget);
+      let pt=points.find(p=>p.Point===_relocateTarget);
       _relocateTarget=null;
+      const fresh=window._relocateNew; window._relocateNew=null;
+      if(!pt&&fresh) pt=_placeStartPoint(worldN,worldE,fresh.Z);   // 4.8.4: first placement
+      else if(pt) _takeSnapshot("Reposition Pt #"+pt.Point);
       if(pt){
-        _takeSnapshot("Reposition Pt #"+pt.Point);
         pt.Easting=worldE; pt.Northing=worldN;
         if(navigator.vibrate)navigator.vibrate(40);
         // Fresh fine-tune start: re-fetch ground elevation AT THE PICKED SPOT
@@ -16493,7 +16604,11 @@ function zoomToOccupied(){
 
     // ── CONNECT-BY-TAP MODE ──────────────────────────────────────
     if(window._connClickActive && window._connClickHandler){
-      const hitPt=points.find(p=>Math.hypot(X(p.Easting)-mx,Y(p.Northing)-my)<PT_THRESH);
+      // 4.8.4: nearest point under the finger, and every other one within
+      // reach — a closing shot sits on top of the start point on screen
+      const _near=points.map(p=>({p,d:Math.hypot(X(p.Easting)-mx,Y(p.Northing)-my)})).filter(o=>o.d<PT_THRESH).sort((a,b)=>a.d-b.d);
+      window._connClickNear=_near.map(o=>o.p);
+      const hitPt=_near.length?_near[0].p:null;
       if(hitPt){ window._connClickHandler(hitPt); return; }
       // Tap empty space — cancel
       _connCancel(); return;
@@ -16805,7 +16920,7 @@ function _pointContextMenu(p){
     modal.appendChild(box);
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className=`btn ${cls}`;b.textContent=t;
       b.onclick=()=>{close();selectedPoint=null;plotPoints();fn()};modal.appendChild(b)};
-    mk(`⬛ Occupy #${p.Point}`,"blue",()=>{currentPoint=p;saveData()});
+    mk(`⬛ Occupy #${p.Point}`,"blue",()=>{_occupyAt(p);});
     mk("📍 Stakeout to Here","ok",()=>_doStakeout(p,`#${p.Point}`));
     mk("✏ Edit Point","",()=>{ _editPointMenu(p); });
     mk("🚩 Flag / Mark","",()=>flagPoint_pt(p));
@@ -17335,8 +17450,8 @@ const HELP_TOPICS = [
   { id:"cogo-traverse", section:"COGO", title:"Traverse Correction",
     preview:"Check and adjust a traverse loop",
     body:`<h3>Traverse Correction</h3>
-<p>Tap traverse points in order on the plot, ending on your closing shot — the separate re-observation of the start. Tap <strong>Done</strong> to compute. Shows total distance, closure error, precision ratio, and ΔN/ΔE error.</p>
-<div class="warn">Don't re-tap the original start point to close. The closing shot is its own point; re-tapping the start forces a zero closure.</div>
+<p>Tap traverse points in order on the plot, ending on your closing shot — the separate re-observation of the start. Tap <strong>Done — Compute</strong> in the bar at the bottom. Shows total distance, closure error, precision ratio, and ΔN/ΔE error.</p>
+<div class="warn">The start point itself can't close the loop — it would force a zero closure. Your closing shot usually sits on top of the start on screen; tapping that spot picks the closing shot for you.</div>
 <h3>Bowditch Adjustment</h3>
 <p>Distributes closure error proportionally by distance across the traverse points. The closing shot is pulled onto the start coordinate; intermediate points get proportional corrections.</p>
 <p>Sideshots move with the station they were shot from (and anything shot from them), so topo stays tied to the adjusted traverse. Undo restores everything.</p>
@@ -18280,8 +18395,8 @@ function openWorkspace(name){
 }
 
 function _hideContextDock(){const d=document.getElementById("contextDock");if(d)d.classList.remove("open")}
-function _contextDock(kind,name,actions){const d=document.getElementById("contextDock"),a=document.getElementById("contextActions");document.getElementById("contextKind").textContent=kind;document.getElementById("contextName").textContent=name;a.innerHTML="";actions.forEach(x=>{const b=document.createElement("button");b.textContent=x[0];b.className=x[2]||"";b.onclick=()=>{_hideContextDock();x[1]()};a.appendChild(b)});const c=document.createElement("button");c.textContent="Close";c.onclick=_hideContextDock;a.appendChild(c);d.classList.add("open")}
-function _showPointQuickActions(p){selectedPoint=p;plotPoints();_contextDock("Point","#"+p.Point+(p.Description?" · "+p.Description:""),[["Details",()=>_pointContextMenu(p)],["Occupy",()=>{_takeSnapshot("Occupy Point");currentPoint=p;saveData();updateStatus();plotPoints()},"primary"],["Stake",()=>{if(!currentPoint){alert("Occupy a point first.");return}_doStakeout(p,"#"+p.Point,_lastTHValue||0)},"primary"],["Connect",()=>{selectedPoint=null;_connectFromPoint(p)}]]);}
+function _contextDock(kind,name,actions,opts){const d=document.getElementById("contextDock"),a=document.getElementById("contextActions");document.getElementById("contextKind").textContent=kind;document.getElementById("contextName").textContent=name;a.innerHTML="";actions.forEach(x=>{const b=document.createElement("button");b.textContent=x[0];b.className=x[2]||"";b.onclick=()=>{_hideContextDock();x[1]()};a.appendChild(b)});if(!(opts&&opts.noClose)){const c=document.createElement("button");c.textContent="Close";c.onclick=_hideContextDock;a.appendChild(c);}d.classList.add("open")}
+function _showPointQuickActions(p){selectedPoint=p;plotPoints();_contextDock("Point","#"+p.Point+(p.Description?" · "+p.Description:""),[["Details",()=>_pointContextMenu(p)],["Occupy",()=>_occupyAt(p),"primary"],["Stake",()=>{if(!currentPoint){alert("Occupy a point first.");return}_doStakeout(p,"#"+p.Point,_lastTHValue||0)},"primary"],["Connect",()=>{selectedPoint=null;_connectFromPoint(p)}]]);}
 function _showLineQuickActions(conn,idx){selectedConn=idx;plotPoints();_contextDock(conn._deed?(conn._tie?"Deed tie":"Deed line"):"Line","#"+conn.from+" → #"+conn.to,[["Details",()=>_lineContextMenu(conn,idx)],["Stake",()=>{window._stlActive=true;_stlMeasure({kind:"line",conn})},"primary"],["Offset",()=>_lineContextMenu(conn,idx)],...(conn._deed?[]:[["Delete",()=>{_takeSnapshot("Delete Line");plotConnections.splice(idx,1);saveData()},"danger"]])]);}
 function _showArcQuickActions(conn,idx){selectedConn=idx;plotPoints();_contextDock(conn._deed?"Deed curve":"Arc","R "+Number(conn.R||0).toFixed(2),[["Details",()=>_arcContextMenu(conn,idx)],["Stake",()=>{window._stlActive=true;_stlMeasure({kind:"arc",conn})},"primary"],["Tools",()=>_arcContextMenu(conn,idx)],...(conn._deed?[]:[["Delete",()=>{_takeSnapshot("Delete Arc");plotConnections.splice(idx,1);saveData()},"danger"]])]);}
 
