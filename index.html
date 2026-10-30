@@ -951,6 +951,11 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;ba
   background:#5a1408;color:#ffe8c8;border-bottom:2px solid var(--warn);
   font-family:var(--font-ui);box-shadow:0 12px 28px rgba(0,0,0,.45)}
 #saveFailBanner.show{display:flex}
+#folderBanner{display:none;position:fixed;left:0;right:0;top:0;z-index:8950;align-items:center;gap:10px;padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top));
+  background:#4a3606;color:#ffe9b8;border-bottom:2px solid var(--warn);font-family:var(--font-ui);box-shadow:0 10px 24px rgba(0,0,0,.4)}
+#folderBanner.show{display:flex}
+#folderBanner .fb-msg{flex:1;font-size:.8rem;font-weight:800;letter-spacing:.03em;line-height:1.35}
+#folderBanner .fb-go{min-height:42px;padding:0 16px;border-radius:12px;border:0;background:var(--warn);color:#1a1004;font-weight:800;font-family:var(--font-ui)}
 #saveFailBanner .save-fail-msg{flex:1 1 180px;font-size:.82rem;font-weight:800;letter-spacing:.04em;line-height:1.35;text-align:left}
 #saveFailBanner button{min-height:44px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,217,138,.45);
   font-family:var(--font-ui);font-weight:800;letter-spacing:.06em;cursor:pointer}
@@ -1681,6 +1686,7 @@ function enterApp() {
     try{
       _jobMigrateFromLegacy();
       const id=_lsGet("cl_activeJob");
+      try{ _folderRestore(); }catch(e){}
       if(id&&_jobReadBlob(id)){ _hideJobScreen(); loadData(); return; }
     }catch(e){}
     _showJobScreen();
@@ -2088,14 +2094,7 @@ function _startNewJob(jn,N,E,Z,deferSetup,noStart){
     } else next();
   };
   const _setupChain=()=>_csfAsk(()=>atmosphericSetup(()=>{
-    if(typeof window.showDirectoryPicker==="function"){
-      openModal((modal,close)=>{
-        modal.innerHTML="<h2>Keep a CSV Copy?</h2><p class='info'>Your job already saves on this device. Pick a folder too and ChainLink will also write a CSV copy there after every change \u2014 a file you can open, back up, or send to the office.</p>";
-        const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-        mk("Pick Folder","ok",()=>{close();_getDir().then(()=>{_autoSaveToFile();});});
-        mk("No Thanks","",()=>{close();});
-      });
-    }
+    _folderStep(false);
   }));
   if(deferSetup) window._deferredJobSetup=_setupChain;
   else _setupChain();
@@ -2192,7 +2191,10 @@ function saveData() {
 // Debounced auto-save — don't hammer the filesystem on rapid changes
 let _autoSaveTimer = null;
 function _autoSaveToFile(){
-  if(!_dirHandle) return;
+  if(!_dirHandle){
+    if(_dirSaved&&_activeJobId) _folderBanner("CSV copy paused — tap Resume to keep saving to \u201c"+_dirSaved.name+"\u201d");
+    return;
+  }
   clearTimeout(_autoSaveTimer);
   _autoSaveTimer = setTimeout(async ()=>{
     try{
@@ -2206,8 +2208,10 @@ function _autoSaveToFile(){
       if(ind){ ind.textContent="✓ saved"; ind.style.opacity="1";
                setTimeout(()=>ind.style.opacity="0",1500); }
     } catch(e){
-      // If permission lost, clear handle so next manual save re-prompts
-      if(e.name==="NotAllowedError") _dirHandle=null;
+      // 4.8.4: say so — a failed write used to be silent
+      const nm=(_dirHandle&&_dirHandle.name)||"the save folder";
+      if(e&&e.name==="NotAllowedError"){ _dirSaved=_dirHandle||_dirSaved; _dirHandle=null; }
+      _folderBanner("Couldn't write the CSV copy to \u201c"+nm+"\u201d — tap Resume");
     }
   }, 1500); // 1.5s debounce
 }
@@ -2778,8 +2782,85 @@ function _plotStylePrompt(cb){
 /* ── 7. FILE I/O ───────────────────────────────────────────────── */
 async function _getDir(){
   if(_dirHandle) return _dirHandle;
-  try{ _dirHandle=await window.showDirectoryPicker({mode:"readwrite"}); return _dirHandle; }
+  try{ _dirHandle=await window.showDirectoryPicker({mode:"readwrite"}); _dirSaved=_dirHandle; _fsPut(_dirHandle); _folderBannerHide(); return _dirHandle; }
   catch(e){ return null; }
+}
+
+/* ── SAVE FOLDER (4.8.4) ────────────────────────────────────────────
+   Every new job needs a folder: the job saves on the device AND a CSV
+   copy is written to the folder after every change. The folder is
+   remembered across restarts (IndexedDB); when the phone wants its
+   permission confirmed again, or a write fails, a banner says the copy
+   is paused and one tap resumes it — it used to stop silently. */
+let _dirSaved=null;   // remembered folder, permission not yet confirmed this session
+function _fsDb(){return new Promise((res,rej)=>{try{const r=indexedDB.open("cl_fs",1);r.onupgradeneeded=()=>r.result.createObjectStore("h");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);}catch(e){rej(e);}});}
+async function _fsPut(h){try{const db=await _fsDb();await new Promise((res,rej)=>{const t=db.transaction("h","readwrite");t.objectStore("h").put(h,"dir");t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}catch(e){}}
+async function _fsGet(){try{const db=await _fsDb();return await new Promise(res=>{const t=db.transaction("h","readonly");const q=t.objectStore("h").get("dir");q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);});}catch(e){return null;}}
+async function _dirPerm(h,ask){
+  try{
+    let st=await h.queryPermission({mode:"readwrite"});
+    if(st!=="granted"&&ask) st=await h.requestPermission({mode:"readwrite"});
+    return st==="granted";
+  }catch(e){ return false; }
+}
+function _folderBanner(msg){
+  let b=document.getElementById("folderBanner");
+  if(!b){
+    b=document.createElement("div"); b.id="folderBanner"; b.setAttribute("role","alert");
+    b.innerHTML="<div class='fb-msg'></div><button type='button' class='fb-go'>Resume</button>";
+    document.body.appendChild(b);
+    b.querySelector(".fb-go").onclick=()=>_folderResume();
+  }
+  b.querySelector(".fb-msg").textContent=msg;
+  b.classList.add("show");
+}
+function _folderBannerHide(){const b=document.getElementById("folderBanner");if(b)b.classList.remove("show");}
+// one tap (a user gesture — the browser requires it) to re-grant or re-pick
+async function _folderResume(){
+  if(_dirSaved&&await _dirPerm(_dirSaved,true)){
+    _dirHandle=_dirSaved; _folderBannerHide(); _autoSaveToFile(); return;
+  }
+  _dirHandle=null;
+  const h=await _getDir();
+  if(h){ _autoSaveToFile(); }
+}
+// on launch: pick the remembered folder back up
+async function _folderRestore(){
+  if(typeof window.showDirectoryPicker!=="function") return;
+  const h=await _fsGet(); if(!h) return;
+  _dirSaved=h;
+  if(await _dirPerm(h,false)){ _dirHandle=h; _folderBannerHide(); }
+  else if(_activeJobId) _folderBanner("CSV copy paused — tap Resume to keep saving to “"+h.name+"”");
+}
+function _folderStep(retry){
+  if(typeof window.showDirectoryPicker!=="function"){
+    // This browser can't write to a folder (iPhone Safari, Firefox, some Android
+    // browsers). Say so plainly — the device copy is the only automatic one.
+    if(_lsGet("cl_noFolderTold")==="1") return;
+    showResult("Saving on this device",[
+      {lbl:"",val:"This browser can't write to a folder, so your job is saved on this device after every change."},
+      {lbl:"",val:"To keep a copy off the phone, use Project → Export → CSV. Chrome on Android or a computer can save to a folder automatically."}]);
+    _lsSet("cl_noFolderTold","1");
+    return;
+  }
+  const known=_dirHandle||_dirSaved;
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Save Folder</h2><p class='info'>Your job saves on this device, and ChainLink writes a CSV copy of it to a folder after every change \u2014 a file you can open, back up, or send to the office."+
+      (known?" Keep using <b>"+_esc(known.name)+"</b>, or pick another.":" Pick the folder.")+"</p>"+
+      (retry?"<p class='info' style='color:#ff9a8b'>A save folder is needed before you start.</p>":"");
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    if(known) mk("Use \u201c"+known.name+"\u201d","ok",async()=>{
+      close();
+      if(await _dirPerm(known,true)){ _dirHandle=known; _folderBannerHide(); _autoSaveToFile(); _notify("Saving a CSV copy to \u201c"+known.name+"\u201d"); }
+      else _folderStep(true);
+    });
+    mk(known?"Pick a different folder":"Pick Folder",known?"":"ok",async()=>{
+      close(); _dirHandle=null;
+      const h=await _getDir();
+      if(h){ _autoSaveToFile(); _notify("Saving a CSV copy to \u201c"+h.name+"\u201d"); }
+      else { _dirHandle=known&&await _dirPerm(known,false)?known:null; _folderStep(true); }
+    });
+  });
 }
 
 /* Installed-PWA-safe file delivery. Blob-anchor pretend-clicks are
@@ -17224,7 +17305,7 @@ const HELP_TOPICS = [
   { id:"save", section:"Getting Started", title:"Saving & Exporting",
     preview:"Auto-save, CSV backup, DXF, LandXML, PDF, SVG, GeoJSON",
     body:`<h3>Auto-Save</h3>
-<p>ChainLink saves to your phone's local storage after every action. You won't lose data if the app closes — and saved jobs survive app updates to new versions. That copy lives inside the app, though: clearing the browser's data or uninstalling the app removes it. In Chrome on Android or a computer, a new job offers <strong>Keep a CSV Copy?</strong> — pick a folder and a CSV is also written there after every change, a real file you can open, back up or send.</p>
+<p>ChainLink saves to your phone's local storage after every action. You won't lose data if the app closes — and saved jobs survive app updates to new versions. That copy lives inside the app, though: clearing the browser's data or uninstalling the app removes it. In Chrome on Android or a computer, every new job asks for a <strong>Save Folder</strong> — a CSV copy is written there after every change, a real file you can open, back up or send. The folder is remembered; if the phone asks to confirm it again after a restart, or a write fails, a banner says the copy is paused and <strong>Resume</strong> picks it back up. Browsers that can't write to a folder (iPhone Safari, Firefox) save on the device only — use Project → Export → CSV for a copy.</p>
 <h3>CSV Backup</h3>
 <p>Tap <strong>Project → Export → CSV to Folder</strong>. The CSV includes all points plus an embedded metadata line that restores connections, settings, flags, and raw observation data (instrument readings, slope distances, zenith angles, HI/TH) when loaded back. Descriptions containing commas are quoted properly.</p>
 <h3>DXF Export</h3>
