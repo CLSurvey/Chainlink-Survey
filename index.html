@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.4">
+<meta name="application-name" content="ChainLink-v4.8.5">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.4</title>
+<title>ChainLink Survey v4.8.5</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1333,7 +1333,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.4";
+const APP_VERSION = "4.8.5";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1867,12 +1867,19 @@ function _jobPersistFromRam(){
   try{ if(typeof _saveFailClear==="function") _saveFailClear(); }catch(e){}
   return true;
 }
+/* 4.8.4: the pre-4.7.16 job keys are moved into a job ONCE and then removed.
+   They used to stay behind and be re-imported every time the job list went
+   empty — so the last job could never be deleted; it came straight back. */
+const _LEGACY_JOB_KEYS=["cl_points","cl_connections","cl_polylines","cl_jobName","cl_areaLabels","cl_geoAnchor","cl_deedPlot"];
+function _jobLegacyDone(){ _LEGACY_JOB_KEYS.forEach(k=>_lsRemove(k)); _lsSet("cl_legacyDone","1"); }
 function _jobMigrateFromLegacy(){
-  if(_jobIndex().length) return;
+  if(_lsGet("cl_legacyDone")==="1") return;
+  // jobs already exist: the old keys were migrated long ago — they are a stale copy
+  if(_jobIndex().length){ _jobLegacyDone(); return; }
   let pts=null;
   try{ pts=JSON.parse(_lsGet("cl_points")||"null"); }catch(e){ pts=null; }
   const name=_lsGet("cl_jobName")||"";
-  if(!(Array.isArray(pts)&&pts.length) && !name) return;
+  if(!(Array.isArray(pts)&&pts.length) && !name){ _jobLegacyDone(); return; }
   let conns=[]; try{ conns=JSON.parse(_lsGet("cl_connections")||"[]"); }catch(e){}
   let polys=[]; try{ polys=JSON.parse(_lsGet("cl_polylines")||"[]"); }catch(e){}
   let areas=[]; try{ areas=JSON.parse(_lsGet("cl_areaLabels")||"[]"); }catch(e){}
@@ -1896,7 +1903,7 @@ function _jobMigrateFromLegacy(){
     orientationOffset:parseFloat(_lsGet("cl_orientOffset")||"0")||0,
     occupied:null, ngsMarks:ngs, ngsShow:_lsGet("cl_ngsShow")!=="false"
   };
-  _jobWriteBlob(blob);
+  if(_jobWriteBlob(blob)) _jobLegacyDone();   // keep the old keys if the write failed
 }
 function _jobOpen(id){
   if(!id) return;
