@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.6">
+<meta name="application-name" content="ChainLink-v4.8.7">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.6</title>
+<title>ChainLink Survey v4.8.7</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1174,6 +1174,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 
   <div id="recentTicker"></div>
   <button id="undoBtn" onclick="undoFromCanvas()">↩ Undo</button>
+  <button id="firstShotCue" onclick="takeShot()">▶ Take first shot</button>
   <button id="redoBtn" onclick="redoFromCanvas()">↪ Redo</button>
   <div id="intersectBanner">⊕ TAP SECOND LINE OR ARC — or tap empty space to cancel</div>
 
@@ -1325,6 +1326,51 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
   .modal.modal-shot{max-height:min(calc(100dvh - 160px), 640px) !important}
   #workspacePanel{max-height:min(56vh, 520px) !important}
 }
+/* ── 4.8.7: legibility, touch targets, inline shot errors, first-shot cue ── */
+.sf-label{font-size:.68rem !important;letter-spacing:.07em !important}
+.modal.modal-shot .sf-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#appHeader h1{font-size:.66rem !important;letter-spacing:.16em !important}
+#modeHint{font-size:.66rem !important;letter-spacing:.08em !important}
+#statusBar{font-size:.7rem !important}
+#toolbar .tab-label{font-size:1em !important}
+@media(max-width:420px){#toolbar button{font-size:.68rem !important}}
+@media(max-width:380px){#toolbar button{font-size:.62rem !important}#appHeader h1{font-size:.62rem !important;letter-spacing:.1em !important}}
+@media(max-width:340px){#toolbar button{font-size:.56rem !important}#appHeader h1{letter-spacing:.04em !important}}
+.ws-group,.workspace-section,.drawer-section-title{font-size:.68rem !important;letter-spacing:.12em !important}
+.ws-badge{font-size:.68rem !important}
+.drawer-stat span{font-size:.68rem !important}
+.notice-x{min-width:40px;min-height:40px}
+.sf-err{font-family:var(--font-ui);font-size:.74rem;font-weight:700;line-height:1.25;color:#ffb1a5;background:#35140f;border:1px solid rgba(239,113,93,.55);border-radius:10px;padding:5px 9px;margin:0 0 5px}
+html.light-mode .sf-err{color:#a3261c;background:#fdeceA}
+#firstShotCue{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:60;display:none;min-height:44px;padding:9px 20px;border-radius:999px;border:0;background:linear-gradient(135deg,#a2e5b3,#69bf7f);color:#071309;font-family:var(--font-ui);font-size:.8rem;font-weight:800;letter-spacing:.06em;white-space:nowrap;cursor:pointer;box-shadow:0 10px 24px rgba(0,0,0,.35)}
+#firstShotCue.visible{display:block}
+body:has(.modal-overlay) #firstShotCue{display:none}
+@media(max-width:400px){.sf-hi-hint{display:none}}
+@media(max-height:700px){
+  /* short screens: no spare rows — the error floats over the form's header line instead of adding one */
+  .sf-hi-hint{display:none}
+  .modal.modal-shot{position:relative}
+  .modal.modal-shot .sf-label{font-size:.6rem !important}
+  .modal.modal-shot .sf-row{margin-bottom:4px !important}
+  .modal.modal-shot .sf-numpad button,.modal.modal-shot .sf-quad-numrow button{min-height:36px !important}
+  .sf-opt-row button{min-height:33px !important}
+  .modal.modal-shot .sf-err{position:absolute;left:8px;right:8px;top:4px;z-index:3;margin:0;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+  .modal.modal-shot [data-qns],.modal.modal-shot [data-qew]{padding:5px 4px !important}
+}
+@media(max-height:600px){
+  .modal.modal-shot .sf-label{font-size:.56rem !important;letter-spacing:.03em !important}
+  .modal.modal-shot .sf-row{margin-bottom:3px !important}
+  .modal.modal-shot .sf-numpad button,.modal.modal-shot .sf-quad-numrow button{min-height:32px !important}
+  .sf-opt-row button{min-height:30px !important}
+  .modal.modal-shot{padding:4px 10px 5px !important}
+  .sf-bs-row{font-size:.62rem;padding:0 4px 2px}
+  .modal.modal-shot [data-qns],.modal.modal-shot [data-qew]{padding:3px 4px !important}
+}
+@media(min-height:701px){.sf-off-chip{min-height:36px;font-size:.7rem}.sf-close{min-width:40px;min-height:36px}}
+@media(min-height:780px){
+  .modal.modal-shot .sf-numpad button,.modal.modal-shot .sf-quad-numrow button{min-height:48px}
+  .sf-opt-row button{min-height:42px !important}
+}
 </style>
 
 <script>
@@ -1334,7 +1380,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.6";
+const APP_VERSION = "4.8.7";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1504,8 +1550,9 @@ function _notify(msg){
   const kill=()=>{ if(!card.parentNode)return; card.classList.add("out"); setTimeout(()=>{ if(card.parentNode)card.remove(); },200); };
   card.onclick=kill;
   host.appendChild(card);
-  while(host.children.length>3) host.removeChild(host.firstChild);
-  setTimeout(kill, Math.min(14000, Math.max(4500, text.length*70)));
+  // 4.8.7: two at most, and short ones clear sooner — they sit over the top of the map
+  while(host.children.length>2) host.removeChild(host.firstChild);
+  setTimeout(kill, Math.min(12000, Math.max(3000, text.length*65)));
   try{ if(navigator.vibrate) navigator.vibrate(15); }catch(e){}
 }
 (function(){
@@ -1657,6 +1704,7 @@ let showPtNames       = true;   // 4.7.36: point number/description, separate fr
 let showElevations    = false;
 let lightMode         = false;
 let bearingMode       = "az";   // "az" = azimuth DDD.MMSS | "quad" = N/S xx°mm'ss" E/W
+let rapidShots        = false;  // 4.8.7: true = no result screen after a shot, straight to the next one
 let hzMode            = "az";   // 4.8.6: shot angle entry — "az" = azimuth/bearing | "ar" = angle right from a backsight
 let recentShots       = [];     // last 5 shots summary
 let _lastTHValue      = 0;      // target height carried between shots
@@ -2124,6 +2172,7 @@ function loadData() {
   try { lightMode=_lsGet("cl_lightMode")==="true"; } catch(e){ lightMode=false; }
   try { bearingMode=_lsGet("cl_bearingMode")||"az"; } catch(e){ bearingMode="az"; }
   try { hzMode=_lsGet("cl_hzMode")==="ar"?"ar":"az"; } catch(e){ hzMode="az"; }
+  try { rapidShots=_lsGet("cl_rapidShots")==="1"; } catch(e){ rapidShots=false; }
   _applyLightMode();
   try { _waybackRestore(); } catch(e){}
   try { _lsRemove("cl_gisParcels"); _lsRemove("cl_parcelSources"); } catch(e){}
@@ -2286,6 +2335,9 @@ function updateStatus() {
     `Pts:&nbsp;<b>${points.length}</b><br>`+
     `<span style="color:var(--muted)">${u}</span>`;
   document.getElementById("jobBadge").textContent = jobName;
+  // 4.8.7: a job that has only its start point shows where to go next
+  try{ const cue=document.getElementById("firstShotCue");
+    if(cue) cue.classList.toggle("visible", points.length===1 && !!currentPoint && points[0].Type==="Setup"); }catch(e){}
 
   // Sync the survey-mode badge
   const mb = document.getElementById("modeBadge");
@@ -2501,7 +2553,7 @@ function _buildQuadKeyboard(container, onUpdate, opts){
     np.appendChild(b);
   });
   if(opts.onStore){
-    const sb=document.createElement("button"); sb.textContent="✓ STORE SHOT"; sb.className="np-ok";
+    const sb=document.createElement("button"); sb.textContent=opts.storeLabel||"✓ STORE SHOT"; sb.className="np-ok";
     sb.onclick=opts.onStore; np.appendChild(sb);
   }
   // keys appended after "." (bearing pop-up puts OK / Cancel here so they stay on screen)
@@ -2732,6 +2784,10 @@ function alphaInput(label,defaultVal,cb){
   openModal((modal,close)=>{
     modal.innerHTML=`<h2>Text Input</h2><div class="input-label">${label}</div><div class="disp-input" id="alphaDisp" style="text-align:left;font-size:1em;min-height:2.4em">${defaultVal||""}</div>`;
     const disp=()=>modal.querySelector("#alphaDisp");
+    // 4.8.7: ⌨ swaps the A–Z pad for the phone's own keyboard. The choice is
+    // remembered; the sheet moves to the top so the keyboard can't cover it.
+    let sysInp=null;
+    const val=()=>sysInp?sysInp.value:disp().textContent;
     const grid=document.createElement("div"); grid.className="alpha-grid";
     [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -,./"].forEach(k=>{
       const b=document.createElement("button"); b.textContent=k===" "?"SPC":k;
@@ -2742,13 +2798,38 @@ function alphaInput(label,defaultVal,cb){
     // OK and CANCEL were out of sight with nothing to say the grid scrolled.
     grid.style.maxHeight="max(150px, calc(58vh - 215px))";
     const ctl=document.createElement("div"); ctl.className="calc-grid";
-    ctl.style.cssText="grid-template-columns:1fr 1fr 1.3fr 1.3fr;margin-top:6px";
-    const mw=(t,cls,fn)=>{const b=document.createElement("button");b.textContent=t;b.className=cls;b.onclick=fn;ctl.appendChild(b)};
-    mw("⌫ DEL","danger-btn",()=>{const v=disp().textContent;disp().textContent=v.slice(0,-1)});
-    mw("CLR","danger-btn",()=>disp().textContent="");
-    mw("OK","ok-btn",()=>{const v=disp().textContent;close();cb(v)});
+    ctl.style.cssText="grid-template-columns:.7fr 1fr .8fr 1.2fr 1.3fr;margin-top:6px";
+    const mw=(t,cls,fn)=>{const b=document.createElement("button");b.textContent=t;b.className=cls;b.onclick=fn;ctl.appendChild(b);return b};
+    const useSys=on=>{
+      try{ _lsSet("cl_sysKbd",on?"1":"0"); }catch(e){}
+      const ov=modal.parentNode;
+      if(on && !sysInp){
+        const d=disp(), inp=document.createElement("input");
+        inp.type="text"; inp.id="alphaSys"; inp.className="disp-input"; inp.value=d.textContent;
+        inp.setAttribute("autocapitalize","characters"); inp.setAttribute("autocomplete","off");
+        inp.setAttribute("autocorrect","off"); inp.setAttribute("enterkeyhint","done"); inp.spellcheck=false;
+        inp.style.cssText="text-align:left;font-size:1em;min-height:2.4em;width:100%;box-sizing:border-box";
+        inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); const v=inp.value; close(); cb(v); } };
+        d.style.display="none"; d.parentNode.insertBefore(inp,d); sysInp=inp;
+        grid.style.display="none";
+        if(ov&&ov.style){ ov.style.setProperty("top","0"); ov.style.setProperty("align-items","flex-start","important"); ov.style.setProperty("padding-top","calc(84px + env(safe-area-inset-top))","important"); }
+        try{ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length); }catch(e){}
+      } else if(!on && sysInp){
+        const d=disp(); d.textContent=sysInp.value; sysInp.remove(); sysInp=null;
+        d.style.display=""; grid.style.display="";
+        if(ov&&ov.style){ ov.style.removeProperty("top"); ov.style.removeProperty("align-items"); ov.style.removeProperty("padding-top"); }
+      }
+      kb.textContent=sysInp?"A–Z":"⌨";
+      kb.setAttribute("aria-label",sysInp?"Use the A to Z pad":"Use the phone keyboard");
+    };
+    const kb=mw("⌨","",()=>useSys(!sysInp));
+    mw("⌫ DEL","danger-btn",()=>{ if(sysInp){sysInp.value=sysInp.value.slice(0,-1);sysInp.focus();} else {const v=disp().textContent;disp().textContent=v.slice(0,-1);} });
+    mw("CLR","danger-btn",()=>{ if(sysInp){sysInp.value="";sysInp.focus();} else disp().textContent=""; });
+    mw("OK","ok-btn",()=>{const v=val();close();cb(v)});
     mw("CANCEL","accent-btn",()=>{close();cb(null)});
     modal.appendChild(grid); modal.appendChild(ctl);
+    let wantSys=false; try{ wantSys=_lsGet("cl_sysKbd")==="1"; }catch(e){}
+    if(wantSys) useSys(true);
   });
 }
 
@@ -5023,6 +5104,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
     _ar: hzMode==="ar", // 4.8.6: az holds an angle right from the station's backsight
   };
   let activeField = "az";
+  let formErr = "", vaSeen = false;   // 4.8.7: inline error text; zenith visited (3D)
   const freshFields = new Set(["va","pt",...(prefillDesc?"desc":[])]); // th intentionally NOT fresh — carries over from last shot
 
   openModal((modal, close)=>{
@@ -5030,14 +5112,38 @@ function _shotForm(prefillDesc, autoLine, onStore){
     modal.classList.add("modal-shot");
     modal.style.overflowY = "auto";
 
+    // 4.8.7: the big key walks angle → distance (→ zenith in 3D), then stores.
+    // A reading that can't be used is flagged on the form — nothing typed is lost.
+    const azFilled=()=>(!fields._ar && bearingMode==="quad") ? (fields._azDec!=null && !isNaN(fields._azDec)) : !!fields.az;
+    function nextField(){
+      if(activeField==="az" && azFilled()){ if(!fields.dist) return "dist"; if(is3D && !vaSeen) return "va"; }
+      else if(activeField==="dist" && fields.dist){ if(!azFilled()) return "az"; if(is3D && !vaSeen) return "va"; }
+      return null;
+    }
+    const storeLabel=()=>{ const n=nextField(); return n ? "NEXT ▸ "+({az:"ANGLE",dist:"DIST",va:"ZENITH"})[n] : "✓ STORE SHOT"; };
+    function syncStore(){ const sb=modal.querySelector(".np-ok"); if(sb) sb.textContent=storeLabel(); }
+    function clearErr(){ if(!formErr) return; formErr=""; const e=modal.querySelector(".sf-err"); if(e) e.remove(); }
+    function storeOrNext(){
+      const n=nextField();
+      if(n){ activeField=n; if(n==="va"){ vaSeen=true; freshFields.add("va"); } render(); return; }
+      const bad=_shotFormCheck(fields,is3D,occ,!!onStore);
+      if(bad){
+        formErr=bad.msg; activeField=bad.field; if(bad.field==="va") vaSeen=true;
+        try{ if(navigator.vibrate) navigator.vibrate([40,60,40]); }catch(e){}
+        render(); return;
+      }
+      close(); (onStore||_processShot)(fields, is3D, ih, occ);
+    }
+
     function render(){
       const ihDisp = is3D
-        ? `&nbsp;<span onclick="event.stopPropagation();_changeIH()" style="cursor:pointer;color:var(--accent2);border-bottom:1px dashed var(--accent2)" title="Tap to change IH">HI:${(occ.ih||0).toFixed(3)}</span><span style="color:var(--muted);font-size:.7em"> (tap to change)</span>`
+        ? `&nbsp;<span onclick="event.stopPropagation();_changeIH()" style="cursor:pointer;color:var(--accent2);border-bottom:1px dashed var(--accent2)" title="Tap to change IH">HI:${(occ.ih||0).toFixed(3)}</span><span class="sf-hi-hint" style="color:var(--muted);font-size:.7em"> (tap to change)</span>`
         : "";
       _helpContext = is3D ? "shot-3d" : "shot-2d";
       modal.innerHTML = `<h2 style="font-size:.8em;margin-bottom:5px">🎯 SHOT &nbsp;<span style="color:var(--muted);font-size:.85em;letter-spacing:.06em">OCC: #${occ.Point}${occ.Description?" — "+occ.Description:""}</span>${ihDisp}</h2>`;
 
       const form = document.createElement("div"); form.className="shot-form";
+      if(formErr){ const er=document.createElement("div"); er.className="sf-err"; er.setAttribute("role","alert"); er.textContent="⚠ "+formErr; form.appendChild(er); }
 
       // ── Row 1: Point # and Description ─────────────────
       const r1 = document.createElement("div"); r1.className="sf-row";
@@ -5090,7 +5196,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
           setBacksight(occ, r=>{
             if(r==="az"){   // chose azimuth entry — carry the direction across
               fields._ar=false;
-              if(!isNaN(az0)){fields._azDec=az0;fields.az=fmtBrg(az0);}else{fields._azDec=NaN;fields.az="";}
+              if(!isNaN(az0)){fields._azDec=az0;fields.az=bearingMode==="quad"?fmtBrg(az0):_toDDMMSS(az0);freshFields.add("az");}else{fields._azDec=NaN;fields.az="";}
             }
             render();
           }, true);
@@ -5109,7 +5215,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
         const vaV = document.createElement("div");
         vaV.className="sf-val"+(activeField==="va"?" active":"");
         vaV.textContent = fields.va||"0.0000";
-        vaV.onclick=()=>{activeField="va";freshFields.add("va");render()};
+        vaV.onclick=()=>{activeField="va";vaSeen=true;freshFields.add("va");render()};
         vaF.appendChild(vaV); r3.appendChild(vaF);
 
         const r4 = r3;
@@ -5214,6 +5320,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
                 hzMode="ar"; _lsSet("cl_hzMode","ar");
                 fields._ar=true; fields._azDec=NaN;
                 fields.az=isNaN(curDec)?"":_toDDMMSS(curDec-bs);
+                if(fields.az) freshFields.add("az");
                 activeField="az"; render();
               };
               if(isNaN(_bsAzimuth(occ))) setBacksight(occ, r=>{ if(r==="set") go(); }, true);
@@ -5225,7 +5332,10 @@ function _shotForm(prefillDesc, autoLine, onStore){
             bearingMode=mode;
             if(!isNaN(curDec)){
               fields._azDec=((curDec%360)+360)%360;
-              fields.az=fmtBrg(fields._azDec);
+              // 4.8.7: azimuth mode gets the typed form (45.3015), not 45°30'15" —
+              // digits used to be appended to the display form and then rejected
+              fields.az=mode==="az"?_toDDMMSS(fields._azDec):fmtBrg(fields._azDec);
+              freshFields.add("az");   // the next digit starts a new value
             } else {
               fields._azDec=NaN; fields.az="";
             }
@@ -5263,7 +5373,8 @@ function _shotForm(prefillDesc, autoLine, onStore){
           fields.az = isNaN(azDec) ? "—" : previewStr;
           const azDisp = modal.querySelector(".sf-val.active");
           if(azDisp) azDisp.textContent = fields.az;
-        }, {compact:true, onStore:()=>{ close(); (onStore||_processShot)(fields, is3D, ih, occ); }});
+          clearErr(); syncStore();
+        }, {compact:true, storeLabel:storeLabel(), onStore:storeOrNext});
         form.appendChild(qwrap);
       } else {
         // Standard Numpad
@@ -5304,8 +5415,8 @@ function _shotForm(prefillDesc, autoLine, onStore){
           np.appendChild(b);
         });
         const storeBtn = document.createElement("button");
-        storeBtn.textContent="✓ STORE SHOT"; storeBtn.className="np-ok";
-        storeBtn.onclick=()=>{ close(); (onStore||_processShot)(fields, is3D, ih, occ); };
+        storeBtn.textContent=storeLabel(); storeBtn.className="np-ok";
+        storeBtn.onclick=storeOrNext;
         np.appendChild(storeBtn);
         form.appendChild(np);
       }
@@ -5324,6 +5435,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
       if(v) v.textContent = fields[activeField]||"—";
       const bsr = modal.querySelector(".sf-bs-row");
       if(bsr) bsr.textContent = bsText();
+      clearErr(); syncStore();
       // Keep fields.ih in sync with currentPoint.ih (set via _changeIH)
       fields.ih = (occ.ih||0).toFixed(3);
     }
@@ -5426,6 +5538,33 @@ function _setupTapCSF(){
   });
 }
 
+// 4.8.7: the same tests _processShot applies, run while the form is still open.
+// Returns null when the shot can be stored, else {msg, field} for the form to show.
+function _shotFormCheck(fields,is3D,occ,skipPt){
+  if(!skipPt){
+    const n=parseInt(fields.pt);
+    if(isNaN(n)||n<1) return {msg:"Bad point number.",field:"pt"};
+    if(_ptExists(n)) return {msg:"Point #"+n+" already exists.",field:"pt"};
+  }
+  const az=fields._ar ? _hzFormAz(fields,occ)
+    : (bearingMode==="quad" && fields._azDec!=null ? fields._azDec : parseBrg(fields.az));
+  if(isNaN(az)) return {field:"az",msg:fields._ar
+    ? (isNaN(_bsAzimuth(occ))?"No backsight is set for station #"+occ.Point+".":(fields.az?"Bad angle right — use DDD.MMSS.":"Enter the angle right."))
+    : (bearingMode==="quad"?"Enter a bearing (N/S + degrees + E/W).":(fields.az?"Bad azimuth — use DDD.MMSS.":"Enter an azimuth."))};
+  const d=parseFloat(fields.dist);
+  if(isNaN(d)||d<=0) return {msg:fields.dist?"Bad distance.":"Enter a distance.",field:"dist"};
+  if(is3D){
+    const za=parseDMS(fields.va);
+    if(isNaN(za)||za<0||za>=360) return {msg:"Bad zenith angle — 90 = level, under 90 uphill.",field:"va"};
+  }
+  return null;
+}
+function _setRapidShots(on){
+  rapidShots=!!on; _lsSet("cl_rapidShots",rapidShots?"1":"0");
+  _notify(rapidShots?"Result screen off — shots go straight to the next one. Turn it back on under Field → Shot Result Screen."
+                    :"Result screen on — shown after every shot.");
+}
+
 function _processShot(fields, is3D, ih, occ){
   const ptNum = parseInt(fields.pt);
   if(isNaN(ptNum)||ptNum<1){alert("Bad point number.");takeShot();return}
@@ -5521,10 +5660,17 @@ function _processShot(fields, is3D, ih, occ){
     ...(vertOff!==0?[{lbl:"Vert Off:",val:(vertOff>0?"U ":"D ")+Math.abs(vertOff).toFixed(3)+" "+units}]:[]),
     {lbl:"Desc:",val:fields.desc||"—"},
   ];
+  // 4.8.7: rapid shots — a brief notice instead of the result screen, then the next shot
+  if(rapidShots){
+    try{ updateStatus(); plotPoints(); }catch(e){}
+    _notify("✓ #"+ptNum+(fields.desc?" "+fields.desc:"")+" · N "+N.toFixed(3)+" · E "+E.toFixed(3)+(is3D?" · Z "+Z.toFixed(3):"")+" · HD "+hd.toFixed(3));
+    pointCounter=ptNum+1; takeShot(); return;
+  }
   showResult(`✓ Shot #${ptNum}`, resultRows,[
     {txt:"▶ Next Shot",           cls:"ok",  fn:()=>{ pointCounter=ptNum+1; takeShot(); }},
     {txt:`⬛ Occupy #${ptNum}`,   cls:"blue", fn:()=>{ if(currentPoint)currentPoint._hiSet=false; currentPoint=p; saveData(); updateStatus(); takeShot(); }},
     {txt:"↩ Undo",                cls:"danger",fn:undo},
+    {txt:"Skip this screen from now on", cls:"", fn:()=>{ _setRapidShots(true); pointCounter=ptNum+1; takeShot(); }},
   ]);
 }
 
@@ -15352,6 +15498,15 @@ function _stageNewJob(){
   updateStatus();plotPoints();
 }
 function jobNewManual(jn){
+  // 4.8.7: the usual assumed start is one tap; typing coordinates is the other choice
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>Assumed Start</h2><p class='info'>Point 1 starts at round numbers, or at coordinates you type.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    mk("Use N 10000 · E 10000 · Z 100","ok",()=>{close();_startNewJob(jn,10000,10000,100);});
+    mk("Type Coordinates","blue",()=>{close();_jobNewManualType(jn);});
+  });
+}
+function _jobNewManualType(jn){
   const seq=[["Start Northing","10000"],["Start Easting","10000"],["Start Elevation","100"]];
   const vals=[];let i=0;
   const finish=()=>{
@@ -15601,7 +15756,7 @@ function plotPoints(extCtx,extW,extH){
     if(showElevations && p.Elevation!=null){
       const ez=p.Elevation.toFixed(2);
       const elvFontSize=Math.max(8,Math.min(11,8+viewScale*0.5));
-      const ex=cx+dotR+4;
+      const ex=cx+dotR+(isOcc?11:4);
       // with names hidden the elevation takes the label's place beside the dot
       const ey=(showLabels&&showPtNames)?cy+descFontSize+2:cy-elvFontSize/2-1;   // just under the description
       ctx.save();
@@ -15616,7 +15771,7 @@ function plotPoints(extCtx,extW,extH){
 
     if(showLabels&&showPtNames){
       ctx.shadowColor="rgba(0,0,0,.9)";ctx.shadowBlur=4;
-      const lx=cx+dotR+3, ly=cy-1;
+      const lx=cx+dotR+(isOcc?11:3), ly=cy-1;   // 4.8.7: the occupied ring is dotR+7 out
       const cellKey=`${Math.round(lx/cellW)},${Math.round(ly/cellH)}`;
       if(!_labelCells.has(cellKey)){
         _labelCells.add(cellKey);
@@ -17554,10 +17709,13 @@ const HELP_TOPICS = [
 <li><strong>Description</strong> — prefilled from last shot, first keypress clears it</li>
 <li><strong>Azimuth</strong> — true azimuth in DDD.MMSS format. 90°15'30" = 90.1530</li>
 <li><strong>Az / Quad / AR</strong> — the pill above the keypad picks how the angle is entered: azimuth, quadrant bearing, or angle right from a backsight</li>
+<li><strong>NEXT ▸ / STORE</strong> — the big key moves to the reading you still owe (distance, then zenith in 3D) and stores once the shot is complete. A reading it can't use is flagged on the form, and everything you typed stays put</li>
 <li><strong>Horiz Dist</strong> — horizontal distance from instrument</li>
 </ul>
 <h3>Connection Style</h3>
 <p>Choose Solid, Dash, or None in the row just above the keypad. Default is None. Tap <strong>✕</strong> at the top of the form to cancel a shot.</p>
+<h3>Rapid Shots</h3>
+<p>Every stored shot shows a result screen. To skip it, tap <strong>Skip this screen from now on</strong> there: shots then go straight to the next one with a brief notice. Turn the result screen back on under <strong>Field → Shot Result Screen</strong>. With it off, close the form to reach Undo, and use Field → Occupy Point to move up.</p>
 <div class="tip">Description carries forward from the last shot — handy when shooting many points with the same code in a row.</div>`},
 
   { id:"shot-3d", section:"Shots", title:"Taking a 3D Shot",
@@ -18666,7 +18824,7 @@ function openWorkspace(name){
   const add=(t,s,c,f,b)=>_wsCard2(body,t,s,c,f,b);
   if(name==="field"){
     _wsGroup2(body,"Observation");add("Take Shot","Store a 2D or 3D observation","primary",takeShot,currentPoint?"OCC "+currentPoint.Point:null);add("Occupy Point","Move the instrument setup","blue",occupyPoint);add("Set Station","Enter known station coordinates","",setKnownStation);add("Check Shot","Compare against a known point","",checkShot);add("Two-Face Shot","Reduce Face 1 and Face 2","",twoFaceShot);add("Atmospheric PPM","Temperature and pressure correction",_ppmEnabled?"primary":"",atmosphericSetup,_ppmEnabled?"ON":null);
-    _wsGroup2(body,"Instrument");add("Survey Mode: "+surveyMode,surveyMode==="3D"?"Slope/HD + zenith, computes elevations":"Azimuth + horizontal distance","",_modeSwitchPrompt);add("Instrument Height HI",currentPoint?("Occupied #"+currentPoint.Point+" · "+(currentPoint.ih||0).toFixed(3)+" "+units):"Occupy a point first","",()=>_setupTapHI(),currentPoint&&!(currentPoint.ih>0)&&surveyMode==="3D"?"CHECK":null);add("Backsight",currentPoint?(_bsLabel(currentPoint)?"#"+currentPoint.Point+" → "+_bsLabel(currentPoint):"Not set · needed for angle-right shots"):"Occupy a point first","",()=>setBacksight(),hzMode==="ar"?"AR":null);add("Prism Constant",(_prismPresetMm()===0?"0":_prismPresetMm()===-30?"-30 mm":_prismPresetMm()===30?"+30 mm":(prismConstant||0).toFixed(4)+" "+units),"",()=>_setupTapPrism());add("Grid Scale CSF",(combinedScaleFactor>0?combinedScaleFactor:1).toFixed(8)+(combinedScaleFactor===1?" · off":""),"",()=>_setupTapCSF());
+    _wsGroup2(body,"Instrument");add("Survey Mode: "+surveyMode,surveyMode==="3D"?"Slope/HD + zenith, computes elevations":"Azimuth + horizontal distance","",_modeSwitchPrompt);add("Instrument Height HI",currentPoint?("Occupied #"+currentPoint.Point+" · "+(currentPoint.ih||0).toFixed(3)+" "+units):"Occupy a point first","",()=>_setupTapHI(),currentPoint&&!(currentPoint.ih>0)&&surveyMode==="3D"?"CHECK":null);add("Backsight",currentPoint?(_bsLabel(currentPoint)?"#"+currentPoint.Point+" → "+_bsLabel(currentPoint):"Not set · needed for angle-right shots"):"Occupy a point first","",()=>setBacksight(),hzMode==="ar"?"AR":null);add("Shot Result Screen",rapidShots?"Off · straight to the next shot":"Shown after every shot","",()=>_setRapidShots(!rapidShots),rapidShots?"OFF":null);add("Prism Constant",(_prismPresetMm()===0?"0":_prismPresetMm()===-30?"-30 mm":_prismPresetMm()===30?"+30 mm":(prismConstant||0).toFixed(4)+" "+units),"",()=>_setupTapPrism());add("Grid Scale CSF",(combinedScaleFactor>0?combinedScaleFactor:1).toFixed(8)+(combinedScaleFactor===1?" · off":""),"",()=>_setupTapCSF());
     _wsGroup2(body,"Field data");add("Point List","Review and edit stored points","",pointListMenu,points.length+" PTS");add("Shift Elevations","Tie assumed elevations to a benchmark","",elevationShift);add("Flag Point","Mark control or questionable shots","",flagPoint);
   } else if(name==="records"){
     const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
