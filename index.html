@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.5">
+<meta name="application-name" content="ChainLink-v4.8.6">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.5</title>
+<title>ChainLink Survey v4.8.6</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1236,6 +1236,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 .sf-opt-row{display:flex;gap:8px;margin:2px 0 0}
 .sf-opt-row .sf-line-row{flex:3;margin:0}
 .sf-opt-row .sf-bpill{flex:2;display:flex;gap:4px}
+.sf-bs-row{font-family:var(--font-ui);font-size:.68rem;font-weight:700;letter-spacing:.04em;color:var(--accent2);padding:0 4px 5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sf-opt-row button{min-height:36px !important;padding:4px 2px !important;font-size:.7rem !important}
 .sf-off-chip{margin-left:auto;min-height:30px;padding:0 10px;border-radius:999px;border:1px dashed var(--border2);background:transparent;color:var(--muted);font-family:var(--font-ui);font-size:.66rem;font-weight:700;letter-spacing:.06em;cursor:pointer}
 .sf-off-chip.on{border-style:solid;color:var(--accent2);border-color:rgba(115,199,210,.4)}
@@ -1333,7 +1334,7 @@ html.light-mode .job-btn-blue{background:linear-gradient(145deg,rgba(25,120,135,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.5";
+const APP_VERSION = "4.8.6";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1656,6 +1657,7 @@ let showPtNames       = true;   // 4.7.36: point number/description, separate fr
 let showElevations    = false;
 let lightMode         = false;
 let bearingMode       = "az";   // "az" = azimuth DDD.MMSS | "quad" = N/S xx°mm'ss" E/W
+let hzMode            = "az";   // 4.8.6: shot angle entry — "az" = azimuth/bearing | "ar" = angle right from a backsight
 let recentShots       = [];     // last 5 shots summary
 let _lastTHValue      = 0;      // target height carried between shots
 let _ppmEnabled       = false;  // atmospheric PPM correction on/off
@@ -2121,6 +2123,7 @@ function loadData() {
   try { _syncLblBtn(); } catch(e){}
   try { lightMode=_lsGet("cl_lightMode")==="true"; } catch(e){ lightMode=false; }
   try { bearingMode=_lsGet("cl_bearingMode")||"az"; } catch(e){ bearingMode="az"; }
+  try { hzMode=_lsGet("cl_hzMode")==="ar"?"ar":"az"; } catch(e){ hzMode="az"; }
   _applyLightMode();
   try { _waybackRestore(); } catch(e){}
   try { _lsRemove("cl_gisParcels"); _lsRemove("cl_parcelSources"); } catch(e){}
@@ -3712,7 +3715,7 @@ function importLandXML(){
 /* ── FIELDBOOK — chronological observation report (PDF or CSV) ── */
 function _fieldbookRows(){
   // Reconstruct the observation log in point order, grouping by occupied station.
-  const rows=[]; let curOcc=null;
+  const rows=[]; let curOcc=null, curBS=null;
   points.forEach(p=>{
     if(p.Type==="Setup"||p.Type==="Import"||p.Type==="COGO"){
       if(p.Type==="Setup"){curOcc=p.Point;
@@ -3722,7 +3725,13 @@ function _fieldbookRows(){
     }
     if(p.Type==="Shot"){
       if(p.From!==curOcc){curOcc=p.From;rows.push({kind:"occ",occ:p.From});}
-      rows.push({kind:"shot",pt:p.Point,
+      // 4.8.6: angle-right shots — note the backsight whenever it changes
+      const isAR=p.HzMode==="AR"&&typeof p.BSAz==="number";
+      if(isAR){
+        const k=p.From+"|"+(p.BSPt!=null?p.BSPt:"")+"|"+p.BSAz.toFixed(6);
+        if(k!==curBS){curBS=k;rows.push({kind:"bs",occ:p.From,bsPt:p.BSPt,bsAz:p.BSAz});}
+      }
+      rows.push({kind:"shot",pt:p.Point,ar:isAR,
         inst:p.InstReading||"",rawAz:p.RawAz||"",trueAz:p.TrueAz||"",
         hd:p.HorizDist,sd:p.SlopeDist,za:p.ZenithAngle||"",
         ih:p.IH,th:p.TH,n:p.Northing,e:p.Easting,z:p.Elevation,desc:p.Description||""});
@@ -3735,18 +3744,21 @@ function exportFieldbookCSV(){
   if(!rows.length){alert("No observations to export.");return}
   const is3D=surveyMode==="3D";
   let csv="ChainLink Fieldbook,"+(jobName||"survey")+",v"+APP_VERSION+","+new Date().toISOString()+"\n";
-  csv+="Type,Occ,Point,InstReading,RawAz,TrueAz,HorizDist"+(is3D?",SlopeDist,ZenithAngle,IH,TH":"")+",Northing,Easting"+(is3D?",Elevation":"")+",Description\n";
+  csv+="Type,Occ,Point,InstReading,RawAz,TrueAz,HorizDist"+(is3D?",SlopeDist,ZenithAngle,IH,TH":"")+",Northing,Easting"+(is3D?",Elevation":"")+",Description,HzMode\n";
   const f=(v,d)=>v==null||v===""?"":(typeof v==="number"?v.toFixed(d):v);
   rows.forEach(r=>{
     if(r.kind==="setup"){
       csv+=`SETUP,${r.occ},,,,,${is3D?",,,"+f(r.ih,3)+",":""},${f(r.n,4)},${f(r.e,4)}${is3D?","+f(r.z,4):""},"${(r.desc||"").replace(/"/g,'""')}"\n`;
     } else if(r.kind==="occ"){
       csv+=`OCCUPY,${r.occ}\n`;
+    } else if(r.kind==="bs"){
+      // backsight for the angle-right shots that follow: point # in Point, its azimuth in TrueAz
+      csv+=`BACKSIGHT,${r.occ},${r.bsPt==null?"":r.bsPt},,,${_csvField(toDMS(r.bsAz))}\n`;
     } else {
       csv+=`SHOT,,${r.pt},${r.inst},${r.rawAz},${r.trueAz},${f(r.hd,4)}`+
            (is3D?`,${f(r.sd,4)},${r.za},${f(r.ih,3)},${f(r.th,3)}`:"")+
            `,${f(r.n,4)},${f(r.e,4)}`+(is3D?`,${f(r.z,4)}`:"")+
-           `,"${(r.desc||"").replace(/"/g,'""')}"\n`;
+           `,"${(r.desc||"").replace(/"/g,'""')}",${r.ar?"AR":(r.inst?"AZ":"")}\n`;
     }
   });
   const blob=new Blob([csv],{type:"text/csv"});
@@ -3769,7 +3781,7 @@ function exportFieldbookPDF(){
   const pushPage=()=>{pages.push(page);page=[];y=M+headH;};
   rows.forEach(r=>{
     if(y>pageH-M-lineH){pushPage();}
-    page.push(r); y+=lineH+(r.kind==="setup"||r.kind==="occ"?4:0);
+    page.push(r); y+=lineH+(r.kind==="setup"||r.kind==="occ"||r.kind==="bs"?4:0);
   });
   if(page.length)pushPage();
 
@@ -3808,8 +3820,13 @@ function exportFieldbookPDF(){
         ctx.font="bold 9.5px 'Courier New',monospace";
         ctx.fillText("\u25b6 OCCUPY #"+r.occ,M+2,ry+10);
         ctx.font="9px 'Courier New',monospace"; ry+=lineH+4;
+      } else if(r.kind==="bs"){
+        ctx.font="bold 9.5px 'Courier New',monospace";
+        ctx.fillText("   BACKSIGHT "+(r.bsPt!=null?"#"+r.bsPt+"  ":"")+"Az "+toDMS(r.bsAz)+"   (Inst Rdg = angle right)",M+2,ry+10);
+        ctx.font="9px 'Courier New',monospace"; ry+=lineH+4;
       } else {
         let x=M;
+        if(r.ar) r={...r,inst:r.inst+" AR"};
         const vals=is3D
           ?[r.pt,r.inst,r.trueAz,fmt(r.sd,3),r.za,fmt(r.hd,3),fmt(r.th,2),fmt(r.n,3),fmt(r.e,3),fmt(r.z,3),r.desc]
           :[r.pt,r.inst,r.trueAz,fmt(r.hd,3),fmt(r.n,3),fmt(r.e,3),r.desc];
@@ -4628,7 +4645,7 @@ function _showOrientationExplainer(onDone){
     modal.style.overflowY="auto";
     modal.innerHTML=`
 <h2>⌖ One Thing to Know</h2>
-<p class="info">ChainLink trusts the azimuths you type — it doesn't manage your instrument's orientation. Before shooting, set your gun to read true azimuths (compass to north, or backsight a known line), and re-orient at every new setup. <span style="color:var(--warn)">Always verify with a check shot.</span></p>`;
+<p class="info">ChainLink trusts the azimuths you type — it doesn't manage your instrument's orientation. Before shooting, set your gun to read true azimuths (compass to north, or backsight a known line), and re-orient at every new setup. Prefer to zero on a backsight? Tap <b>AR</b> on the shot form and enter angles right instead. <span style="color:var(--warn)">Always verify with a check shot.</span></p>`;
     const hb=document.createElement("button");
     hb.className="btn blue";hb.textContent="📖 Full explanation in Help";
     hb.onclick=()=>{close();_helpContext="shot-setup";openHelp();onDone&&onDone();};
@@ -4803,6 +4820,103 @@ function setKnownStation(){
 }
 
 /* ── 9. SHOT ENTRY ─────────────────────────────────────────────── */
+/* ── 4.8.6: ANGLE RIGHT ──────────────────────────────────────────
+   The instrument is zeroed on a backsight and reads angles turned to the
+   right (clockwise). Shot azimuth = azimuth to the backsight + angle right.
+   The backsight belongs to the occupied station: a stored point (bsPt —
+   its azimuth is inversed live from coordinates, so it follows any edit)
+   or a typed azimuth (bsAz, decimal degrees). hzMode says what the shot
+   form's angle field holds: "az" (azimuth / quadrant bearing, as always)
+   or "ar" (angle right). Each angle-right shot records the reading, the
+   backsight azimuth used and the azimuth it worked out to. */
+function _bsAzimuth(occ){
+  if(!occ) return NaN;
+  if(occ.bsPt!=null){
+    const b=points.find(p=>p.Point===occ.bsPt);
+    return (b&&b.Point!==occ.Point&&dist2D(occ,b)>1e-6) ? azimuth(occ,b) : NaN;
+  }
+  if(typeof occ.bsAz==="number"&&!isNaN(occ.bsAz)) return ((occ.bsAz%360)+360)%360;
+  return NaN;
+}
+// "Az 123°45'10\"" — or just the bearing when quadrant display is on
+function _azLbl(deg){ return (bearingMode==="quad"?"":"Az ")+fmtBrg(deg); }
+function _bsLabel(occ){
+  const a=_bsAzimuth(occ); if(isNaN(a)) return "";
+  return (occ.bsPt!=null?"#"+occ.bsPt+" · ":"")+_azLbl(a);
+}
+// Angle right → azimuth. A negative angle is an angle left; a full turn or more is a typo.
+function _arToAz(occ,ar){
+  const bs=_bsAzimuth(occ);
+  if(isNaN(ar)||isNaN(bs)||Math.abs(ar)>=360) return NaN;
+  return (((bs+ar)%360)+360)%360;
+}
+// Decimal azimuth from a shot form's angle field, whichever way it was entered.
+function _hzFormAz(fields,occ){
+  if(fields._ar) return _arToAz(occ,parseDMS(fields.az));
+  return (bearingMode==="quad" && fields._azDec!=null && !isNaN(fields._azDec))
+    ? fields._azDec : parseBrg(fields.az);
+}
+// onDone("set") — a backsight was set; onDone("az") — user chose azimuth entry; onDone(null) — cancelled
+function setBacksight(occ,onDone,fromShot){
+  occ=occ||currentPoint;
+  if(!occ){alert("Occupy a point first.");return}
+  _helpContext="angle-right";
+  const done=r=>{ if(onDone) onDone(r); };
+  const setMode=m=>{ hzMode=m; _lsSet("cl_hzMode",m); };
+  const finish=()=>{
+    setMode("ar"); saveData();
+    try{ updateStatus(); }catch(e){}
+    const a=_bsAzimuth(occ), b=occ.bsPt!=null?points.find(p=>p.Point===occ.bsPt):null;
+    done("set");
+    showResult("✓ Backsight Set",[
+      {lbl:"Station:",    val:"#"+occ.Point},
+      {lbl:"Backsight:",  val:b?"#"+b.Point+(b.Description?" — "+b.Description:""):"typed azimuth"},
+      {lbl:"BS Azimuth:", val:fmtBrg(a)},
+      ...(b?[{lbl:"BS Distance:",val:dist2D(occ,b).toFixed(3)+" "+units}]:[]),
+      {lbl:"At the gun:", val:"sight the backsight, set 0°00'00\""},
+      {lbl:"Shots use:",  val:"Angle Right"},
+    ]);
+  };
+  openModal((modal,close)=>{
+    const cur=_bsLabel(occ);
+    modal.innerHTML="<h2>⟲ Backsight — Station #"+occ.Point+"</h2>"+
+      "<p class='info'>For angle-right shots: sight your backsight and set the instrument's horizontal circle to 0°00'00\". Each shot is then the angle turned to the right (clockwise) from that line.</p>"+
+      "<div class='result-box'><span class='lbl'>Backsight:</span>&nbsp;<span class='val'>"+(cur||"not set")+"</span><br>"+
+      "<span class='lbl'>Shots use:</span>&nbsp;<span class='val'>"+(hzMode==="ar"?"Angle Right":"Azimuth")+"</span></div>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    mk("Backsight a Point","ok",()=>{close();
+      // the station this point was shot from is the usual backsight
+      const def=occ.bsPt!=null?String(occ.bsPt)
+        :(occ.From!=null&&occ.From!==occ.Point&&points.some(p=>p.Point===occ.From)?String(occ.From):"");
+      calculatorInput("Backsight point # (from station #"+occ.Point+"):",def,num=>{
+        if(!num){done(null);return}
+        const again=msg=>{alert(msg);setBacksight(occ,onDone,fromShot);};
+        const b=points.find(p=>p.Point===parseInt(num));
+        if(!b){again("Point not found.");return}
+        if(b.Point===occ.Point){again("The backsight must be a different point than the station.");return}
+        if(dist2D(occ,b)<=1e-6){again("#"+b.Point+" sits on the station — it can't give a direction.");return}
+        _takeSnapshot("Set Backsight");
+        occ.bsPt=b.Point; delete occ.bsAz;
+        finish();
+      });
+    });
+    mk("Enter Backsight Azimuth","blue",()=>{close();
+      bearingInput("Azimuth from #"+occ.Point+" to the backsight:",typeof occ.bsAz==="number"?occ.bsAz:"",s=>{
+        if(s===null){done(null);return}
+        const a=parseBrg(s);
+        if(isNaN(a)){alert("Bad azimuth — use DDD.MMSS.");setBacksight(occ,onDone,fromShot);return}
+        _takeSnapshot("Set Backsight");
+        occ.bsAz=((a%360)+360)%360; delete occ.bsPt;
+        finish();
+      });
+    });
+    if(hzMode==="ar"||fromShot) mk("Use Azimuths Instead","",()=>{close();setMode("az");done("az");});
+    else if(cur) mk("Use Angle Right for Shots","",()=>{close();setMode("ar");done("set");});
+    if(cur) mk("Clear Backsight","danger",()=>{close();_takeSnapshot("Clear Backsight");delete occ.bsPt;delete occ.bsAz;saveData();done(null);});
+    mk("Cancel","",()=>{close();done(null);});
+  });
+}
+
 function enterShots(){
   openModal((modal,close)=>{
     const occ=currentPoint;
@@ -4813,6 +4927,7 @@ function enterShots(){
     mk("\u25b6 Take Shot","ok",()=>{close();takeShot()});
     mk("\u25a0 Occupy Point","blue",()=>{close();occupyPoint()});
     mk("\u2316 Set Station Coords","blue",()=>{close();setKnownStation()});
+    mk("⟲ Backsight / Angle Right",hzMode==="ar"?"ok":"blue",()=>{close();setBacksight()});
     mk("🌡 Atmospheric PPM",_ppmEnabled?"ok":"",()=>{close();atmosphericSetup()});
 
     mk("\ud83d\udd0d Check Shot (Known Pt)","blue",()=>{close();checkShot()});
@@ -4884,6 +4999,11 @@ function _doTakeShot(){
 }
 /* ── Single-screen shot entry form ─────────────────────── */
 function _shotForm(prefillDesc, autoLine, onStore){
+  // 4.8.6: angle-right entry needs a backsight for this station first
+  if(hzMode==="ar" && currentPoint && isNaN(_bsAzimuth(currentPoint))){
+    setBacksight(currentPoint, r=>{ if(r) _shotForm(prefillDesc,autoLine,onStore); }, true);
+    return;
+  }
   const is3D = surveyMode==="3D";
   const ih = currentPoint.ih||0;
   const defTH = _lastTHValue>0?_lastTHValue.toFixed(3):(currentPoint._lastTH!=null?currentPoint._lastTH.toFixed(3):"0.000");
@@ -4900,6 +5020,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
     line: autoLine?"solid":"none",
     offLat: "0",      // lateral offset: + right, - left
     offVert:"0",      // vertical offset: + up, - down (3D only)
+    _ar: hzMode==="ar", // 4.8.6: az holds an angle right from the station's backsight
   };
   let activeField = "az";
   const freshFields = new Set(["va","pt",...(prefillDesc?"desc":[])]); // th intentionally NOT fresh — carries over from last shot
@@ -4943,7 +5064,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
       const r2 = document.createElement("div"); r2.className="sf-row";
 
       const azF = document.createElement("div"); azF.className="sf-field";
-      azF.innerHTML=`<div class="sf-label">${bearingMode==="quad"?"Bearing (N/S · deg · E/W)":"Azimuth (DDD.MMSS)"}</div>`;
+      azF.innerHTML=`<div class="sf-label">${fields._ar?"∠ Right (DDD.MMSS)":bearingMode==="quad"?"Bearing (N/S · deg · E/W)":"Azimuth (DDD.MMSS)"}</div>`;
       const azV = document.createElement("div");
       azV.className="sf-val"+(activeField==="az"?" active":"");
       azV.textContent = fields.az||"—";
@@ -4959,6 +5080,23 @@ function _shotForm(prefillDesc, autoLine, onStore){
       distV.onclick=()=>{activeField="dist";render()};
       distF.appendChild(distV); r2.appendChild(distF);
       form.appendChild(r2);
+
+      // 4.8.6: angle right — which backsight, and the azimuth the angle works out to
+      if(fields._ar){
+        const bsRow=document.createElement("div"); bsRow.className="sf-bs-row";
+        bsRow.textContent=bsText();
+        bsRow.onclick=()=>{
+          const az0=_hzFormAz(fields,occ);
+          setBacksight(occ, r=>{
+            if(r==="az"){   // chose azimuth entry — carry the direction across
+              fields._ar=false;
+              if(!isNaN(az0)){fields._azDec=az0;fields.az=fmtBrg(az0);}else{fields._azDec=NaN;fields.az="";}
+            }
+            render();
+          }, true);
+        };
+        form.appendChild(bsRow);
+      }
 
       // ── Rows 3 & 4 (3D only): IH  |  Vert Angle  |  TH ──
       if(is3D){
@@ -5058,18 +5196,33 @@ function _shotForm(prefillDesc, autoLine, onStore){
       {
         const pill=document.createElement("div");
         pill.className="sf-bpill";
-        ["Azimuth","Quadrant"].forEach(label=>{
-          const isActive=(label==="Azimuth"&&bearingMode==="az")||(label==="Quadrant"&&bearingMode==="quad");
+        // 4.8.6: third choice — AR, angle right from the station's backsight
+        [["Az","az"],["Quad","quad"],["AR","ar"]].forEach(([txt,mode])=>{
+          const isActive=mode==="ar" ? !!fields._ar : (!fields._ar && bearingMode===mode);
           const b=document.createElement("button");
-          b.textContent=label==="Azimuth"?"Az":"Quad";
+          b.textContent=txt;
           b.style.cssText="flex:1;padding:6px 4px;border-radius:var(--radius);font-family:var(--font-ui);font-size:.72em;font-weight:700;letter-spacing:.06em;cursor:pointer;transition:all .15s;border:1px solid "+(isActive?"var(--accent2)":"var(--border)")+";color:"+(isActive?"var(--accent2)":"var(--muted)")+";background:"+(isActive?"var(--accent2-lo)":"var(--surface2)");
           b.onclick=()=>{
-            const newMode=label==="Azimuth"?"az":"quad";
-            if(newMode===bearingMode) return;
-            // Cross-convert the az field value into the new format
-            const curDec = bearingMode==="quad" && fields._azDec!=null && !isNaN(fields._azDec)
-              ? fields._azDec : parseDMS(fields.az);
-            bearingMode=newMode;
+            if(isActive) return;
+            // Every mode writes the same direction differently — carry the value across
+            const curDec = fields._ar ? _hzFormAz(fields,occ)
+              : (bearingMode==="quad" && fields._azDec!=null && !isNaN(fields._azDec)
+                  ? fields._azDec : parseDMS(fields.az));
+            if(mode==="ar"){
+              const go=()=>{
+                const bs=_bsAzimuth(occ);
+                hzMode="ar"; _lsSet("cl_hzMode","ar");
+                fields._ar=true; fields._azDec=NaN;
+                fields.az=isNaN(curDec)?"":_toDDMMSS(curDec-bs);
+                activeField="az"; render();
+              };
+              if(isNaN(_bsAzimuth(occ))) setBacksight(occ, r=>{ if(r==="set") go(); }, true);
+              else go();
+              return;
+            }
+            hzMode="az"; _lsSet("cl_hzMode","az");
+            fields._ar=false;
+            bearingMode=mode;
             if(!isNaN(curDec)){
               fields._azDec=((curDec%360)+360)%360;
               fields.az=fmtBrg(fields._azDec);
@@ -5102,7 +5255,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
         okb.style.cssText="border-color:var(--ok);color:var(--ok)";
         okb.onclick=()=>{activeField="az";render()};alpha.appendChild(okb);
         form.appendChild(alpha);
-      } else if(activeField==="az" && bearingMode==="quad"){
+      } else if(activeField==="az" && bearingMode==="quad" && !fields._ar){
         // Quadrant bearing keyboard
         const qwrap=document.createElement("div");
         _buildQuadKeyboard(qwrap, (azDec, previewStr)=>{
@@ -5162,9 +5315,15 @@ function _shotForm(prefillDesc, autoLine, onStore){
     }
 
     // Lightweight re-render helpers that avoid full re-render on every keypress
+    function bsText(){   // 4.8.6: backsight line under the angle-right field
+      const lbl=_bsLabel(occ), az=_hzFormAz(fields,occ);
+      return "BS "+(lbl||"not set")+(isNaN(az)?"":"  →  Shot "+_azLbl(az))+"  ✎";
+    }
     function renderActiveVal(){
       const v = modal.querySelector(".sf-val.active");
       if(v) v.textContent = fields[activeField]||"—";
+      const bsr = modal.querySelector(".sf-bs-row");
+      if(bsr) bsr.textContent = bsText();
       // Keep fields.ih in sync with currentPoint.ih (set via _changeIH)
       fields.ih = (occ.ih||0).toFixed(3);
     }
@@ -5272,8 +5431,14 @@ function _processShot(fields, is3D, ih, occ){
   if(isNaN(ptNum)||ptNum<1){alert("Bad point number.");takeShot();return}
   if(_ptExists(ptNum)){alert(`Point #${ptNum} already exists.`);takeShot();return}
 
-  const rawAz = bearingMode==="quad" && fields._azDec!=null ? fields._azDec : parseBrg(fields.az);
-  if(isNaN(rawAz)){alert(bearingMode==="quad"?"Enter a bearing (N/S + degrees + E/W).":"Bad azimuth — use DDD.MMSS format.");takeShot();return}
+  // 4.8.6: an angle right is turned from the station's backsight
+  const isAR = !!fields._ar;
+  const bsAzUsed = isAR ? _bsAzimuth(occ) : NaN;
+  const rawAz = isAR ? _hzFormAz(fields,occ)
+    : (bearingMode==="quad" && fields._azDec!=null ? fields._azDec : parseBrg(fields.az));
+  if(isNaN(rawAz)){alert(isAR
+      ? (isNaN(bsAzUsed)?"No backsight is set for station #"+occ.Point+".":"Bad angle right — use DDD.MMSS format.")
+      : (bearingMode==="quad"?"Enter a bearing (N/S + degrees + E/W).":"Bad azimuth — use DDD.MMSS format."));takeShot();return}
   const trueAz = ((rawAz % 360) + 360) % 360; // no orientation offset — user enters true azimuth
 
   let distVal = parseFloat(fields.dist);
@@ -5327,6 +5492,7 @@ function _processShot(fields, is3D, ih, occ){
     InstReading:fields.az,   // raw instrument reading (before orientation)
     RawAz:toDMS(rawAz),
     TrueAz:toDMS(trueAz),
+    ...(isAR?{HzMode:"AR",BSAz:bsAzUsed,...(occ.bsPt!=null?{BSPt:occ.bsPt}:{})}:{}),
     HorizDist:hd,
     Description:fields.desc,
     ...(latOff!==0||vertOff!==0?{LatOffset:latOff,VertOffset:vertOff}:{}),
@@ -5349,6 +5515,8 @@ function _processShot(fields, is3D, ih, occ){
     ...(is3D?[{lbl:"Z:",val:Z.toFixed(3)}]:[]),
     {lbl:"HD:",val:hd.toFixed(3)+" "+units},
     {lbl:"Az:",val:fmtBrg(trueAz)},
+    ...(isAR?[{lbl:"∠ Right:",val:toDMS(parseDMS(fields.az))},
+              {lbl:"Backsight:",val:(occ.bsPt!=null?"#"+occ.bsPt+" · ":"")+_azLbl(bsAzUsed)}]:[]),
     ...(latOff!==0?[{lbl:"Lat Off:",val:(latOff>0?"R ":"L ")+Math.abs(latOff).toFixed(3)+" "+units}]:[]),
     ...(vertOff!==0?[{lbl:"Vert Off:",val:(vertOff>0?"U ":"D ")+Math.abs(vertOff).toFixed(3)+" "+units}]:[]),
     {lbl:"Desc:",val:fields.desc||"—"},
@@ -5405,15 +5573,15 @@ function twoFaceShot(){
 
 // Parse one face's shot-form fields into corrected observation values.
 // Returns null if any required reading is missing/invalid.
-function _twoFaceParse(fields,is3D){
-  const azRaw=(bearingMode==="quad" && fields._azDec!=null && !isNaN(fields._azDec))
-    ? fields._azDec : parseBrg(fields.az);
+function _twoFaceParse(fields,is3D,occ){
+  const azRaw=_hzFormAz(fields,occ||currentPoint);   // 4.8.6: azimuth, bearing or angle right
   if(isNaN(azRaw)) return null;
+  const ar=fields._ar?parseDMS(fields.az):null;
   const az=((azRaw%360)+360)%360;
   let dist=parseFloat(fields.dist);
   if(isNaN(dist)||dist<=0) return null;
   dist=_applyPPM(dist+prismConstant);          // same corrections as a normal shot
-  if(!is3D) return {az, hd:dist};
+  if(!is3D) return {az, hd:dist, ar};
   const va=parseDMS(fields.va);
   // Face 2 (reverse) zeniths read 180–360 — they are valid, not errors (4.7.25)
   if(isNaN(va)||va<0||va>=360) return null;
@@ -5425,13 +5593,13 @@ function _twoFaceParse(fields,is3D){
     sd=s>0.0001 ? dist/s : dist;
   }
   const th=parseFloat(fields.th)||0;
-  return {az, va, sd, th};
+  return {az, va, sd, th, ar};
 }
 
 // Face 1 -> (flip prompt) -> Face 2, both through the normal shot form.
 function _twoFaceCapture(occ,is3D){
   _shotForm("2F","none",(f1Fields)=>{
-    const f1=_twoFaceParse(f1Fields,is3D);
+    const f1=_twoFaceParse(f1Fields,is3D,occ);
     if(!f1){alert("Face 1 readings were incomplete \u2014 two-face cancelled.");return;}
     openModal((modal,close)=>{
       modal.innerHTML="<h2>\u21c4 Face 2</h2>"+
@@ -5440,13 +5608,14 @@ function _twoFaceCapture(occ,is3D){
         "<span class='lbl'>Face 1 Az:</span> <span class='val'>"+fmtBrg(f1.az)+"</span><br>"+
         (is3D?"<span class='lbl'>Face 1 VA:</span> <span class='val'>"+toDMS(f1.va)+"</span><br>":"")+
         "<span class='lbl'>Expected F2 Az:</span> <span class='val'>~"+fmtBrg((f1.az+180)%360)+"</span>"+
+        (f1.ar!=null?"<br><span class='lbl'>Expected F2 ∠ Right:</span> <span class='val'>~"+toDMS(((f1.ar+180)%360+360)%360)+"</span>":"")+
         (is3D?"<br><span class='lbl'>Expected F2 VA:</span> <span class='val'>~"+toDMS(360-f1.va)+"</span>":"")+
         "</div>";
       const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
       mk("Take Face 2 \u2192","ok",()=>{
         close();
         _shotForm("2F","none",(f2Fields)=>{
-          const f2=_twoFaceParse(f2Fields,is3D);
+          const f2=_twoFaceParse(f2Fields,is3D,occ);
           if(!f2){alert("Face 2 readings were incomplete \u2014 two-face cancelled.");return;}
           _twoFaceReduce(occ,is3D,f1,f2);
         });
@@ -5531,9 +5700,14 @@ function checkShot(){
     const expectedAz=azimuth(occ,knownPt);
     const expectedHD=dist2D(occ,knownPt);
     const instExpected=((expectedAz%360)+360)%360; // true azimuth — no orientation offset
-    calculatorInput("Instrument reading to known pt (DDD.MMSS):","",azStr=>{
+    // 4.8.6: in angle-right mode the reading is turned from the backsight
+    const bsAzC=hzMode==="ar"?_bsAzimuth(occ):NaN, isAR=!isNaN(bsAzC);
+    if(hzMode==="ar"&&!isAR){alert("Shots are set to angle right, but station #"+occ.Point+" has no backsight. Set one under Field → Backsight, or switch to azimuths.");return}
+    const expectedAR=isAR?(((expectedAz-bsAzC)%360)+360)%360:NaN;
+    calculatorInput(isAR?"Angle right to known pt (DDD.MMSS):":"Instrument reading to known pt (DDD.MMSS):","",azStr=>{
       if(!azStr)return;
-      const rawAz=parseDMS(azStr);
+      const rdg=parseDMS(azStr);
+      const rawAz=isAR?_arToAz(occ,rdg):rdg;
       if(isNaN(rawAz)){alert("Bad reading.");return}
       calculatorInput(`Measured HD to #${knownPt.Point} (${units}):` ,"",distStr=>{
         if(!distStr)return;
@@ -5559,7 +5733,10 @@ function checkShot(){
           {lbl:"Measured HD:",  val:measHD.toFixed(3)+" "+units},
           {lbl:"HD Error:",     val:(dHD>=0?"+":"")+dHD.toFixed(3)+" "+units},
           {lbl:"Position Res:", val:residual.toFixed(4)+" "+units+" "+qual},
-          {lbl:"Inst set to:",  val:fmtBrg(instExpected)+" for on-line"},
+          ...(isAR?[{lbl:"Backsight:",        val:_bsLabel(occ)},
+                    {lbl:"Measured ∠ Rt:",    val:toDMS(rdg)},
+                    {lbl:"Inst should read:", val:toDMS(expectedAR)+" ∠ right"}]
+                  :[{lbl:"Inst set to:",  val:fmtBrg(instExpected)+" for on-line"}]),
         ],[
           {txt:"Check Another",cls:"ok",fn:()=>checkShot()},
         ]);
@@ -6203,7 +6380,8 @@ function _pointDetail(p){
         const rawBox=document.createElement("div"); rawBox.className="result-box";
         rawBox.style.cssText="margin-top:4px;border-left-color:var(--accent2)";
         let rh="<span style='font-family:var(--font-ui);font-size:.70em;font-weight:700;color:var(--accent2);letter-spacing:.1em;text-transform:uppercase'>Raw Observation</span><br>";
-        if(p.InstReading) rh+="<span class='lbl'>Inst reading:</span>&nbsp;<span class='val'>"+p.InstReading+"</span><br>";
+        if(p.InstReading) rh+="<span class='lbl'>"+(p.HzMode==="AR"?"Angle right:":"Inst reading:")+"</span>&nbsp;<span class='val'>"+p.InstReading+"</span>"+
+          (p.HzMode==="AR"&&typeof p.BSAz==="number"?"&nbsp;&nbsp;<span class='lbl'>BS:</span>&nbsp;<span class='val'>"+(p.BSPt!=null?"#"+p.BSPt+" · ":"")+_azLbl(p.BSAz)+"</span>":"")+"<br>";
         if(p.SlopeDist)   rh+="<span class='lbl'>Slope dist:</span>&nbsp;<span class='val'>"+Number(p.SlopeDist).toFixed(4)+" "+units+"</span>&nbsp;&nbsp;";
         if(p.ZenithAngle) rh+="<span class='lbl'>Zenith:</span>&nbsp;<span class='val'>"+p.ZenithAngle+"</span>";
         if(p.LatOffset||p.VertOffset)
@@ -6233,10 +6411,13 @@ function _pointDetail(p){
 
       if(p.InstReading){
         mk("Re-enter Raw Reading (recompute coords)","accent",()=>{
-          calculatorInput("Inst reading (DDD.MMSS) [was "+p.InstReading+"]:",p.InstReading,newAz=>{
+          // 4.8.6: an angle-right shot is re-entered as an angle right, from the backsight azimuth it used
+          const _isAR=p.HzMode==="AR"&&typeof p.BSAz==="number";
+          calculatorInput((_isAR?"Angle right":"Inst reading")+" (DDD.MMSS) [was "+p.InstReading+"]:",p.InstReading,newAz=>{
             if(!newAz)return;
-            const rawAz=parseDMS(newAz);
-            if(isNaN(rawAz)){alert("Bad azimuth");return;}
+            const _rdg=parseDMS(newAz);
+            const rawAz=_isAR?(Math.abs(_rdg)>=360?NaN:(((p.BSAz+_rdg)%360)+360)%360):_rdg;
+            if(isNaN(rawAz)){alert(_isAR?"Bad angle":"Bad azimuth");return;}
             const trueAz=((rawAz%360)+360)%360;
             const oldHD=String(p.HorizDist||"0");
             calculatorInput("Horiz Distance [was "+oldHD+"]:",oldHD,newDist=>{
@@ -6833,6 +7014,7 @@ function fieldWorkspaceMenu(){
     _wsButton(modal,"Take Shot","ok",()=>{close();takeShot()});
     _wsButton(modal,"Occupy Point","blue",()=>{close();occupyPoint()});
     _wsButton(modal,"Set Station Coordinates","blue",()=>{close();setKnownStation()});
+    _wsButton(modal,"Backsight / Angle Right",hzMode==="ar"?"ok":"blue",()=>{close();setBacksight()});
     _wsButton(modal,"Check Shot to Known Point","",()=>{close();checkShot()});
     _wsButton(modal,"Two-Face Shot","",()=>{close();twoFaceShot()});
     _wsSection(modal,"Field Data");
@@ -16993,7 +17175,9 @@ function _pointContextMenu(p){
     }
     // Raw instrument data
     if(p.InstReading){
-      boxHtml += `<br><span class="lbl" style="color:var(--muted)">Raw reading:</span>&nbsp;<span class="val">${p.InstReading}</span>`;
+      boxHtml += `<br><span class="lbl" style="color:var(--muted)">${p.HzMode==="AR"?"Angle right:":"Raw reading:"}</span>&nbsp;<span class="val">${p.InstReading}</span>`;
+      if(p.HzMode==="AR"&&typeof p.BSAz==="number")
+        boxHtml += `&nbsp;&nbsp;<span class="lbl" style="color:var(--muted)">BS:</span>&nbsp;<span class="val">${p.BSPt!=null?"#"+p.BSPt+" · ":""}${_azLbl(p.BSAz)}</span>`;
     }
     if(p.SlopeDist){
       boxHtml += `&nbsp;&nbsp;<span class="lbl" style="color:var(--muted)">SD:</span>&nbsp;<span class="val">${Number(p.SlopeDist).toFixed(3)}</span>`;
@@ -17334,13 +17518,32 @@ const HELP_TOPICS = [
 <h3>Set Known Station Coords</h3>
 <p>If your station isn't stored yet, tap <strong>Field → Set Station</strong> to enter its N, E, Z directly.</p>
 <h3>Understanding Orientation in ChainLink</h3>
-<p>ChainLink does not apply an orientation offset — <strong>you enter true azimuths directly</strong>. This means your total station must be set to display true (grid) azimuths before you start shooting.</p>
+<p>ChainLink takes your horizontal angle one of two ways. <strong>Azimuth</strong> (the default): <strong>you enter true azimuths directly</strong>, so your total station must be set to display true (grid) azimuths before you start shooting — the methods below. <strong>Angle right</strong>: you zero the instrument on a backsight and enter the angle turned to the right, and ChainLink works out the azimuth — see <em>Angle Right (Backsight)</em>.</p>
 <h3>How to Orient Your Total Station</h3>
 <p><strong>Method 1 — Backsight to a Known Point:</strong> The most common field method. Use COGO → Inverse to find the true azimuth from your station to a known backsight point. Then at your instrument, set the horizontal circle to that azimuth while aimed at the backsight. Every subsequent reading will be a true azimuth.</p>
 <p><strong>Method 2 — Compass Bearing:</strong> In open terrain with no nearby control, use a hand compass to get an approximate north bearing. Set your instrument circle to 0°00'00" while pointed at magnetic north (apply declination if needed). Less accurate but workable for topographic shots where relative positions matter more than absolute.</p>
 <p><strong>Method 3 — Known Azimuth Between Two Points:</strong> If you have two control points, use COGO → Inverse to compute the azimuth between them. Set up on one, backsight the other, and set your circle to that azimuth. This is the most accurate method.</p>
 <div class="tip">On most total stations: aim at your backsight → press Menu/Config → Horizontal Angle → Set Angle → type the azimuth → confirm. The exact steps vary by manufacturer.</div>
 <div class="warn">If your circle is wrong, every shot will be rotated by the same error. Always check-shot a known point before collecting data.</div>`},
+
+  { id:"angle-right", section:"Shots", title:"Angle Right (Backsight)",
+    preview:"Zero on a backsight and enter angles turned to the right",
+    body:`<h3>Angle Right</h3>
+<p>Instead of setting your instrument to read true azimuths, you can zero it on a backsight and enter each shot as the <strong>angle turned to the right</strong> (clockwise) from that line. ChainLink adds the angle to the azimuth of the backsight line to get the shot's azimuth.</p>
+<h3>Setting the Backsight</h3>
+<p>Tap <strong>Field → Backsight</strong>, or tap <strong>AR</strong> on the shot form — it asks for a backsight if the station doesn't have one. Two choices:</p>
+<ul>
+<li><strong>Backsight a Point</strong> — a stored point. The azimuth is inversed from coordinates. When you occupy a point you just shot, the station you shot it from is offered as the backsight.</li>
+<li><strong>Enter Backsight Azimuth</strong> — type the azimuth of the line you are sighting, when the backsight isn't a stored point.</li>
+</ul>
+<p>At the instrument: sight the backsight and set the horizontal circle to <strong>0°00'00"</strong>.</p>
+<h3>Shooting</h3>
+<p>On the shot form the angle field reads <strong>∠ Right</strong>. Enter it as DDD.MMSS, the same as an azimuth. The line under it shows the backsight and the azimuth your angle works out to — tap that line to change the backsight. A negative angle is an angle left.</p>
+<p>The <strong>Az / Quad / AR</strong> pill switches entry at any time, and carries the value across. Check Shot and Two-Face Shot follow the same setting.</p>
+<h3>Each Station Has Its Own Backsight</h3>
+<p>The backsight is stored with the station, so going back to an earlier setup brings its backsight back. A new station asks for one on the first angle-right shot. If a backsight point is moved, shots taken afterward use its new position; shots already stored stay where they are.</p>
+<p>Every angle-right shot keeps its raw angle, the backsight azimuth used, and the resulting azimuth. They show in the point editor, the Fieldbook, and the CSV backup.</p>
+<div class="warn">A wrong backsight rotates every shot from that station. Check-shot a second known point before collecting data.</div>`},
 
   { id:"shot-2d", section:"Shots", title:"Taking a 2D Shot",
     preview:"Point number, description, azimuth, horizontal distance",
@@ -17350,6 +17553,7 @@ const HELP_TOPICS = [
 <li><strong>Point #</strong> — auto-increments, change if needed</li>
 <li><strong>Description</strong> — prefilled from last shot, first keypress clears it</li>
 <li><strong>Azimuth</strong> — true azimuth in DDD.MMSS format. 90°15'30" = 90.1530</li>
+<li><strong>Az / Quad / AR</strong> — the pill above the keypad picks how the angle is entered: azimuth, quadrant bearing, or angle right from a backsight</li>
 <li><strong>Horiz Dist</strong> — horizontal distance from instrument</li>
 </ul>
 <h3>Connection Style</h3>
@@ -17385,7 +17589,7 @@ const HELP_TOPICS = [
     preview:"Verify your position against a known point after setup",
     body:`<h3>Check Shot</h3>
 <p>Tap <strong>Field → Check Shot</strong> after setting up at a new station.</p>
-<p>Enter the known point number, your instrument reading to it, and the measured horizontal distance. Results show:</p>
+<p>Enter the known point number, your instrument reading to it, and the measured horizontal distance. With shots set to angle right, the reading is the angle right from your backsight, and the result shows what the instrument should read. Results show:</p>
 <ul>
 <li>Expected vs measured azimuth and angular error</li>
 <li>Expected vs measured distance and distance error</li>
@@ -17700,7 +17904,7 @@ const HELP_TOPICS = [
 <h3>Edit Coords / Desc</h3>
 <p>Edit any computed value directly.</p>
 <h3>Re-enter Raw Reading</h3>
-<p>Correct the instrument reading, distance, and in 3D mode: slope distance, zenith angle, HI, and TH. The app recomputes the point position from the original occupation.</p>
+<p>Correct the instrument reading, distance, and in 3D mode: slope distance, zenith angle, HI, and TH. The app recomputes the point position from the original occupation. A shot taken as an angle right is re-entered as an angle right, turned from the backsight azimuth it was shot with.</p>
 <p>If downstream points exist (points shot from this point or its children), you're offered to <strong>Rotate & Recompute Chain</strong> — applies the azimuth delta to every downstream shot and recomputes positions and elevations recursively.</p>
 <div class="tip">This is the field fix for a bad backsight or wrong instrument reading.</div>`},
 
@@ -18462,7 +18666,7 @@ function openWorkspace(name){
   const add=(t,s,c,f,b)=>_wsCard2(body,t,s,c,f,b);
   if(name==="field"){
     _wsGroup2(body,"Observation");add("Take Shot","Store a 2D or 3D observation","primary",takeShot,currentPoint?"OCC "+currentPoint.Point:null);add("Occupy Point","Move the instrument setup","blue",occupyPoint);add("Set Station","Enter known station coordinates","",setKnownStation);add("Check Shot","Compare against a known point","",checkShot);add("Two-Face Shot","Reduce Face 1 and Face 2","",twoFaceShot);add("Atmospheric PPM","Temperature and pressure correction",_ppmEnabled?"primary":"",atmosphericSetup,_ppmEnabled?"ON":null);
-    _wsGroup2(body,"Instrument");add("Survey Mode: "+surveyMode,surveyMode==="3D"?"Slope/HD + zenith, computes elevations":"Azimuth + horizontal distance","",_modeSwitchPrompt);add("Instrument Height HI",currentPoint?("Occupied #"+currentPoint.Point+" · "+(currentPoint.ih||0).toFixed(3)+" "+units):"Occupy a point first","",()=>_setupTapHI(),currentPoint&&!(currentPoint.ih>0)&&surveyMode==="3D"?"CHECK":null);add("Prism Constant",(_prismPresetMm()===0?"0":_prismPresetMm()===-30?"-30 mm":_prismPresetMm()===30?"+30 mm":(prismConstant||0).toFixed(4)+" "+units),"",()=>_setupTapPrism());add("Grid Scale CSF",(combinedScaleFactor>0?combinedScaleFactor:1).toFixed(8)+(combinedScaleFactor===1?" · off":""),"",()=>_setupTapCSF());
+    _wsGroup2(body,"Instrument");add("Survey Mode: "+surveyMode,surveyMode==="3D"?"Slope/HD + zenith, computes elevations":"Azimuth + horizontal distance","",_modeSwitchPrompt);add("Instrument Height HI",currentPoint?("Occupied #"+currentPoint.Point+" · "+(currentPoint.ih||0).toFixed(3)+" "+units):"Occupy a point first","",()=>_setupTapHI(),currentPoint&&!(currentPoint.ih>0)&&surveyMode==="3D"?"CHECK":null);add("Backsight",currentPoint?(_bsLabel(currentPoint)?"#"+currentPoint.Point+" → "+_bsLabel(currentPoint):"Not set · needed for angle-right shots"):"Occupy a point first","",()=>setBacksight(),hzMode==="ar"?"AR":null);add("Prism Constant",(_prismPresetMm()===0?"0":_prismPresetMm()===-30?"-30 mm":_prismPresetMm()===30?"+30 mm":(prismConstant||0).toFixed(4)+" "+units),"",()=>_setupTapPrism());add("Grid Scale CSF",(combinedScaleFactor>0?combinedScaleFactor:1).toFixed(8)+(combinedScaleFactor===1?" · off":""),"",()=>_setupTapCSF());
     _wsGroup2(body,"Field data");add("Point List","Review and edit stored points","",pointListMenu,points.length+" PTS");add("Shift Elevations","Tie assumed elevations to a benchmark","",elevationShift);add("Flag Point","Mark control or questionable shots","",flagPoint);
   } else if(name==="records"){
     const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
