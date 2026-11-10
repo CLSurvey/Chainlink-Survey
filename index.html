@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.7">
+<meta name="application-name" content="ChainLink-v4.8.8">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.7</title>
+<title>ChainLink Survey v4.8.8</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1371,6 +1371,22 @@ body:has(.modal-overlay) #firstShotCue{display:none}
   .modal.modal-shot .sf-numpad button,.modal.modal-shot .sf-quad-numrow button{min-height:48px}
   .sf-opt-row button{min-height:42px !important}
 }
+/* ── 4.8.8: shot form header on one line, Undo chip, narrow-phone fit ── */
+.modal.modal-shot h2{flex-wrap:nowrap;white-space:nowrap;gap:6px}
+.sf-ttl,.sf-hi,.sf-off-chip,.sf-close,.sf-undo-chip{flex:0 0 auto}
+.sf-occ,.sf-hi-hint{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.sf-undo-chip{margin-left:auto;min-height:30px;padding:0 9px;border-radius:999px;border:1px solid rgba(239,113,93,.5);background:transparent;color:#ffb1a5;font-family:var(--font-ui);font-size:.68rem;font-weight:700;letter-spacing:.04em;cursor:pointer}
+html.light-mode .sf-undo-chip{color:#a3261c}
+.sf-undo-chip + .sf-off-chip{margin-left:0}
+.modal.modal-shot h2:has(.sf-undo-chip) .sf-hi-hint{display:none}
+.modal.modal-shot h2:has(.sf-undo-chip):has(.sf-hi) .sf-ttl-w{display:none}
+@media(min-height:701px){.sf-undo-chip{min-height:36px;font-size:.7rem}}
+@media(max-width:380px){.sf-ttl-w{display:none}.modal.modal-shot h2:has(.sf-undo-chip):has(.sf-hi) .sf-ttl{display:none}}
+@media(max-width:340px){
+  .modal.modal-shot h2:has(.sf-undo-chip) .sf-ttl{display:none}
+  .sf-off-chip{padding:0 7px}
+  .sf-opt-row .sf-bpill button{letter-spacing:0 !important;padding:6px 2px !important}
+}
 </style>
 
 <script>
@@ -1380,7 +1396,7 @@ body:has(.modal-overlay) #firstShotCue{display:none}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.7";
+const APP_VERSION = "4.8.8";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1704,6 +1720,8 @@ let showPtNames       = true;   // 4.7.36: point number/description, separate fr
 let showElevations    = false;
 let lightMode         = false;
 let bearingMode       = "az";   // "az" = azimuth DDD.MMSS | "quad" = N/S xx°mm'ss" E/W
+let keepAwake         = true;   // 4.8.8: hold the screen on while a job is open
+let _wakeLock = null, _wakeBusy = false, _wakeFailAt = 0;
 let rapidShots        = false;  // 4.8.7: true = no result screen after a shot, straight to the next one
 let hzMode            = "az";   // 4.8.6: shot angle entry — "az" = azimuth/bearing | "ar" = angle right from a backsight
 let recentShots       = [];     // last 5 shots summary
@@ -2173,6 +2191,7 @@ function loadData() {
   try { bearingMode=_lsGet("cl_bearingMode")||"az"; } catch(e){ bearingMode="az"; }
   try { hzMode=_lsGet("cl_hzMode")==="ar"?"ar":"az"; } catch(e){ hzMode="az"; }
   try { rapidShots=_lsGet("cl_rapidShots")==="1"; } catch(e){ rapidShots=false; }
+  try { keepAwake=_lsGet("cl_keepAwake")!=="0"; } catch(e){ keepAwake=true; }
   _applyLightMode();
   try { _waybackRestore(); } catch(e){}
   try { _lsRemove("cl_gisParcels"); _lsRemove("cl_parcelSources"); } catch(e){}
@@ -2329,6 +2348,7 @@ function setMode(m){
 }
 
 function updateStatus() {
+  try{ _syncWakeLock(); }catch(e){}
   const u = units;
   document.getElementById("statusBar").innerHTML =
     `Occ:&nbsp;<b style="color:var(--accent)">${currentPoint?currentPoint.Point:"—"}</b>&nbsp;&nbsp;`+
@@ -5137,10 +5157,10 @@ function _shotForm(prefillDesc, autoLine, onStore){
 
     function render(){
       const ihDisp = is3D
-        ? `&nbsp;<span onclick="event.stopPropagation();_changeIH()" style="cursor:pointer;color:var(--accent2);border-bottom:1px dashed var(--accent2)" title="Tap to change IH">HI:${(occ.ih||0).toFixed(3)}</span><span class="sf-hi-hint" style="color:var(--muted);font-size:.7em"> (tap to change)</span>`
+        ? `<span class="sf-hi" onclick="event.stopPropagation();_changeIH()" style="cursor:pointer;color:var(--accent2);border-bottom:1px dashed var(--accent2)" title="Tap to change IH">HI:${(occ.ih||0).toFixed(3)}</span><span class="sf-hi-hint" style="color:var(--muted);font-size:.7em"> (tap to change)</span>`
         : "";
       _helpContext = is3D ? "shot-3d" : "shot-2d";
-      modal.innerHTML = `<h2 style="font-size:.8em;margin-bottom:5px">🎯 SHOT &nbsp;<span style="color:var(--muted);font-size:.85em;letter-spacing:.06em">OCC: #${occ.Point}${occ.Description?" — "+occ.Description:""}</span>${ihDisp}</h2>`;
+      modal.innerHTML = `<h2 style="font-size:.8em;margin-bottom:5px"><span class="sf-ttl">🎯<span class="sf-ttl-w"> SHOT</span></span><span class="sf-occ" style="color:var(--muted);font-size:.85em;letter-spacing:.06em">OCC: #${occ.Point}${occ.Description?" — "+occ.Description:""}</span>${ihDisp}</h2>`;
 
       const form = document.createElement("div"); form.className="shot-form";
       if(formErr){ const er=document.createElement("div"); er.className="sf-err"; er.setAttribute("role","alert"); er.textContent="⚠ "+formErr; form.appendChild(er); }
@@ -5257,6 +5277,22 @@ function _shotForm(prefillDesc, autoLine, onStore){
       offToggle.textContent=offOn?"Offsets ▾":"Offsets ▸";
       offToggle.onclick=()=>{fields._offOpen=!offOn;render();};
       const _sfH2=modal.querySelector("h2");
+      // 4.8.8: undo the last shot without leaving the form — rapid shots never show the result screen
+      const _lastSnap=_snapshots.length?_snapshots[_snapshots.length-1]:null;
+      const _undoM=_lastSnap&&/^Shot Pt #(\d+)$/.exec(_lastSnap.label||"");
+      if(_undoM && !onStore){
+        const ub=document.createElement("button");
+        ub.type="button"; ub.className="sf-undo-chip"; ub.textContent="↩ #"+_undoM[1];
+        ub.setAttribute("aria-label","Undo shot "+_undoM[1]);
+        ub.onclick=()=>{
+          close(); undoFromCanvas();
+          recentShots=recentShots.filter(s=>points.some(q=>q.Point===s.pt));
+          try{ updateStatus(); plotPoints(); }catch(e){}
+          _notify("Shot #"+_undoM[1]+" undone. Redo is on the map.");
+          if(currentPoint) takeShot();
+        };
+        _sfH2.appendChild(ub);
+      }
       _sfH2.appendChild(offToggle);
       const _sfX=document.createElement("button");
       _sfX.type="button"; _sfX.className="sf-close"; _sfX.textContent="✕";
@@ -5559,6 +5595,28 @@ function _shotFormCheck(fields,is3D,occ,skipPt){
   }
   return null;
 }
+/* ── 4.8.8: KEEP SCREEN AWAKE ─────────────────────────────────────
+   Holds a screen wake lock while a job is open and the app is in front, so
+   the phone doesn't dim or lock between shots. The browser drops the lock
+   whenever the page is hidden; it is taken again when the page comes back. */
+function _syncWakeLock(){
+  try{
+    const want = keepAwake && document.visibilityState==="visible" && points.length>0;
+    if(!want){
+      if(_wakeLock){ const l=_wakeLock; _wakeLock=null; try{ l.release().catch(()=>{}); }catch(e){} }
+      return;
+    }
+    if(_wakeLock || _wakeBusy || Date.now()-_wakeFailAt<30000) return;
+    if(!navigator.wakeLock || typeof navigator.wakeLock.request!=="function") return;
+    _wakeBusy=true;
+    navigator.wakeLock.request("screen").then(l=>{
+      _wakeBusy=false; _wakeLock=l;
+      try{ l.addEventListener("release",()=>{ if(_wakeLock===l) _wakeLock=null; }); }catch(e){}
+      _syncWakeLock();   // the setting may have changed while the request was pending
+    }).catch(()=>{ _wakeBusy=false; _wakeFailAt=Date.now(); });
+  }catch(e){}
+}
+
 function _setRapidShots(on){
   rapidShots=!!on; _lsSet("cl_rapidShots",rapidShots?"1":"0");
   _notify(rapidShots?"Result screen off — shots go straight to the next one. Turn it back on under Field → Shot Result Screen."
@@ -7089,6 +7147,13 @@ function settingsMenu(){
       });
     });
     mkRow("Survey Mode",surveyMode,btn=>{ surveyMode=surveyMode==="2D"?"3D":"2D"; btn.textContent=surveyMode; saveData(); });
+    mkRow("Keep Screen Awake",keepAwake?"ON":"OFF",btn=>{
+      keepAwake=!keepAwake; _lsSet("cl_keepAwake",keepAwake?"1":"0");
+      btn.textContent=keepAwake?"ON":"OFF"; btn.className=`toggle-btn${keepAwake?" on":""}`;
+      _wakeFailAt=0; _syncWakeLock();
+      if(keepAwake && !(navigator.wakeLock && typeof navigator.wakeLock.request==="function"))
+        _notify("This browser can't hold the screen on. Set a longer screen timeout in the phone's settings instead.");
+    });
     mkRow("Show Labels",showLabels?"ON":"OFF",btn=>{ showLabels=!showLabels; btn.textContent=showLabels?"ON":"OFF"; btn.className=`toggle-btn${showLabels?" on":""}`; saveData(); });
     mkRow("Bearing Display",bearingMode==="quad"?"Quadrant":"Azimuth",btn=>{
       bearingMode=bearingMode==="quad"?"az":"quad";
@@ -7572,6 +7637,7 @@ function cogoMenu(){
     mk("Cut / Fill","",                     ()=>{close();cogoCutFill()});
     grp("Compute points");
     mk("Bearing & Distance","",             ()=>{close();cogoRadiation()});
+    mk("Rectangle / Square Layout","",      ()=>{close();cogoRectangle()});
     mk("Intersection Tools","",             ()=>{close();cogoIntersection()});
     mk("Offset to Line","",                 ()=>{close();cogoOffsetPoint()});
     mk("Prorate on Line","",                ()=>{close();cogoProrate()});
@@ -9118,6 +9184,148 @@ function cogoRadiation(){
           }}]);
         });
       });
+    });
+  });
+}
+
+/* ── 4.8.8: RECTANGLE / SQUARE LAYOUT ────────────────────────────
+   Four corners from one corner, the direction of the first side and the
+   two side lengths. Corner 1 is the picked point, corner 2 is along the
+   first side, and 3 and 4 lie to the right or left of that side as you
+   look from corner 1 toward corner 2. */
+function _rectCorners(A,az,L1,L2,side){
+  const a=az*Math.PI/180, sAz=(((az+(side==="L"?-90:90))%360)+360)%360, t=sAz*Math.PI/180;
+  const c2={Northing:A.Northing+L1*Math.cos(a), Easting:A.Easting+L1*Math.sin(a)};
+  const c4={Northing:A.Northing+L2*Math.cos(t), Easting:A.Easting+L2*Math.sin(t)};
+  const c3={Northing:c2.Northing+L2*Math.cos(t), Easting:c2.Easting+L2*Math.sin(t)};
+  const dAng=Math.atan2(L2,L1)*180/Math.PI;   // between the first side and the diagonal
+  return {c2,c3,c4,sideAz:sAz,diag:Math.hypot(L1,L2),area:L1*L2,perim:2*(L1+L2),
+    // angles right from corner 1 with the instrument zeroed on corner 2
+    ar3:side==="L"?360-dAng:dAng, ar4:side==="L"?270:90};
+}
+function cogoRectangle(){
+  _helpContext="cogo-rect";
+  if(!points.length){alert("The rectangle starts from a stored point. Start a job or store a point first.");return}
+  _pickPoint("Tap the FIRST corner of the rectangle",pa=>{
+    if(!pa)return;
+    const sizes=(az,pb,defL1)=>{
+      calculatorInput("First side length ("+units+"):",defL1||"",s1=>{
+        if(!s1)return; const L1=parseFloat(s1);
+        if(isNaN(L1)||L1<=0){alert("Bad length.");return}
+        calculatorInput("Second side length ("+units+") — same for a square:",String(L1),s2=>{
+          if(!s2)return; const L2=parseFloat(s2);
+          if(isNaN(L2)||L2<=0){alert("Bad length.");return}
+          _rectPreview(pa,az,L1,L2,"R",pb);
+        });
+      });
+    };
+    openModal((modal,close)=>{
+      modal.innerHTML="<h2>▭ Rectangle — Corner #"+pa.Point+"</h2><p class='info'>Which way does the first side run from this corner?</p>";
+      const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+      if(points.length>1) mk("Toward a Point","ok",()=>{close();
+        _pickPoint("Tap a point ON the first side (sets its direction)",pb=>{
+          if(!pb)return;
+          if(pb.Point===pa.Point||dist2D(pa,pb)<=1e-6){alert("Pick a different point than the corner.");return}
+          sizes(azimuth(pa,pb),pb,dist2D(pa,pb).toFixed(3));
+        });
+      });
+      mk("Along an Azimuth",points.length>1?"blue":"ok",()=>{close();
+        bearingInput("Azimuth of the first side:","",s=>{
+          if(!s)return; const az=parseBrg(s);
+          if(isNaN(az)){alert("Bad azimuth — use DDD.MMSS.");return}
+          sizes(((az%360)+360)%360,null,"");
+        });
+      });
+      mk("Cancel","",close);
+    });
+  });
+}
+function _rectPreview(pa,az,L1,L2,side,pb){
+  const r=_rectCorners(pa,az,L1,L2,side);
+  const P=q=>({E:q.Easting,N:q.Northing});
+  tempGeom=[{type:"polyline",pts:[P(pa),P(r.c2),P(r.c3),P(r.c4),P(pa)],color:"rgba(162,229,179,.9)"}];
+  // markers 1–4 on the map match corners 1–4 in the list
+  tempIntersections=[pa,r.c2,r.c3,r.c4].map(q=>({Easting:q.Easting,Northing:q.Northing}));
+  plotPoints();
+  // keeping the distance to the direction point makes that point corner 2
+  const reuse=!!pb && Math.abs(dist2D(pa,pb)-L1)<0.0006;
+  const ne=q=>"N "+q.Northing.toFixed(3)+" · E "+q.Easting.toFixed(3);
+  const sq=Math.abs(L1-L2)<1e-9, name=sq?"Square":"Rectangle";
+  const rows=[
+    {lbl:"Size:",      val:L1.toFixed(3)+" × "+L2.toFixed(3)+" "+units},
+    {lbl:"Sides:",     val:fmtBrg(az)+" → "+fmtBrg(r.sideAz)},
+    {lbl:"Diagonal:",  val:r.diag.toFixed(3)+" "+units},
+    {lbl:"Area:",      val:r.area.toFixed(2)+" sq "+units+(units==="ft"?" ("+(r.area/43560).toFixed(4)+" ac)":"")},
+    {lbl:"Corner 2:",  val:(reuse?"#"+pb.Point+" · ":"")+ne(r.c2)},
+    {lbl:"Corner 3:",  val:ne(r.c3)},
+    {lbl:"Corner 4:",  val:ne(r.c4)},
+    {lbl:"At #"+pa.Point+", zeroed on corner 2:", val:""},
+    {lbl:"∠R to 3:",   val:toDMS(r.ar3)+" · "+r.diag.toFixed(3)+" "+units},
+    {lbl:"∠R to 4:",   val:toDMS(r.ar4)+" · "+L2.toFixed(3)+" "+units},
+  ];
+  // own sheet (not showResult): Store and Flip share a row so Close stays on screen
+  openModal((modal,close)=>{
+    _helpContext="cogo-rect";
+    modal.innerHTML="<h2>▭ "+name+" from #"+pa.Point+"</h2>";
+    const box=document.createElement("div"); box.className="result-box";
+    // short screens: the numbers scroll inside their box so the map preview and the buttons both stay visible
+    box.style.cssText="max-height:max(96px,calc(100dvh - 520px));overflow-y:auto";
+    rows.forEach(x=>box.innerHTML+=`<span class="lbl">${x.lbl}</span>&nbsp;<span class="val">${x.val}</span><br>`);
+    modal.appendChild(box);
+    const mk=(host,t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;host.appendChild(b)};
+    const two=document.createElement("div"); two.style.cssText="display:grid;grid-template-columns:1.5fr 1fr;gap:8px";
+    mk(two,"Store Corners","ok",()=>{close();_rectStore(pa,r,reuse?pb:null,name)});
+    mk(two,"Flip to "+(side==="L"?"Right":"Left"),"blue",()=>{close();_rectPreview(pa,az,L1,L2,side==="L"?"R":"L",pb)});
+    modal.appendChild(two);
+    mk(modal,"Close","",()=>{close();tempGeom=[];tempIntersections=[];plotPoints()});
+  });
+  _frameAboveSheet([pa,r.c2,r.c3,r.c4]);
+}
+// Zoom and pan the map so the given ground points sit in the part of it that
+// the open sheet leaves visible — a preview is no use hidden under its own result.
+function _frameAboveSheet(pts){
+  try{
+    const c=document.getElementById("plotCanvas"); if(!c||!pts||!pts.length) return;
+    const w=c.clientWidth, h=c.clientHeight;
+    if(typeof w!=="number"||typeof h!=="number"||!(w>0)||!(h>0)) return;
+    const ms=document.querySelectorAll(".modal-overlay .modal"), m=ms.length?ms[ms.length-1]:null;
+    let availH=h;
+    if(m){ const t=m.getBoundingClientRect().top-c.getBoundingClientRect().top; if(t>90) availH=Math.min(h,t); }
+    const es=pts.map(q=>q.Easting), ns=pts.map(q=>q.Northing);
+    const minE=Math.min(...es), maxE=Math.max(...es), minN=Math.min(...ns), maxN=Math.max(...ns);
+    _resetViewState(); viewScale=1; viewOffsetX=0; viewOffsetY=0;
+    let T=_viewTransform(w,h); if(!T) return;
+    const want=Math.min((w-90)/Math.max(maxE-minE,1e-6),(availH-70)/Math.max(maxN-minN,1e-6));   // px per ground unit
+    viewScale=_clampZoom(want/T.base,T.base);
+    T=_viewTransform(w,h); if(!T) return;
+    const cx=((minE+maxE)/2)*T.scale+T.offX, cy=h-(((minN+maxN)/2)*T.scale+T.offY);
+    viewOffsetX+=w/2-cx; viewOffsetY+=-(availH/2-cy);
+    plotPoints();
+  }catch(e){}
+}
+function _rectStore(pa,r,pb,name){
+  const clear=()=>{tempGeom=[];tempIntersections=[];plotPoints();};
+  alphaInput("Description for the new corners:",name==="Square"?"SQ COR":"RECT COR",desc=>{
+    if(desc===null){clear();return}
+    _plotStylePrompt(style=>{
+      _takeSnapshot(name);
+      let n=pointCounter; const next=()=>{ while(_ptExists(n)) n++; return n++; };
+      const z=pa.Elevation||0;
+      const mkPt=q=>{ const p={Point:next(),Northing:q.Northing,Easting:q.Easting,Elevation:z,Type:"COGO",Flag:"",ih:0,Description:desc}; points.push(p); return p; };
+      const c2=pb||mkPt(r.c2), c3=mkPt(r.c3), c4=mkPt(r.c4);
+      pointCounter=Math.max(pointCounter,n);
+      if(style!=="none"){
+        [[pa,c2],[c2,c3],[c3,c4],[c4,pa]].forEach(([a,b])=>{
+          if(!plotConnections.some(c=>(c.from===a.Point&&c.to===b.Point)||(c.from===b.Point&&c.to===a.Point)))
+            plotConnections.push({from:a.Point,to:b.Point,style});
+        });
+      }
+      tempGeom=[];tempIntersections=[];
+      saveData(); try{ updateStatus(); plotPoints(); }catch(e){}
+      showResult("✓ "+name+" Stored",[
+        {lbl:"Corners:",   val:"#"+pa.Point+" → #"+c2.Point+" → #"+c3.Point+" → #"+c4.Point},
+        {lbl:"Diagonals:", val:"#"+pa.Point+"–#"+c3.Point+" and #"+c2.Point+"–#"+c4.Point+" should both measure "+r.diag.toFixed(3)+" "+units},
+      ],[{txt:"Stake a Corner",cls:"ok",fn:()=>stakeStoredPoint()}]);
     });
   });
 }
@@ -15093,6 +15301,8 @@ function _restorePlotControlsState(){
 document.addEventListener("DOMContentLoaded",()=>setTimeout(_restorePlotControlsState,0));
 /* Android/iOS suspend the geolocation watch when the PWA is backgrounded. */
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden){ try{_ensureLiveGps();}catch(e){} } });
+document.addEventListener("visibilitychange",()=>{ try{_syncWakeLock();}catch(e){} });
+document.addEventListener("pointerdown",()=>{ try{_syncWakeLock();}catch(e){} },{passive:true,capture:true});
 
 function toggleSatAndGps(){
   if(!geoAnchor){_satSetupFlow();return;} // not anchored yet — run setup
@@ -17639,6 +17849,8 @@ const HELP_TOPICS = [
 <p><strong>Project → Settings → Bearing Display</strong> toggles between Azimuth (0–360°) and Quadrant bearings (N 45°30'00" E). Affects all results and plot annotations. Input is always azimuth in DDD.MMSS.</p>
 <h3>Display Mode</h3>
 <p><strong>Project → Settings → Display Mode</strong> switches between Dark (night/low-light) and Light (bright sun readability).</p>
+<h3>Keep Screen Awake</h3>
+<p><strong>Project → Settings → Keep Screen Awake</strong> (on by default) stops the phone from dimming or locking while a job is open and ChainLink is on screen. Turn it off to save battery. It needs a browser that supports screen wake lock, such as current Chrome on Android.</p>
 <h3>Instrument Profile (3D only)</h3>
 <p>In <strong>Project → Settings → Instrument Profile</strong>:</p>
 <ul>
@@ -17715,7 +17927,7 @@ const HELP_TOPICS = [
 <h3>Connection Style</h3>
 <p>Choose Solid, Dash, or None in the row just above the keypad. Default is None. Tap <strong>✕</strong> at the top of the form to cancel a shot.</p>
 <h3>Rapid Shots</h3>
-<p>Every stored shot shows a result screen. To skip it, tap <strong>Skip this screen from now on</strong> there: shots then go straight to the next one with a brief notice. Turn the result screen back on under <strong>Field → Shot Result Screen</strong>. With it off, close the form to reach Undo, and use Field → Occupy Point to move up.</p>
+<p>Every stored shot shows a result screen. To skip it, tap <strong>Skip this screen from now on</strong> there: shots then go straight to the next one with a brief notice. Turn the result screen back on under <strong>Field → Shot Result Screen</strong>. The <strong>↩ #</strong> chip at the top of the shot form undoes the last shot without leaving the form. With the result screen off, use Field → Occupy Point to move up.</p>
 <div class="tip">Description carries forward from the last shot — handy when shooting many points with the same code in a row.</div>`},
 
   { id:"shot-3d", section:"Shots", title:"Taking a 3D Shot",
@@ -17849,6 +18061,20 @@ const HELP_TOPICS = [
     body:`<h3>Bearing & Distance (Radiation)</h3>
 <p>Computes a new point given a starting point, true azimuth, and distance.</p>
 <div class="tip">Use this to lay out control points from a known station when you can't occupy the remote point.</div>`},
+
+  { id:"cogo-rect", section:"COGO", title:"Rectangle / Square Layout",
+    preview:"Four corners from one corner, a direction and two side lengths",
+    body:`<h3>Rectangle / Square Layout</h3>
+<p>Computes the corners of a square or rectangle. Open <strong>COGO → Rectangle / Square Layout</strong>:</p>
+<ul>
+<li>Tap the <strong>first corner</strong> — any stored point.</li>
+<li>Give the direction of the first side: <strong>Toward a Point</strong> (tap a point that lies on that side) or <strong>Along an Azimuth</strong>.</li>
+<li>Enter the <strong>first side length</strong>. When you chose a point, its distance is filled in — keep it and that point becomes corner 2.</li>
+<li>Enter the <strong>second side length</strong>. It starts equal to the first, which gives a square.</li>
+</ul>
+<p>The figure is previewed on the map, to the right of the first side as you look from corner 1 toward corner 2. <strong>Flip</strong> puts it on the other side. The result lists each corner's coordinates, the diagonal, the area, and the angles right to turn from corner 1 with the instrument zeroed on corner 2.</p>
+<p><strong>Store Corners</strong> asks for a description and a line style, then saves the new corners as COGO points and draws the four sides. Stake them from <strong>Stake → Stake Stored Point</strong>.</p>
+<div class="tip">Check a layout by measuring both diagonals. They must match each other and the diagonal shown.</div>`},
 
   { id:"cogo-bb", section:"COGO", title:"Bearing-Bearing Intersection",
     preview:"Find where two lines of known azimuth cross",
@@ -18831,7 +19057,7 @@ function openWorkspace(name){
     _wsGroup2(body,"Import and assemble");add(ids.length?"Open Deed Plotter":"Import First Deed","Paste legal text, photo or PDF","accent",deedPlotterMenu,ids.length?ids.length+" RECORDS":null);add("Import Another Deed","Keep existing record geometry","accent",()=>ids.length?_deedImportAnother():deedPlotterMenu());if(ids.length)add("Move / Snap Record","Rigid corner and course fitting","primary",_deedRecordPicker);if(ids.length)add("Two-Point Fit","Fit one record to two measured points","",_deedFitTwoPoint);if(ids.length)add("Move One Figure","Adjust an exception or easement","",_deedMovePicker);if(ids.length)add("Delete Deed Record","Remove one imported record without clearing the job","",_deedDeleteRecordPicker);
     if(ids.length){_wsGroup2(body,"Current records");ids.forEach(id=>{const figs=_deedRecordFigures(id);add(_deedRecordLabel(id),figs.length+" figure"+(figs.length===1?"":"s"),"",()=>_deedRecordActions(id),"RECORD "+id)})}
   } else if(name==="cogo"){
-    _wsGroup2(body,"Coordinate geometry");add("Open COGO Tools","Inverse, projection, intersections and area","accent",cogoMenu);add("Inverse","Distance and direction between points","",cogoInverse);add("Area / Perimeter","Compute selected boundary area","",cogoArea);add("Rotate / Align","Transform stored job geometry","",cogoRotateAlign);add("Draw Connection","Connect stored points","",drawConnection);
+    _wsGroup2(body,"Coordinate geometry");add("Open COGO Tools","Inverse, projection, intersections and area","accent",cogoMenu);add("Inverse","Distance and direction between points","",cogoInverse);add("Area / Perimeter","Compute selected boundary area","",cogoArea);add("Rotate / Align","Transform stored job geometry","",cogoRotateAlign);add("Rectangle Layout","Square or rectangle corners from one side","",cogoRectangle);add("Draw Connection","Connect stored points","",drawConnection);
   } else if(name==="stake"){
     _wsGroup2(body,"Layout");add("Stake Stored Point","Select a point from the plot","primary",stakeStoredPoint);add("Stake Coordinates","Enter target N, E and elevation","",stakeEnteredCoords);add("Stake Line / Arc","Select existing geometry","accent",stakeToLine);add("GPS Navigate","Walk to a point using phone GPS","",stakeoutMenu);add("All Stake Tools","Open the complete stakeout menu","",stakeoutMenu);
   } else if(name==="map"){
