@@ -1,11 +1,11 @@
 // ChainLink smoke test: evaluates the whole app at top level with DOM stubs
 // and calls the startup functions. Catches load-time runtime errors that
 // syntax checks cannot (e.g. the 4.4.8 orphaned-async bug).
-// Usage: node app-smoke.js   (expects /home/claude/index.html or edit path)
+// Usage: node app-smoke.js [path/to/index.html]   (default ./index.html)
 process.on('uncaughtException',e=>{console.log('LATE THROW ->',e.message);process.exit(1)});
 setTimeout(()=>{console.log('done (render loop timeboxed)');process.exit(0)},8000);
 const fs=require('fs');const vm=require('vm');
-const html=fs.readFileSync('/home/claude/index.html','utf8');
+const html=fs.readFileSync(process.argv[2]||'./index.html','utf8');
 const code=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]).join('\n');
 const store={};
 const el=()=>new Proxy(function(){},{get:(t,k)=>{

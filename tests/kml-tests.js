@@ -166,12 +166,15 @@ A._jobAdjustStart(false,{kmlBatch:99,label:"gone"});
 t("refuses a batch with nothing left", A.SCOPE===null && /Nothing from that import/.test(env._alert||""), env._alert);
 
 console.log("— wiring —");
-t("import menu entry", /Import KML \(Google Earth\)/.test(src));
+// 4.8.11: the old "Import KML (Google Earth)" label lived in a menu nothing opened (removed
+// in 4.8.10); the import menu people actually use is projectImportMenu
+t("import menu entry", /importKML\(\)/.test((src.match(/function projectImportMenu\(\)\{[\s\S]*?\n\}/)||[""])[0]));
 t("workspace entry", /_wsButton\(modal,"Import KML"/.test(src));
 t("kmz rejected with instructions", /Save Place As/.test(src));
 t("anchor required", /KML is latitude\/longitude, so the job must be anchored first/.test(src));
 t("move menu lists imports", /Shift only the import/.test(src));
-t("polylines persist whole (batch survives save)", /_lsSet\("cl_polylines",\s*JSON\.stringify/.test(src));
+// 4.7.20+: polylines live in the job slot too; the legacy cl_polylines mirror was removed in 4.8.10
+t("polylines persist whole (batch survives save)", /polylines: JSON\.parse\(JSON\.stringify\(/.test(src.match(/function _jobCapture\(\)\{[\s\S]*?\n\}/)[0]));
 // 4.7.20+: points live in the job slot (cl_job_<id>), not the legacy cl_points key
 t("points persist whole (job slot)", /points: JSON\.parse\(JSON\.stringify\(points\|\|\[\]\)\)/.test(src.match(/function _jobCapture\(\)\{[\s\S]*?\n\}/)[0]));
 const vA=(src.match(/const APP_VERSION = "([^"]+)";/)||[])[1];
