@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.9">
+<meta name="application-name" content="ChainLink-v4.8.10">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.9</title>
+<title>ChainLink Survey v4.8.10</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1404,6 +1404,16 @@ html:not(.light-mode) #workspacePanel{background:linear-gradient(180deg,rgba(18,
 .modal-cogo:has(> .menu-group)::before,.modal-cogo:has(> .menu-group) > h2,.modal-cogo:has(> .menu-group) > .menu-group{grid-column:1/-1}
 .modal-cogo:has(> .menu-group) > .btn{margin:4px 0;min-height:50px;padding:8px 12px;font-size:.8rem;line-height:1.2;text-align:left;letter-spacing:.02em}
 .modal-cogo:has(> .menu-group) > .btn:last-child{grid-column:1/-1;text-align:center}
+
+/* ── 4.8.10: storage gauge in Job Manager ── */
+.job-storage{width:100%;max-width:410px;margin:4px auto 8px;padding:9px 12px 10px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.03);font-family:var(--font-data);font-size:.7em;color:var(--text2)}
+.job-storage-row{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;line-height:1.4}
+.job-storage-bar{height:5px;border-radius:3px;background:rgba(127,127,127,.25);margin-top:6px;overflow:hidden}
+.job-storage-bar i{display:block;height:100%;border-radius:3px;background:var(--accent2)}
+.job-storage.is-warn .job-storage-bar i{background:var(--accent)}
+.job-storage.is-full .job-storage-bar i{background:var(--danger,#e5484d)}
+.job-storage-tip{margin-top:6px;color:var(--text)}
+html.light-mode .job-storage{background:rgba(0,0,0,.03)}
 </style>
 
 <script>
@@ -1413,7 +1423,7 @@ html:not(.light-mode) #workspacePanel{background:linear-gradient(180deg,rgba(18,
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.9";
+const APP_VERSION = "4.8.10";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1538,6 +1548,39 @@ function _lsSet(key,val){
   }
 }
 function _lsRemove(key){ try{ localStorage.removeItem(key); }catch(e){} }
+/* ── 4.8.10: STORAGE GAUGE ──────────────────────────────────────────
+   Jobs live in the browser's localStorage, which holds roughly 5 million
+   characters on Chrome / Android / desktop and about half that on iPhone
+   and iPad. The app only found out it was full when a save failed. This
+   measures what is used, shows it in Job Manager, and warns at 80 % and
+   90 %. The ceiling is the browser's published figure, not a measurement. */
+function _lsQuotaChars(){
+  const ua=(typeof navigator!=="undefined"&&navigator.userAgent)||"";
+  const apple=/iP(hone|ad|od)/.test(ua)||(/AppleWebKit/.test(ua)&&!/Chrome|Chromium|Edg|OPR|SamsungBrowser|Android/.test(ua));
+  return apple?2500000:5000000;
+}
+function _lsUsedChars(){
+  let n=0;
+  try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); n+=k.length+(localStorage.getItem(k)||"").length; } }catch(e){}
+  return n||0;
+}
+function _storageInfo(){
+  const used=_lsUsedChars(), cap=_lsQuotaChars();
+  return {used,cap,pct:Math.min(100,Math.round(used/cap*100))};
+}
+function _storageSize(chars){ return chars>=100000?(chars/1e6).toFixed(1)+" MB":Math.max(1,Math.round(chars/1000))+" KB"; }
+let _storageWarned=0, _storageLast=0;
+function _storageWatch(force){
+  const now=Date.now();
+  if(!force&&now-_storageLast<60000) return null;
+  _storageLast=now;
+  const s=_storageInfo(), lvl=s.pct>=90?2:s.pct>=80?1:0;
+  if(lvl>_storageWarned){
+    _storageWarned=lvl;
+    try{ _notify("Storage is "+s.pct+"% full. Save old jobs to file, then delete them in Job Manager, before saves start failing."); }catch(e){}
+  }
+  return s;
+}
 let _saveFailKind=null;
 function _saveFailShow(kind){
   _saveFailKind=kind||"full";
@@ -1656,6 +1699,61 @@ function _deedFigSerialize(f){
     startRef:f.startRef||null,cornerRef:f.cornerRef||null,
     sectionNo:f.sectionNo||null,statedAcres:f.statedAcres||null};
 }
+/* ── 4.8.10: UNDO HISTORY SURVIVES A RELOAD ─────────────────────────
+   The undo / redo stacks used to live only in memory, so closing the app
+   or the phone reclaiming it threw the history away. They are now kept in
+   IndexedDB (the same small database that holds the save-folder handle),
+   one record per job, written a moment after every change and restored
+   when the job is opened. A record is only restored onto the exact job
+   state it was written for. Very large jobs keep fewer steps on disk
+   (_undoKeep) so the write stays quick; in memory it is still 20. */
+let _undoPersistTimer=null, _undoRestoring=false;
+function _undoKey(id){ return "undo:"+id; }
+function _undoKeep(){ return Math.max(3,Math.min(MAX_SNAPSHOTS,Math.floor(40000/Math.max(1,points.length)))); }
+function _undoSig(){
+  let s=0;
+  for(const p of points) s=(s+p.Point*31+Math.round((p.Northing||0)*1000)%99991+Math.round((p.Easting||0)*1000)%99989+Math.round((p.Elevation||0)*1000)%9973+String(p.Description||"").length)%2147483647;
+  return points.length+"|"+plotConnections.length+"|"+units+"|"+s;
+}
+function _undoStore(fn){
+  return _fsDb().then(db=>new Promise((res,rej)=>{
+    const t=db.transaction("h","readwrite"); fn(t.objectStore("h"));
+    t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error);
+  }));
+}
+function _undoPersistSoon(){
+  if(_undoRestoring) return;
+  clearTimeout(_undoPersistTimer);
+  _undoPersistTimer=setTimeout(_undoPersistNow,300);
+}
+function _undoPersistNow(){
+  clearTimeout(_undoPersistTimer); _undoPersistTimer=null;
+  const id=_activeJobId;
+  if(!id||!_jobRamLive||_jobPendingNew||_undoRestoring) return Promise.resolve();   // a job being created has no id of its own yet
+  if(_deedAdjust||_jobAdjust) return Promise.resolve();   // adjust mode has its own Cancel; saved again when it ends
+  const k=_undoKeep(), snaps=_snapshots.slice(-k), redo=_redoStack.slice(-k);
+  const rec={v:1,sig:_undoSig(),at:Date.now(),snaps,redo};
+  return _undoStore(st=>{ if(snaps.length||redo.length) st.put(rec,_undoKey(id)); else st.delete(_undoKey(id)); }).catch(()=>{});
+}
+function _undoDrop(id){ if(id) _undoStore(st=>st.delete(_undoKey(id))).catch(()=>{}); }
+function _undoRestore(id){
+  if(!id) return Promise.resolve();
+  _undoRestoring=true;
+  return _fsDb().then(db=>new Promise(res=>{
+    const q=db.transaction("h","readonly").objectStore("h").get(_undoKey(id));
+    q.onsuccess=()=>res(q.result||null); q.onerror=()=>res(null);
+  })).then(rec=>{
+    _undoRestoring=false;
+    if(id!==_activeJobId||_snapshots.length||_redoStack.length){ _undoPersistSoon(); return; }
+    if(!rec||rec.v!==1) return;
+    if(rec.sig!==_undoSig()){ _undoDrop(id); return; }   // the job changed some other way — that history no longer fits
+    _snapshots=Array.isArray(rec.snaps)?rec.snaps:[];
+    _redoStack=Array.isArray(rec.redo)?rec.redo:[];
+    _updateUndoBtn();
+  }).catch(()=>{ _undoRestoring=false; });
+}
+document.addEventListener("visibilitychange",()=>{ if(document.hidden&&_undoPersistTimer) _undoPersistNow(); });
+window.addEventListener("pagehide",()=>{ if(_undoPersistTimer) _undoPersistNow(); });
 function _takeSnapshot(label){
   // A picker is transient UI, not part of survey state.  End it before the
   // snapshot so undo/redo can never resurrect references to superseded points.
@@ -1927,6 +2025,7 @@ function _jobApply(blob){
   selectedPoint=null; selectedConn=null;
   _activeJobId=blob.id||_activeJobId;
   _jobRamLive=true;
+  _undoRestore(_activeJobId);   // 4.8.10: bring this job's undo history back
 }
 function _jobCommitActive(){
   if(!_jobRamLive || !_activeJobId) return true;
@@ -1993,7 +2092,7 @@ function _jobMigrateFromLegacy(){
 function _jobOpen(id){
   if(!id) return;
   if(id===_activeJobId && _jobRamLive){ _hideJobScreen(); return; }
-  if(_jobRamLive && _activeJobId && _activeJobId!==id) _jobCommitActive();
+  if(_jobRamLive && _activeJobId && _activeJobId!==id){ _jobCommitActive(); _undoPersistNow(); }
   const blob=_jobReadBlob(id);
   if(!blob){ alert("That job is no longer in storage."); _showJobScreen(); return; }
   _jobPendingNew=false;
@@ -2015,7 +2114,7 @@ function _jobDelete(id){
   const safe=String(name).replace(/[&<>]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[ch]));
   confirmDialog("Delete \""+safe+"\"? This cannot be undone. Export a CSV first if you might need it.", yes=>{
     if(!yes) return;
-    _lsRemove(_jobBlobKey(id));
+    _lsRemove(_jobBlobKey(id)); _undoDrop(id);
     _jobIndexSet(_jobIndex().filter(j=>j.id!==id));
     if(_activeJobId===id){
       _activeJobId=null; _jobRamLive=false; _lsRemove("cl_activeJob");
@@ -2058,34 +2157,6 @@ function _stageNewJobScratch(){
   try{ _syncSatBtn(); }catch(e){}
   _resetViewState();viewScale=1;viewOffsetX=0;viewOffsetY=0;
 }
-function _jobWriteLegacyKeys(){
-  /* Optional one-shot mirror for pre-4.7.16 readers. Not called from saveData
-     (4.7.20+) — active job lives only in cl_job_<id> + cl_jobs index. */
-  _lsSet("cl_version",     APP_VERSION);
-  _lsSet("cl_points",      JSON.stringify(points||[]));
-  _lsSet("cl_connections", JSON.stringify(plotConnections||[]));
-  _lsSet("cl_polylines",   JSON.stringify((typeof _polylines!=="undefined"?_polylines:[])));
-  _lsSet("cl_orientOffset",String(orientationOffset||0));
-  _lsSet("cl_surveyMode",  surveyMode||"2D");
-  _lsSet("cl_distMode",    distMode||"SD");
-  _lsSet("cl_prismK",      String(prismConstant||0));
-  _lsSet("cl_csf",         String(combinedScaleFactor||1));
-  _lsSet("cl_jobName",     jobName||"survey");
-  _lsSet("cl_units",       units||"ft");
-  _lsSet("cl_showLabels",  String(showLabels));
-  _lsSet("cl_showPtNames", String(showPtNames));
-  _lsSet("cl_showElev",    String(showElevations));
-  _lsSet("cl_lightMode",   String(lightMode));
-  _lsSet("cl_bearingMode", bearingMode);
-  _lsSet("cl_areaLabels",  JSON.stringify(((typeof _areaLabels!=="undefined"?_areaLabels:[])||[]).map(l=>({E:l.E,N:l.N,label:l.label,ptNums:l.ptNums,u:l.u,arcSigs:l.arcSigs||[]}))));
-  _lsSet("cl_geoAnchor",   (typeof geoAnchor!=="undefined"&&geoAnchor)?JSON.stringify(geoAnchor):"");
-  _lsSet("cl_satOn",       String(!!satOn));
-  _lsSet("cl_satOpacity",  String(typeof satOpacity==="number"?satOpacity:0.85));
-  _lsSet("cl_satRot",      String(typeof satRotNudge==="number"?satRotNudge:0));
-  _lsSet("cl_satBase",     typeof satBasemap==="string"?satBasemap:"esri");
-  _lsSet("cl_deedPlot",    (typeof _deedPlot!=="undefined"&&_deedPlot)?JSON.stringify({v:2,rot:_deedPlot.rot||0,figures:_deedPlot.figures.map(_deedFigSerialize)}):"");
-  _lsSet("cl_occupied",    currentPoint?String(currentPoint.Point):"");
-}
 function _jobRenderList(){
   const host=document.getElementById("jobList");
   const empty=document.getElementById("jobEmpty");
@@ -2106,6 +2177,8 @@ function _jobRenderList(){
     nm.textContent=j.name||"survey";
     const meta=document.createElement("div"); meta.className="job-card-meta";
     meta.textContent=(j.pts||0)+" pts · "+(j.conns||0)+" lines · "+(j.units||"ft")+rec+" · "+_jobWhen(j.updatedAt);
+    const jsz=(_lsGet(_jobBlobKey(j.id))||"").length;
+    if(jsz) meta.textContent+=" · "+_storageSize(jsz);
     const del=document.createElement("button"); del.type="button"; del.className="job-card-del";
     del.setAttribute("aria-label","Delete job"); del.textContent="✕";
     del.onclick=ev=>{ ev.stopPropagation(); _jobDelete(j.id); };
@@ -2113,6 +2186,16 @@ function _jobRenderList(){
     card.onclick=()=>_jobOpen(j.id);
     host.appendChild(card);
   });
+  // 4.8.10: how full this device's job storage is
+  const st=_storageWatch(true);
+  if(st&&idx.length){
+    const g=document.createElement("div");
+    g.className="job-storage"+(st.pct>=90?" is-full":st.pct>=80?" is-warn":"");
+    g.innerHTML='<div class="job-storage-row"><span>Storage on this device</span><span>'+st.pct+'% used · '+_storageSize(st.used)+' of about '+(st.cap/1e6).toFixed(1)+' MB</span></div>'+
+      '<div class="job-storage-bar"><i style="width:'+Math.max(2,st.pct)+'%"></i></div>'+
+      (st.pct>=80?'<div class="job-storage-tip">Nearly full — save old jobs to file, then delete them here.</div>':'');
+    host.appendChild(g);
+  }
 }
 /* ── /JOB LIBRARY ───────────────────────────────────────────────── */
 
@@ -2128,7 +2211,6 @@ function _hideJobScreen(){
   document.getElementById("canvasWrap").style.display="flex";
   document.getElementById("toolbar").style.display="grid";
 }
-function jobContinue(){ _hideJobScreen(); loadData(); }
 function jobNew(){
   // Hide job screen first so the alphaInput modal appears on top
   _hideJobScreen();
@@ -2281,6 +2363,7 @@ function saveData() {
   _lsSet("cl_bearingMode",bearingMode);
   updateStatus(); plotPoints();
   _autoSaveToFile();
+  _undoPersistSoon(); _storageWatch();
 }
 
 // Debounced auto-save — don't hammer the filesystem on rapid changes
@@ -2404,7 +2487,7 @@ function _updateTicker() {
   if(!recentShots.length){ el.classList.remove("visible"); return; }
   el.classList.add("visible");
   el.innerHTML="<span style='color:var(--accent);letter-spacing:.06em'>LAST SHOTS</span><br>"+
-    recentShots.slice(-5).reverse().map(s=>`<span style="color:var(--text)">#${s.pt}</span> <span style="color:var(--muted)">${s.desc||"—"} ${s.hd}${_dU()}</span>`).join("<br>");
+    recentShots.slice(-5).reverse().map(s=>`<span style="color:var(--text)">#${s.pt}</span> <span style="color:var(--muted)">${_esc(s.desc||"—")} ${s.hd}${_dU()}</span>`).join("<br>");
 }
 
 const uLabel = () => units; // "ft" or "m"
@@ -4269,7 +4352,8 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
       used.add(q.Point);
     });
     if(_jobFileAsNew){
-      _jobCommitActive();
+      _jobCommitActive(); _undoPersistNow();
+      _snapshots=[]; _redoStack=[];   // 4.8.10: the previous job's undo steps stay with that job
       _jobPendingNew=true;
       _jobFileAsNew=false;
     }
@@ -4298,7 +4382,7 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
     saveData();
     showResult("\u2713 Loaded",[
       {lbl:"Points:",  val:String(newPts.length)},
-      {lbl:"Job:",     val:jobName},
+      {lbl:"Job:",     val:_esc(jobName)},
       {lbl:"Mapping:", val:"Pt="+colMap.pt+" N="+colMap.n+" E="+colMap.e+" Z="+colMap.z+" Desc="+colMap.desc},
       ...(dups.length?[{lbl:"⚠ Renumbered:",val:dups.length+" repeated point #"+(dups.length===1?"":"s")+" ("+dups.slice(0,6).join(", ")+(dups.length>6?", …":"")+")"}]:[]),
       ...(noZ?[{lbl:"⚠ No elevation:",val:noZ+" point"+(noZ===1?"":"s")+" had a blank elevation — set to 0"}]:[]),
@@ -4486,7 +4570,7 @@ function cogoPolyline(){
       _polylines.push({name:d.name,verts:d.verts,segs:d.segs});
       saveData(); plotPoints();
       showResult("\u2713 Polyline Created",[
-        {lbl:"Name:",val:d.name},
+        {lbl:"Name:",val:_esc(d.name)},
         {lbl:"Vertices:",val:String(d.verts.length)},
         {lbl:"Segments:",val:String(d.segs.length)},
       ]);
@@ -4516,7 +4600,7 @@ function _polylineMenu(){
       mk(pl.name+" ("+pl.segs.length+" segs)","",()=>{
         close();
         openModal((m2,c2)=>{
-          m2.innerHTML="<h2>"+pl.name+"</h2>";
+          m2.innerHTML="<h2>"+_esc(pl.name)+"</h2>";
           const mk2=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m2.appendChild(b)};
           mk2("Offset Polyline","ok",()=>{c2();_offsetPolyline(pl,i);});
           mk2("Delete","danger",()=>{_polylines.splice(i,1);saveData();c2();plotPoints();});
@@ -4561,7 +4645,7 @@ function _polylineActionMenu(plIdx){
   const pl=_polylines[plIdx]; if(!pl)return;
   const totLen=_plTotalLen(pl);
   openModal((m,close)=>{
-    m.innerHTML="<h2>"+pl.name+"</h2>"+
+    m.innerHTML="<h2>"+_esc(pl.name)+"</h2>"+
       "<p class='info'>"+pl.segs.length+" segments \u00b7 "+pl.verts.length+" vertices \u00b7 length "+
       totLen.toFixed(3)+" "+units+" (Sta "+_fmtSta(totLen)+"). Highlighted in amber on the plot.</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
@@ -4683,7 +4767,7 @@ function _plStaOffQuery(pl){
   _pickPoint("Tap the point to station against "+pl.name,pt=>{
     const r=_plStaOffOfPoint(pl,pt.Easting,pt.Northing);
     if(!r){alert("Point #"+pt.Point+" doesn't project onto "+pl.name+" — it's beyond the alignment ends.");_selPolyline=-1;plotPoints();return}
-    showResult("Sta/Offset — #"+pt.Point+" on "+pl.name,[
+    showResult("Sta/Offset — #"+pt.Point+" on "+_esc(pl.name),[
       {lbl:"Station:",val:_fmtSta(r.sta)},
       {lbl:"Sta (dist):",val:r.sta.toFixed(3)+" "+units},
       {lbl:"Offset:",val:Math.abs(r.off).toFixed(3)+" "+units+" "+(r.off>=0?"RIGHT":"LEFT")},
@@ -4707,7 +4791,7 @@ function _plSetPointAtSta(pl){
       const off=parseFloat(offStr)||0;
       const r=_plPointAtStaOff(pl,sta,off);
       if(!r){alert("Offset collapses an arc at that station — reduce it.");return}
-      showResult("Point at "+_fmtSta(sta)+(off!==0?(" / "+Math.abs(off).toFixed(3)+(off>=0?" R":" L")):"")+" — "+pl.name,[
+      showResult("Point at "+_fmtSta(sta)+(off!==0?(" / "+Math.abs(off).toFixed(3)+(off>=0?" R":" L")):"")+" — "+_esc(pl.name),[
         {lbl:"Northing:",val:r.N.toFixed(4)},
         {lbl:"Easting:",val:r.E.toFixed(4)},
         {lbl:"Fwd Tangent:",val:fmtBrg(r.az)},
@@ -4815,7 +4899,7 @@ function _offsetPolyline(pl,plIdx){
     _selPolyline=-1; // clear selection so source polyline + vertex rings clear
     saveData(); plotPoints();
     showResult("\u2713 Polyline Offset",[
-      {lbl:"New polyline:",val:pl.name+"-OFS"},
+      {lbl:"New polyline:",val:_esc(pl.name+"-OFS")},
       {lbl:"Segments:",val:String(newSegs.length)},
       {lbl:"Offset:",val:Math.abs(d).toFixed(3)+" "+units+" "+(d>=0?"Right":"Left")},
     ]);
@@ -4846,21 +4930,6 @@ function _nearest(sols,x,y){
   return sols.slice().sort((p,q)=>Math.hypot(p[0]-x,p[1]-y)-Math.hypot(q[0]-x,q[1]-y))[0];
 }
 
-function _showOrientationExplainer(onDone){
-  openModal((modal,close)=>{
-    modal.style.overflowY="auto";
-    modal.innerHTML=`
-<h2>⌖ One Thing to Know</h2>
-<p class="info">ChainLink trusts the azimuths you type — it doesn't manage your instrument's orientation. Before shooting, set your gun to read true azimuths (compass to north, or backsight a known line), and re-orient at every new setup. Prefer to zero on a backsight? Tap <b>AR</b> on the shot form and enter angles right instead. <span style="color:var(--warn)">Always verify with a check shot.</span></p>`;
-    const hb=document.createElement("button");
-    hb.className="btn blue";hb.textContent="📖 Full explanation in Help";
-    hb.onclick=()=>{close();_helpContext="shot-setup";openHelp();onDone&&onDone();};
-    modal.appendChild(hb);
-
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk("Understood — Let’s Go","ok",()=>{close();atmosphericSetup(onDone);});
-  });
-}
 
 
 function _computePPM(T_C, P_hPa){
@@ -4946,16 +5015,6 @@ function _atmEnterPress(onDone){
   });
 }
 
-function setupOrientation(){
-  openModal((modal,close)=>{
-    modal.innerHTML="<h2>\u2699 Station Setup</h2>"+
-      "<p class='info'>Enter your occupied point and instrument height, then take shots using true azimuths directly from your instrument.</p>";
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk("Occupy a Point","ok",()=>{close();occupyPoint()});
-    mk("Set Known Station Coords","blue",()=>{close();setKnownStation()});
-    mk("Close","",close);
-  });
-}
 
 
 function setKnownStation(){
@@ -5076,7 +5135,7 @@ function setBacksight(occ,onDone,fromShot){
     done("set");
     showResult("✓ Backsight Set",[
       {lbl:"Station:",    val:"#"+occ.Point},
-      {lbl:"Backsight:",  val:b?"#"+b.Point+(b.Description?" — "+b.Description:""):"typed azimuth"},
+      {lbl:"Backsight:",  val:b?"#"+b.Point+(b.Description?" — "+_esc(b.Description):""):"typed azimuth"},
       {lbl:"BS Azimuth:", val:fmtBrg(a)},
       ...(b?[{lbl:"BS Distance:",val:dist2D(occ,b).toFixed(3)+" "+units}]:[]),
       {lbl:"At the gun:", val:"sight the backsight, set 0°00'00\""},
@@ -5123,27 +5182,6 @@ function setBacksight(occ,onDone,fromShot){
   });
 }
 
-function enterShots(){
-  openModal((modal,close)=>{
-    const occ=currentPoint;
-    const modeInfo=surveyMode==="2D"?"2D \u2014 azimuth + horiz dist":"3D \u2014 slope dist + zenith | HI: "+(occ&&occ.ih!=null?occ.ih.toFixed(3):"0.000");
-    const oriStatus=''; // orientation removed
-    modal.innerHTML="<h2>\ud83c\udfaf Shots</h2><p class=\"info\"><span style=\"color:var(--muted);font-size:.85em;letter-spacing:.08em\">OCCUPIED:</span> <b style=\"color:var(--accent)\">#"+(occ?occ.Point:"\u2014")+(occ&&occ.Description?" \u2014 "+occ.Description:"")+ "</b><br><span style=\"color:var(--muted);font-size:.9em\">"+modeInfo+"</span></p>";
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className=`btn ${cls}`;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk("\u25b6 Take Shot","ok",()=>{close();takeShot()});
-    mk("\u25a0 Occupy Point","blue",()=>{close();occupyPoint()});
-    mk("\u2316 Set Station Coords","blue",()=>{close();setKnownStation()});
-    mk("⟲ Backsight / Angle Right",hzMode==="ar"?"ok":"blue",()=>{close();setBacksight()});
-    mk("🌡 Atmospheric PPM",_ppmEnabled?"ok":"",()=>{close();atmosphericSetup()});
-
-    mk("\ud83d\udd0d Check Shot (Known Pt)","blue",()=>{close();checkShot()});
-    mk("\u21c4 Two-Face Shot","blue",()=>{close();twoFaceShot()});
-    mk("\u21a9 Undo Last","",undo);
-    mk("\u2715 Delete Point","danger",()=>{close();deletePoint()});
-    mk("\ud83d\udea9 Flag a Point","",()=>{close();flagPoint()});
-    mk("\u2199 Done","",close);
-  });
-}
 let _3dModeNoticeShown = false; // once per session
 
 function takeShot(){
@@ -5265,7 +5303,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
         ? `<span class="sf-hi" onclick="event.stopPropagation();_changeIH()" style="cursor:pointer;color:var(--accent2);border-bottom:1px dashed var(--accent2)" title="Tap to change IH">HI:${(occ.ih||0).toFixed(3)}</span><span class="sf-hi-hint" style="color:var(--muted);font-size:.7em"> (tap to change)</span>`
         : "";
       _helpContext = is3D ? "shot-3d" : "shot-2d";
-      modal.innerHTML = `<h2 style="font-size:.8em;margin-bottom:5px"><span class="sf-ttl">🎯<span class="sf-ttl-w"> SHOT</span></span><span class="sf-occ" style="color:var(--muted);font-size:.85em;letter-spacing:.06em">OCC: #${occ.Point}${occ.Description?" — "+occ.Description:""}</span>${ihDisp}</h2>`;
+      modal.innerHTML = `<h2 style="font-size:.8em;margin-bottom:5px"><span class="sf-ttl">🎯<span class="sf-ttl-w"> SHOT</span></span><span class="sf-occ" style="color:var(--muted);font-size:.85em;letter-spacing:.06em">OCC: #${occ.Point}${occ.Description?" — "+_esc(occ.Description):""}</span>${ihDisp}</h2>`;
 
       const form = document.createElement("div"); form.className="shot-form";
       if(formErr){ const er=document.createElement("div"); er.className="sf-err"; er.setAttribute("role","alert"); er.textContent="⚠ "+formErr; form.appendChild(er); }
@@ -5821,7 +5859,7 @@ function _processShot(fields, is3D, ih, occ){
               {lbl:"Backsight:",val:(occ.bsPt!=null?"#"+occ.bsPt+" · ":"")+_azLbl(bsAzUsed)}]:[]),
     ...(latOff!==0?[{lbl:"Lat Off:",val:(latOff>0?"R ":"L ")+Math.abs(latOff).toFixed(3)+" "+units}]:[]),
     ...(vertOff!==0?[{lbl:"Vert Off:",val:(vertOff>0?"U ":"D ")+Math.abs(vertOff).toFixed(3)+" "+units}]:[]),
-    {lbl:"Desc:",val:fields.desc||"—"},
+    {lbl:"Desc:",val:_esc(fields.desc||"—")},
   ];
   // 4.8.7: rapid shots — a brief notice instead of the result screen, then the next shot
   if(rapidShots){
@@ -5873,7 +5911,7 @@ function twoFaceShot(){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>\u21c4 Two-Face Shot</h2>"+
       "<p class='info'>Take Face 1 (direct) using the normal shot form, then plunge 180\u00b0 on both axes, re-sight the target, and take Face 2 (reverse). The two observations are averaged into one point, cancelling collimation"+(is3D?" and vertical index":"")+" error.</p>"+
-      "<div class='result-box'><span class='lbl'>Occupied:</span> <span class='val'>#"+occ.Point+(occ.Description?" \u2014 "+occ.Description:"")+"</span></div>";
+      "<div class='result-box'><span class='lbl'>Occupied:</span> <span class='val'>#"+occ.Point+(occ.Description?" \u2014 "+_esc(occ.Description):"")+"</span></div>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
     mk("Start Face 1 \u2192","ok",()=>{close();_twoFaceCapture(occ,is3D);});
     mk("Cancel","",close);
@@ -6118,6 +6156,7 @@ function _updateUndoBtn(){
       rbtn.classList.remove("visible");
     }
   }
+  _undoPersistSoon();
 }
 function undoFromCanvas(){
   _clearTransientMapSelections(false);
@@ -6153,22 +6192,6 @@ function redoFromCanvas(){
 }
 function redo(){ redoFromCanvas(); }
 
-function deletePoint(){
-  calculatorInput("Point # to delete:","",num=>{
-    if(!num)return; const p=points.find(pt=>pt.Point===parseInt(num));
-    if(!p){alert("Not found.");return}
-    confirmDialog(`Delete Point #${p.Point} (${p.Description||"no desc"})?`+(p===currentPoint?" It is the occupied station.":""),yes=>{
-      if(!yes)return;
-      _takeSnapshot("Delete Pt #"+p.Point);
-      points=points.filter(x=>x!==p); undoStack=undoStack.filter(x=>x!==p);
-      plotConnections=plotConnections.filter(c=>c.to!==p.Point&&c.from!==p.Point);
-      const wasOcc=(p===currentPoint);
-      if(wasOcc)currentPoint=points[0]||null; saveData();
-      // 4.8.3: say where the instrument now is — it used to move silently
-      if(wasOcc){updateStatus();alert("#"+p.Point+" was the occupied station. "+(currentPoint?"Now occupying #"+currentPoint.Point+" — use Occupy Point if that's not right.":"No station is occupied now — use Occupy Point."));}
-    });
-  });
-}
 
 /* ── 10. STAKEOUT ──────────────────────────────────────────────── */
 function stakeoutMenu(){
@@ -6292,7 +6315,7 @@ function _stlSelectGeom(conn){
                color:"rgba(74,158,255,.7)"}];
     plotPoints();
     showResult("Stake to Arc",[
-      {lbl:"Occupied:",val:"#"+occ.Point+(occ.Description?" \u2014 "+occ.Description:"")},
+      {lbl:"Occupied:",val:"#"+occ.Point+(occ.Description?" \u2014 "+_esc(occ.Description):"")},
       {lbl:"Arc R:",val:conn.R.toFixed(3)+" "+units},
       {lbl:"Arc Len:",val:conn.arcLen.toFixed(3)+" "+units},
       {lbl:"Delta:",val:conn.delta.toFixed(4)+"\u00b0"},
@@ -6311,7 +6334,7 @@ function _stlSelectGeom(conn){
                color:"rgba(74,158,255,.6)",dash:[6,4]}];
     plotPoints();
     showResult("Stake to Line",[
-      {lbl:"Occupied:",val:"#"+occ.Point+(occ.Description?" \u2014 "+occ.Description:"")},
+      {lbl:"Occupied:",val:"#"+occ.Point+(occ.Description?" \u2014 "+_esc(occ.Description):"")},
       {lbl:"Line:",val:"#"+pA.Point+" \u2192 #"+pB.Point},
       {lbl:"Line Az:",val:fmtBrg(lineAz)},
       {lbl:"Line Length:",val:lineDist.toFixed(3)+" "+units},
@@ -6333,10 +6356,6 @@ function _angleInSweep(conn,a){
   return dd <= Math.abs(sweep)+1e-9;
 }
 
-function _stakeToLineInput(pA,pB){
-  // legacy shim — now handled inside stakeToLine
-  stakeToLine();
-}
 
 let _lastStlAz="";  // remember last az for Measure Again
 let _polylines=[];        // [{name, verts:[{E,N}], segs:[{type:"line"}|{type:"arc",centerE,centerN,R,dir}]}]
@@ -6638,7 +6657,7 @@ function pointListMenu(){
       const rawMark = p.InstReading?" *":"";
       tr.innerHTML=
         "<td>"+p.Point+"</td>"+
-        "<td>"+(p.Description||"")+rawMark+"</td>"+
+        "<td>"+_esc(p.Description||"")+rawMark+"</td>"+
         "<td>"+p.Northing.toFixed(2)+"</td>"+
         "<td>"+p.Easting.toFixed(2)+"</td>"+
         "<td>"+(p.Elevation||0).toFixed(2)+"</td>"+
@@ -6668,7 +6687,7 @@ function pointListMenu(){
 function _pointDetail(p){
   openModal((modal,close)=>{
     function render(){
-      modal.innerHTML="<h2 style='font-size:.85em'>#"+p.Point+" — "+(p.Description||"no desc")+"</h2>";
+      modal.innerHTML="<h2 style='font-size:.85em'>#"+p.Point+" — "+_esc(p.Description||"no desc")+"</h2>";
 
       // Computed coords
       const box=document.createElement("div"); box.className="result-box";
@@ -7043,7 +7062,7 @@ function enterPointManually(){
             {lbl:"N:",val:N.toFixed(4)},
             {lbl:"E:",val:E.toFixed(4)},
             {lbl:"Z:",val:Z.toFixed(4)},
-            {lbl:"Desc:",val:fields.desc||"—"},
+            {lbl:"Desc:",val:_esc(fields.desc||"—")},
           ],[
             {txt:"➕ Enter Another",cls:"ok",fn:enterPointManually},
             {txt:"⬛ Occupy This Point",cls:"blue",fn:()=>_occupyAt(p)},
@@ -7061,12 +7080,6 @@ function enterPointManually(){
   });
 }
 
-function editPoint(){
-  calculatorInput("Point # to edit:","",pNum=>{
-    if(!pNum)return; const pt=points.find(p=>p.Point===parseInt(pNum)); if(!pt){alert("Not found.");return}
-    _editPointMenu(pt);
-  });
-}
 
 // Decimal degrees -> DDD.MMSS string (the app's azimuth input format)
 function _toDDMMSS(deg){
@@ -7119,7 +7132,7 @@ function _editPointCoords(pt){
           pt.Northing=nN; pt.Easting=nE;
           pt.Elevation=nZ; pt.Description=desc;
           _recomputeAreaLabels(); saveData(); plotPoints();
-          showResult(`✓ Pt #${pt.Point} Updated`,[{lbl:"N:",val:pt.Northing.toFixed(3)},{lbl:"E:",val:pt.Easting.toFixed(3)},{lbl:"Z:",val:pt.Elevation.toFixed(3)},{lbl:"Desc:",val:pt.Description}]);
+          showResult(`✓ Pt #${pt.Point} Updated`,[{lbl:"N:",val:pt.Northing.toFixed(3)},{lbl:"E:",val:pt.Easting.toFixed(3)},{lbl:"Z:",val:pt.Elevation.toFixed(3)},{lbl:"Desc:",val:_esc(pt.Description)}]);
         });
       });
     });
@@ -7319,67 +7332,7 @@ function settingsMenu(){
 function _setWorkspaceActive(name){
   document.querySelectorAll("#toolbar button[data-workspace]").forEach(b=>b.classList.toggle("tbar-active",b.dataset.workspace===name));
 }
-function _wsSection(modal,text){const d=document.createElement("div");d.className="workspace-section";d.textContent=text;modal.appendChild(d);}
 function _wsButton(modal,text,cls,fn){const b=document.createElement("button");b.className="btn "+(cls||"");b.textContent=text;b.onclick=fn;modal.appendChild(b);return b;}
-function fieldWorkspaceMenu(){
-  _setWorkspaceActive("field");
-  openModal((modal,close)=>{
-    _helpContext="shot-2d";
-    modal.innerHTML="<h2>Field</h2><p class='info'>Collect observations, manage occupations, and review field points.</p>";
-    _wsSection(modal,"Observation");
-    _wsButton(modal,"Take Shot","ok",()=>{close();takeShot()});
-    _wsButton(modal,"Occupy Point","blue",()=>{close();occupyPoint()});
-    _wsButton(modal,"Set Station Coordinates","blue",()=>{close();setKnownStation()});
-    _wsButton(modal,"Backsight / Angle Right",hzMode==="ar"?"ok":"blue",()=>{close();setBacksight()});
-    _wsButton(modal,"Check Shot to Known Point","",()=>{close();checkShot()});
-    _wsButton(modal,"Two-Face Shot","",()=>{close();twoFaceShot()});
-    _wsSection(modal,"Field Data");
-    _wsButton(modal,"Point List / Edit","",()=>{close();pointListMenu()});
-    _wsButton(modal,"Atmospheric PPM",_ppmEnabled?"ok":"",()=>{close();atmosphericSetup()});
-    _wsButton(modal,"Shift All Elevations","blue",()=>{close();elevationShift()});
-    _wsButton(modal,"Flag a Point","",()=>{close();flagPoint()});
-    _wsButton(modal,"Done","",close);
-  });
-}
-function recordsWorkspaceMenu(){
-  _setWorkspaceActive("records");
-  openModal((modal,close)=>{
-    const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
-    modal.innerHTML="<h2>Records</h2><p class='info'>Import, assemble, move, and compare deed records in the current job.</p>";
-    _wsSection(modal,"Deed Records");
-    _wsButton(modal,ids.length?"Open Deed Plotter":"Import First Deed",ids.length?"blue":"accent",()=>{close();deedPlotterMenu()});
-    if(ids.length){
-      _wsButton(modal,"Import Another Deed","accent",()=>{close();_deedImportAnother()});
-      if(ids.length>1)_wsButton(modal,"Move / Snap a Deed Record","ok",()=>{close();_deedRecordPicker()});
-      _wsButton(modal,"Move an Individual Figure","",()=>{close();_deedMovePicker()});
-      _wsButton(modal,"Fit Record to Two Measured Points","ok",()=>{close();_deedFitTwoPoint()});
-      _wsSection(modal,"Current Records");
-      ids.forEach(id=>{
-        const figs=_deedRecordFigures(id), boundary=figs.find(f=>f.kind==="boundary")||figs[0];
-        const card=document.createElement("button");card.className="workspace-record-card";
-        const ac=boundary&&boundary.computed&&boundary.kind!=="easement"?_deedAc(_deedArea(boundary.computed)).toFixed(3)+" ac":"";
-        card.innerHTML="<strong>"+_deedRecordLabel(id)+"</strong><small>"+figs.length+" figure"+(figs.length===1?"":"s")+(ac?" · "+ac:"")+"</small>";
-        card.onclick=()=>{close();_deedAdjustRecordId=id;_deedAdjustScope=null;_deedAdjustStart();};modal.appendChild(card);
-      });
-    }
-    _wsButton(modal,"Done","",close);
-  });
-}
-function mapWorkspaceMenu(){
-  _setWorkspaceActive("map");
-  openModal((modal,close)=>{
-    modal.innerHTML="<h2>Map</h2><p class='info'>Control imagery, GPS context, labels, elevation display, and plot view.</p>";
-    _wsSection(modal,"Basemap & Position");
-    _wsButton(modal,"Satellite Imagery / GPS","accent",()=>{close();satelliteMenu()});
-    _wsButton(modal,"Toggle Satellite + GPS",satOn?"ok":"",()=>{toggleSatAndGps();close();});
-    _wsButton(modal,"Zoom to Occupied Point","blue",()=>{zoomToOccupied();close();});
-    _wsButton(modal,"Fit All Geometry","",()=>{resetPlot();close();});
-    _wsSection(modal,"Display");
-    _wsButton(modal,(showLabels?"Hide":"Show")+" Point and Line Labels","",()=>{toggleLabels();close();});
-    _wsButton(modal,(showElevations?"Hide":"Show")+" Elevations","",()=>{toggleElevations();close();});
-    _wsButton(modal,"Done","",close);
-  });
-}
 function projectExportMenu(){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>Export</h2>";
@@ -7564,7 +7517,7 @@ function _coordListPreview(modal, close, raw, order, sep){
     parsed.rows.forEach((r,i)=>{
       const num=next+i;
       const tr=document.createElement("tr");
-      tr.innerHTML="<td>"+num+"</td><td>"+(r.src!=null?r.src:"—")+"</td><td>"+r.N.toFixed(3)+"</td><td>"+r.E.toFixed(3)+"</td><td>"+(r.Z||0).toFixed(3)+"</td><td>"+(r.desc||"")+"</td>";
+      tr.innerHTML="<td>"+num+"</td><td>"+(r.src!=null?r.src:"—")+"</td><td>"+r.N.toFixed(3)+"</td><td>"+r.E.toFixed(3)+"</td><td>"+(r.Z||0).toFixed(3)+"</td><td>"+_esc(r.desc||"")+"</td>";
       tb.appendChild(tr);
     });
     tbl.appendChild(tb); wrap.appendChild(tbl); modal.appendChild(wrap);
@@ -7669,61 +7622,8 @@ function projectImportMenu(){
     _wsButton(modal,"Back","",()=>{close();openWorkspace("project");});
   });
 }
-function projectWorkspaceMenu(){
-  _setWorkspaceActive("project");
-  openModal((modal,close)=>{
-    modal.innerHTML="<h2>Project</h2><p class='info'>Manage the job, exchange files, and configure ChainLink.</p>";
-    _wsSection(modal,"Job");
-    _wsButton(modal,"Job Manager","accent",()=>{closeAllModals();_showJobScreen();});
-    _wsButton(modal,"Rename Job","blue",()=>{close();alphaInput("Job Name:",jobName,jn=>{if(jn){jobName=jn;saveData()}})});
-    _wsButton(modal,"Point List / Edit","",()=>{close();pointListMenu()});
-    _wsSection(modal,"Files");
-    _wsButton(modal,"Export…","ok",()=>{close();projectExportMenu()});
-    _wsButton(modal,"Import…","blue",()=>{close();projectImportMenu()});
-    _wsButton(modal,"Change Save Folder","",()=>{close();_dirHandle=null;saveToFile()});
-    _wsSection(modal,"Application");
-    _wsButton(modal,"Settings","",()=>{close();settingsMenu()});
-    _wsButton(modal,"Help","",()=>{close();openHelp()});
-    _wsButton(modal,"Clear All Data","danger",()=>{close();clearAllData()});
-    _wsButton(modal,"Done","",close);
-  });
-}
 
 /* ── 13. MORE MENU ─────────────────────────────────────────────── */
-function moreMenu(){
-  openModal((modal,close)=>{
-    modal.innerHTML="<h2>Legacy Tools</h2>";
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className=`btn ${cls}`;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk("⚙ Settings","",()=>{close();settingsMenu()});
-    mk("📋 Point List / Edit","",()=>{close();pointListMenu()});
-    mk("✏ Rename Job","blue",()=>{close();alphaInput("Job Name:",jobName,jn=>{if(jn){jobName=jn;saveData()}})});
-    mk("📤 Export CSV"+(typeof window.showDirectoryPicker==="function"?" (to folder)":""),"ok",()=>{close();saveToFile()});
-    mk("📐 Export DXF","blue",()=>{close();exportDXF()});
-    mk("📋 Export LandXML","blue",()=>{close();exportLandXML()});
-    mk("🖨 Export PDF Plot (A4)","blue",()=>{close();exportPlotPDF()});
-    mk("📒 Export Fieldbook","blue",()=>{close();exportFieldbook()});
-    mk("🖼 Export SVG","blue",()=>{close();exportSVG()});
-    mk("🌐 Export GeoJSON","blue",()=>{close();exportGeoJSON()});
-    if(geoAnchor)mk("🌍 Export KML (Google Earth)","blue",()=>{close();exportKML()});
-    mk("📥 Load CSV as New Job","blue",()=>{close();loadFromFile(true)});
-    mk("📥 Import DXF","blue",()=>{close();importDXF()});
-    mk("📥 Import LandXML","blue",()=>{close();importLandXML()});
-    mk("🌍 Import KML (Google Earth)","blue",()=>{close();importKML()});
-    mk("🗂 Change Save Folder","",()=>{close();_dirHandle=null;saveToFile()});
-
-    mk("🗑 Delete Connection","danger",()=>{close();deleteConnection()});
-    mk("🗑 Clear All Data","danger",()=>{close();clearAllData()});
-    mk("⇕ Shift All Elevations","blue",()=>{close();elevationShift();});
-    mk("🛰 Satellite Imagery","accent",()=>{close();satelliteMenu();});
-    mk("🏠 Job Manager","accent",()=>{closeAllModals();_showJobScreen();});
-    mk("🔄 Force Reload App","danger",()=>{
-      if(confirm("Reload the app? Any unsaved changes will be lost.")){
-        window.location.reload(true);
-      }
-    });
-    mk("✕ Cancel","",close);
-  });
-}
 
 /* ── 14. COGO ──────────────────────────────────────────────────── */
 function cogoMenu(){
@@ -9479,7 +9379,7 @@ function cogoOffsetPoint(){
   });
 }
 
-function cogoProportion(){ cogoProrate(); } // legacy alias
+ // legacy alias
 
 function cogoProrate(fromPt, toPt){
   _helpContext="cogo-prorate";
@@ -10516,8 +10416,8 @@ function _drawConnByTap(){
           plotConnections.push({from:fromPt.Point,to:toPt.Point,style});
           saveData();
           showResult("✓ Connection Drawn",[
-            {lbl:"From:",val:"#"+fromPt.Point+" "+( fromPt.Description||"")},
-            {lbl:"To:",  val:"#"+toPt.Point+" "+(toPt.Description||"")},
+            {lbl:"From:",val:"#"+fromPt.Point+" "+_esc(fromPt.Description||"")},
+            {lbl:"To:",  val:"#"+toPt.Point+" "+_esc(toPt.Description||"")},
             {lbl:"Style:",val:style},
           ],[
             {txt:"Draw Another",cls:"ok",fn:()=>_drawConnByTap()},
@@ -13100,7 +13000,7 @@ function _deedReviewFigures(figs){
           _deedReview(f.calls,{title:f.name,kind:f.kind,statedAcres:f.statedAcres,doneLabel:"✓ Done — back to figures",
             onDone:()=>_deedReviewFigures(figs),
             removeFn:()=>{
-              confirmDialog("Remove "+f.name+" entirely? (Use this for duplicates from overlapping photos.)",yes=>{
+              confirmDialog("Remove "+_esc(f.name)+" entirely? (Use this for duplicates from overlapping photos.)",yes=>{
                 if(yes)figs.splice(figs.indexOf(f),1);
                 _deedReviewFigures(figs);
               });
@@ -13444,7 +13344,7 @@ function _deedResolveFigures(figs,E,N){
   }
   const _dfs=_deedFlagSummary();
   showResult("📜 Deed Plotted — "+figs.length+" figures",[
-    {lbl:"Figures:",val:_deedPlot.figures.map(f=>f.name).join(", ")},
+    {lbl:"Figures:",val:_esc(_deedPlot.figures.map(f=>f.name).join(", "))},
     ...(b&&b.computed?[{lbl:"Boundary closure:",val:b.computed.closeDist.toFixed(2)+" "+units+(b.computed.precision?" (1:"+b.computed.precision+")":"")}]:[]),
     ...(net!=null?[{lbl:"Net area:",val:net.toFixed(2)+" acres (boundary − exceptions)"}]:[]),
     ...(_deedPlot.figures.some(f=>f.sectionAxes)?[{lbl:"PLSS fabric:",val:"aliquot geometry aligned to stated section-line bearings"}]:[]),
@@ -13997,7 +13897,7 @@ function _deedMovePicker(){
 function _deedFigureActions(i){
   const f=_deedPlot.figures[i];if(!f)return;
   openModal((m3,c3)=>{
-    m3.innerHTML="<h2>"+f.name+"</h2><p class='info'>Deeds often start these at a described corner — snapping to its point number is exact.</p>";
+    m3.innerHTML="<h2>"+_esc(f.name)+"</h2><p class='info'>Deeds often start these at a described corner — snapping to its point number is exact.</p>";
     const mk3=(t,cls,fn)=>{const bb=document.createElement("button");bb.className="btn "+cls;bb.textContent=t;bb.onclick=fn;m3.appendChild(bb)};
     mk3("✏ Rename figure","blue",()=>{c3();alphaInput("Figure name:",f.name||"",nm=>{nm=String(nm||"").trim();if(nm){f.name=nm;saveData();plotPoints();_deedFigureActions(i);}});});
     mk3("🖐 Drag it on the map","ok",()=>{c3();_deedAdjustScope=i;_deedAdjustStart();});
@@ -14121,7 +14021,7 @@ function deedPlotterMenu(){
             const b=document.createElement("button");b.className="btn blue";b.textContent=f.name;
             b.onclick=()=>{c2();_deedReview(f.calls,{title:f.name,kind:f.kind,statedAcres:f.statedAcres,doneLabel:"✓ Done",onDone:done.onDone,
               removeFn:()=>{
-                confirmDialog("Remove "+f.name+" and its points entirely? (Use this for duplicate figures from overlapping photos.)",yes=>{
+                confirmDialog("Remove "+_esc(f.name)+" and its points entirely? (Use this for duplicate figures from overlapping photos.)",yes=>{
                   if(yes){
                     _takeSnapshot("Remove "+f.name);
                     const nums=f.ptNums||[];
@@ -14757,7 +14657,7 @@ function _ngsCard(m){
   openModal((modal,close)=>{
     const cls=_ngsCondClass(m);
     const stat=m.destroyed?"DESTROYED":(m.cond?(m.cond+" ("+(m.condDate||"?")+")"):"status not fetched yet");
-    modal.innerHTML="<h2>🔺 "+(m.name||m.pid)+"</h2>"+
+    modal.innerHTML="<h2>🔺 "+_esc(m.name||m.pid)+"</h2>"+
       "<div class='result-box'>"+
       "<span class='lbl'>PID:</span> <span class='val'>"+m.pid+"</span><br>"+
       "<span class='lbl'>Status:</span> <span class='val'>"+stat+"</span><br>"+
@@ -15806,7 +15706,7 @@ function _zoomToGround(unitsAcross){
   setTimeout(()=>{ if(viewScale===setAt) apply(); },350);
 }
 function _stageNewJob(){
-  _jobCommitActive();
+  _jobCommitActive(); _undoPersistNow();
   _jobPendingNew=true;
   _jobRamLive=false;
   _stageNewJobScratch();
@@ -16120,10 +16020,29 @@ function plotPoints(extCtx,extW,extH){
     const dotBoxes=valid.map(p=>{const x=X(p.Easting),y=Y(p.Northing),r=dotR-1;return {l:x-r,r:x+r,t:y-r,b:y+r};});
     // Point-label claims are padded estimates, so they are trimmed back to the text itself;
     // line labels placed in this pass are kept a pixel apart.
-    const ptBoxes=_annoBoxes.map(a=>({l:a.l+3,r:a.r-6,t:a.t+3,b:a.b-4})), placed=[];
+    const ptBoxes=_annoBoxes.map(a=>({l:a.l+3,r:a.r-6,t:a.t+3,b:a.b-4}));
     const over=(b,a,pad)=>!(b.r+pad<a.l||b.l-pad>a.r||b.b+pad<a.t||b.t-pad>a.b);
-    // how many point labels, point symbols and line labels a candidate box would cover
-    const hits=b=>ptBoxes.concat(dotBoxes).reduce((n,a)=>n+(over(b,a,0)?1:0),0)+placed.reduce((n,a)=>n+(over(b,a,1)?1:0),0);
+    // 4.8.10: boxes are filed in a 64 px grid so a candidate is only compared with its
+    // neighbours. (4.8.9 compared every candidate with every point — slow on big jobs.)
+    const G=64, grid=new Map();
+    const file=(a,pad)=>{
+      a.pad=pad;
+      for(let gx=Math.floor((a.l-pad)/G), gx1=Math.floor((a.r+pad)/G); gx<=gx1; gx++)
+        for(let gy=Math.floor((a.t-pad)/G), gy1=Math.floor((a.b+pad)/G); gy<=gy1; gy++){
+          const k=gx+","+gy, c=grid.get(k); if(c) c.push(a); else grid.set(k,[a]);
+        }
+    };
+    ptBoxes.forEach(a=>file(a,0)); dotBoxes.forEach(a=>file(a,0));
+    // 1 if a candidate box would cover a point label, point symbol or line label, else 0
+    // (only "clear or not" decides a spot, so the search stops at the first thing it covers)
+    const hits=b=>{
+      for(let gx=Math.floor(b.l/G), gx1=Math.floor(b.r/G); gx<=gx1; gx++)
+        for(let gy=Math.floor(b.t/G), gy1=Math.floor(b.b/G); gy<=gy1; gy++){
+          const c=grid.get(gx+","+gy); if(!c) continue;
+          for(const a of c) if(over(b,a,a.pad)) return 1;
+        }
+      return 0;
+    };
     _connLabels.forEach(L=>{
       const dx=L.sx2-L.sx1, dy=L.sy2-L.sy1, ca=Math.cos(L.angle), sa=Math.sin(L.angle), H=L.boxH+2;
       // box for an anchor at fraction t along the line; side -1 = above the line (the old spot),
@@ -16142,7 +16061,7 @@ function plotPoints(extCtx,extW,extH){
         if(!h) break;
       }
       if(best>0) return;
-      placed.push(pick.bb);
+      file(pick.bb,1);
       _annoClaim(pick.bb);
       ctx.save();
       ctx.translate(pick.ax,pick.ay);ctx.rotate(L.angle);
@@ -17478,7 +17397,7 @@ function zoomToOccupied(){
         Math.hypot(screenX-AL._sx, screenY-AL._sy)<40);
       if(hitAL){
         openModal((modal,close)=>{
-          modal.innerHTML="<h2>Area Label</h2><p class='info'>"+hitAL.label+"</p>";
+          modal.innerHTML="<h2>Area Label</h2><p class='info'>"+_esc(hitAL.label)+"</p>";
           const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
           mk("Delete Label","danger",()=>{_areaLabels=_areaLabels.filter(x=>x!==hitAL);saveData();close();});
           mk("Keep","",close);
@@ -17646,8 +17565,8 @@ function _connectFromPoint(p){
         plotConnections.push({from:p.Point,to:toPt.Point,style});
         saveData();
         showResult("\u2714 Connected",[
-          {lbl:"From:",val:"#"+p.Point+" "+(p.Description||"")},
-          {lbl:"To:",  val:"#"+toPt.Point+" "+(toPt.Description||"")},
+          {lbl:"From:",val:"#"+p.Point+" "+_esc(p.Description||"")},
+          {lbl:"To:",  val:"#"+toPt.Point+" "+_esc(toPt.Description||"")},
           {lbl:"Bearing:",val:fmtBrg(azimuth(p,toPt))},
           {lbl:"Distance:",val:dist2D(p,toPt).toFixed(3)+" "+units},
           {lbl:"Style:",val:style},
@@ -17672,7 +17591,7 @@ function _pointContextMenu(p){
       `<span class="lbl">N:</span>&nbsp;<span class="val">${p.Northing.toFixed(4)}</span>&nbsp;&nbsp;`+
       `<span class="lbl">E:</span>&nbsp;<span class="val">${p.Easting.toFixed(4)}</span><br>`+
       `<span class="lbl">Z:</span>&nbsp;<span class="val">${(p.Elevation||0).toFixed(4)}</span>&nbsp;&nbsp;`+
-      `<span class="lbl">Desc:</span>&nbsp;<span class="val">${p.Description||"—"}</span>`;
+      `<span class="lbl">Desc:</span>&nbsp;<span class="val">${_esc(p.Description||"—")}</span>`;
     // Computed shot data
     if(p.HorizDist){
       boxHtml += `<br><span class="lbl">HD:</span>&nbsp;<span class="val">${Number(p.HorizDist).toFixed(3)} ${units}</span>&nbsp;&nbsp;`+
