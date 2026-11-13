@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.10">
+<meta name="application-name" content="ChainLink-v4.8.11">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.10</title>
+<title>ChainLink Survey v4.8.11</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1423,7 +1423,7 @@ html.light-mode .job-storage{background:rgba(0,0,0,.03)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.10";
+const APP_VERSION = "4.8.11";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -10590,20 +10590,62 @@ const _DEED_UNIT_FT={
    description is still ignored, preserving the old double-count safety. */
 function _deedTableToProse(txt){
   const lines=String(txt||"").split(/\r?\n/);
-  const rowRe=/^\s*(?:(?:LINE|COURSE)?\s*[L]?-?\d+[.):]?\s+)?([NS])\s*\.?\s*(\d{1,2})\s*(?:[°*\-\s])\s*(\d{1,2})?\s*(?:['\u2032\u0060\-\s])?\s*(\d{1,2}(?:\.\d+)?)?\s*(?:["\u2033])?\s*([EW])\s*(?:\t+|\s{2,})\s*([\d,]+(?:\.\d+)?)\s*(?:FEET|FT|')?\s*$/i;
-  const hdrRe=/^\s*(?:LINE|COURSE|NO\.?)\s*(?:\t+|\s{2,})\s*BEARING/i;
+  const rowRe=/^\s*(?:(?:LINE|COURSE)?\s*[L]?-?\d+[.):]?\s+)?([NS])\s*\.?\s*(\d{1,2})\s*(?:[°*\-\s])\s*(\d{1,2})?\s*(?:['\u2032\u0060\-\s])?\s*(\d{1,2}(?:\.\d+)?)?\s*(?:["\u2033])?\s*([EW])\s+([\d,]+(?:\.\d+)?)\s*(?:FEET|FT|')?\s*$/i;
+  const hdrRe=/^\s*(?:LINE|COURSE|NO\.?)\s+BEARING/i;
   const curveRe=/^\s*C-?\d+\b/i;
-  let rows=0, curves=0;
+  let rows=0, curves=0, crows=0;
+  /* 4.8.11 — CURVE TABLES. A row like "C1 500.00' 120.00' N 50°00'00\" E
+     119.71' 13°45'04\"" is only readable through its header, because the
+     column order differs from plat to plat. The header names the order of the
+     plain-number columns (radius / arc / chord / tangent); the chord bearing
+     and the delta are recognisable by their own shape. With no header the row
+     is left exactly as it was. */
+  const cHdrRe=/^\s*CURVE\b.*\bRADIUS\b/i;
+  let cCols=null;
+  const curveCols=h=>{
+    const out=[], re=/CHORD\s+(?:BEARING|BRG\.?|DIRECTION)|CH\.?\s*B(?:EA)?R(?:IN)?G\.?|CHORD\s+(?:LENGTH|DIST(?:ANCE)?\.?)|CH\.?\s*L(?:EN(?:GTH)?)?\b\.?|ARC\s+(?:LENGTH|DIST(?:ANCE)?\.?)|DELTA(?:\s+ANGLE)?|CENTRAL\s+ANGLE|RADIUS|TANGENT|BEARING|LENGTH|ARC|CHORD/gi;
+    let m;
+    while((m=re.exec(h))){
+      const k=m[0].toUpperCase();
+      if(/B(?:EA)?R(?:IN)?G|DIRECTION/.test(k)||/DELTA|CENTRAL/.test(k)) continue;
+      out.push(/RADIUS/.test(k)?"rad":/TANGENT/.test(k)?"tan":/^CH/.test(k)?"cl":"arc");
+    }
+    return (out.includes("rad")&&new Set(out).size===out.length)?out:null;
+  };
+  const curveRow=(l,cols)=>{
+    let s=l.replace(/^\s*C-?\d+\b[.):]?/i," ");
+    const dirM=s.match(/\b(LEFT|RIGHT|LT|RT)\b\.?/i);
+    if(dirM) s=s.replace(dirM[0]," ");
+    const bm=s.match(/\b([NS])\s*\.?\s*(\d{1,2})\s*[°*\-\s]\s*(\d{1,2})\s*['\-\s]\s*(\d{1,2}(?:\.\d+)?)?\s*"?\s*([EW])\b/i);
+    if(bm) s=s.replace(bm[0]," ");
+    const dm=s.match(/(\d{1,3})\s*°\s*(\d{1,2})\s*'\s*(?:(\d{1,2}(?:\.\d+)?)\s*"?)?/);
+    if(dm) s=s.replace(dm[0]," ");
+    const nums=(s.match(/\d[\d,]*(?:\.\d+)?/g)||[]).map(x=>parseFloat(x.replace(/,/g,"")));
+    if(nums.length!==cols.length||/[A-Za-z]{2,}/.test(s.replace(/\b(?:FEET|FT)\b/gi,""))) return null;
+    const v={}; cols.forEach((c,i)=>v[c]=nums[i]);
+    if(!(v.rad>0)||(v.arc==null&&!(bm&&v.cl!=null))) return null;
+    const d=dirM?(/^L/i.test(dirM[1])?" TO THE LEFT":" TO THE RIGHT"):"";
+    return " THENCE ALONG A CURVE"+d+" HAVING A RADIUS OF "+v.rad+" FEET"+
+      (v.arc!=null?", AN ARC LENGTH OF "+v.arc+" FEET":"")+
+      (dm?", A CENTRAL ANGLE OF "+dm[1]+"°"+dm[2]+"'"+(dm[3]||"00")+'"':"")+
+      (bm?", A CHORD BEARING OF "+bm[1].toUpperCase()+" "+bm[2]+"°"+bm[3]+"'"+(bm[4]||"00")+'" '+bm[5].toUpperCase():"")+
+      (bm&&v.cl!=null?" AND A CHORD DISTANCE OF "+v.cl+" FEET":"")+"; ";
+  };
   const conv=lines.map(l=>{
     if(hdrRe.test(l)) return {t:"",row:false};
-    if(curveRe.test(l)){curves++;return {t:l,row:false};}
+    if(cHdrRe.test(l)){ const c=curveCols(l); if(c){cCols=c; return {t:"",row:false};} }
+    if(curveRe.test(l)){
+      curves++;
+      if(cCols){ const p=curveRow(l,cCols); if(p){crows++; return {t:p,row:true};} }
+      return {t:l,row:false};
+    }
     const m=l.match(rowRe);
     if(!m) return {t:l,row:false};
     rows++;
     const dms=m[2]+"°"+(m[3]||"00")+"'"+(m[4]||"00")+'"';
     return {t:" THENCE "+m[1].toUpperCase()+" "+dms+" "+m[5].toUpperCase()+" "+m[6].replace(/,/g,"")+" FEET; ",row:true};
   });
-  if(rows<3) return txt;
+  if(rows+crows<3 && !crows) return txt;
   const outside=conv.filter(x=>!x.row).map(x=>x.t).join("\n");
   const thences=(outside.match(/\bTHENCE\b/gi)||[]).length;
   if(thences>=2) return txt;   // prose-dominant: the table is decoration
@@ -10668,6 +10710,10 @@ function _deedNormalize(t){
   return (t||"")
     // invisible characters PDF copy loves to smuggle in
     .replace(/[\u00AD\u200B\u200C\u200D\u2060\uFEFF]/g,"")
+    // 4.8.11: a survey word hyphenated across a line break ("de-/grees", "min-/utes")
+    .replace(/\b([A-Za-z]{1,12})-[ \t]*\r?\n[ \t]*([A-Za-z]{1,12})\b/g,(m,a,b)=>/^(?:DEGREES?|MINUTES?|SECONDS?|THENCE|(?:NORTH|SOUTH)(?:EAST|WEST)?(?:ERLY|WARDLY)?|(?:EAST|WEST)(?:ERLY|WARDLY)?|FEET|DISTANCE|BEGINNING|COMMENC(?:E|ING)|CHAINS?|RADIUS|CURVE|CHORD|POINT|ALONG|CORNER|SECTION|TOWNSHIP|RANGE|QUARTER)$/i.test(a+b)?a+b+" ":m)
+    // 4.8.11: "250.52± feet" / "250.5 +/- feet" — the tolerance mark split the number from its unit
+    .replace(/(\d)\s*(?:±|\+\s*\/\s*-|\+-)/g,"$1 ")
     /* Misspelt / unspaced "degrees" is normalised HERE rather than only in the
        bearing parser, because the distance parser skips numbers that belong to
        a bearing — and it can only recognise them once the degree word is
@@ -10688,6 +10734,8 @@ function _deedNormalize(t){
     .replace(/[\u2018\u2019\u2032\u02B9\u02BC\u00B4\u0060]/g,"'")
     .replace(/[\u201C\u201D\u2033\u02BA]/g,'"')
     .replace(/[\u00BA\u00B0\u02DA\u309C\u1D52]/g,"°")
+    // 4.8.11: seconds typed as two apostrophes: 15'' -> 15"
+    .replace(/(\d)\s*''/g,'$1"')
     // fax/typewriter degree sign: an asterisk wedged between the degree
     // digits and the minutes ("N 45* 30' E", "S 12*15' W"). Digit-adjacency
     // required so footnote/wildcard asterisks are never touched.
@@ -10697,6 +10745,35 @@ function _deedNormalize(t){
     .replace(/\u00BD/g," 1/2").replace(/\u00BC/g," 1/4").replace(/\u00BE/g," 3/4")
     .replace(/\s+/g," ")
     .toUpperCase()
+    // — 4.8.11 additions —
+    // spelled-out bearing figures: "NORTH FORTY-FIVE DEGREES THIRTY MINUTES EAST".
+    // Before this the bearing read as due North with no warning.
+    .replace(/\b((?:(?:ZERO|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY|THIRTY|FORTY|FOURTY|FIFTY|SIXTY|SEVENTY|EIGHTY|NINETY|HUNDRED)(?:[\s-]+AND[\s-]+|[\s-]+))+)(?=(?:DEGREES?|MINUTES?|MIN|SECONDS?|SEC)\b)/g,
+      (m,w)=>{const v=_deedWordsToNum(w);return (v==null||v>360)?m:v+" ";})
+    // colon-separated bearing: N 45:30:15 E
+    .replace(/\b(N|S|NORTH|SOUTH)\s*(\d{1,2}):(\d{1,2})(?::(\d{1,2}(?:\.\d+)?))?\s*(?=(?:E|W|EAST|WEST)\b)/g,
+      (m,q,d,mi,s)=>q+" "+d+"°"+mi+"'"+(s!=null?s+'"':"")+" ")
+    // apostrophe typed for the degree mark, no seconds: N 45'30' E
+    .replace(/\b(N|S|NORTH|SOUTH)\s*(\d{1,2})\s*'\s*(\d{1,2})\s*'\s*(?=(?:E|W|EAST|WEST)\b)/g,(m,q,d,mi)=>q+" "+d+"°"+mi+"' ")
+    // letter O read for the degree mark after a two-digit value: N 45O 30' E
+    .replace(/\b(N|S|NORTH|SOUTH)\s*(\d{2})\s?O\s*(?=\d{1,2}\s*')/g,(m,q,d)=>q+" "+d+"°")
+    // minute mark read as a second degree sign, no seconds: 45°30° E
+    .replace(/°\s*(\d{1,2})\s*°(?=\s*(?:E|W|EAST|WEST)\b)/g,(m,mi)=>"°"+mi+"'")
+    // OCR inside a bearing: S read for 5, L / I / | read for 1
+    .replace(/(\d)S(?=\s*°)/g,(m,a)=>a+"5")
+    .replace(/([°'])(\s*)S(\d)(?=\s*['"])/g,(m,a,b,c)=>a+b+"5"+c)
+    .replace(/([°'])(\s*)(\d)S(?=\s*['"])/g,(m,a,b,c)=>a+b+c+"5")
+    .replace(/([°'])(\s*)[LI|](\d)(?=\s*['"])/g,(m,a,b,c)=>a+b+"1"+c)
+    .replace(/([°'])(\s*)(\d)[LI|](?=\s*['"])/g,(m,a,b,c)=>a+b+c+"1")
+    // S read as 5 at the head of a bearing: "THENCE 5 44°29' E"
+    .replace(/(\bTHENCE\s+(?:RUN\s+)?)5(?=\s+\d{1,2}\s*°[^A-Z]{0,12}[EW]\b)/g,(m,a)=>a+"S")
+    // an all-letter OCR distance with a decimal point: "LOO.OO FEET" -> 100.00
+    .replace(/\b([OLI]{1,5}\.[OLI]{1,3})\s+(?=(?:FEET|FOOT|FT)\b)/g,(m,t)=>t.replace(/O/g,"0").replace(/[LI]/g,"1")+" ")
+    // feet and inches: "100 FEET 6 INCHES", "50'-3\"" -> decimal feet
+    .replace(/\b(\d{1,6}(?:\.\d+)?)\s*(?:FEET|FOOT|FT\.?)\s*(?:AND\s+|,\s*)?(\d{1,2}(?:\.\d+)?)\s*(?:INCH(?:ES)?\b|IN\.)(?!\s*(?:DIA|PIPE|IRON|REBAR|ROD\b|PIN\b|BOLT|CAP|OAK|PINE|TREE))/g,
+      (m,f,i)=>parseFloat(i)<12?(+(parseFloat(f)+parseFloat(i)/12).toFixed(4))+" FEET ":m)
+    .replace(/(?<!°\s{0,2})\b(\d{1,6}(?:\.\d+)?)\s*'\s*-\s*(\d{1,2}(?:\.\d+)?)\s*"/g,
+      (m,f,i)=>parseFloat(i)<12?(+(parseFloat(f)+parseFloat(i)/12).toFixed(4))+" FEET ":m)
     // — 4.7.25 additions —
     // "148.9, more or less, feet": the qualifier split the number from its unit
     .replace(/(\d(?:\.\d+)?)\s*,?\s*MORE\s+OR\s+LESS\s*,?\s*(?=(?:FEET|FOOT|FT|CHAINS?|RODS?|POLES?|PERCH(?:ES)?|VARAS?|LINKS?|METERS?|METRES?)\b)/g,"$1 ")
@@ -10711,7 +10788,7 @@ function _deedNormalize(t){
     .replace(/(?<![A-Z])([0-9O]*\d[0-9O]*)(?=\s*['"°])/g,t=>t.replace(/O/g,"0"))
     .replace(/([°'])(\s*)(O{1,2})(?=\s*["'])/g,(m,a,b,o)=>a+b+o.replace(/O/g,"0"))
     // 45d30m00s / 45D30M
-    .replace(/(\d{1,3})\s*D\s*(\d{1,2})\s*M\s*(\d{1,2}(?:\.\d+)?)\s*S\b/g,"$1°$2'$3\"")
+    .replace(/(\d{1,3})\s*D\s*(\d{1,2})\s*M\s*(\d{1,2}(?:\.\d+)?)\s*S(?=\s*[EW]\b|\b)/g,"$1°$2'$3\"")
     .replace(/(\d{1,3})\s*D\s*(\d{1,2})\s*M\b(?!ETER|ETRE|ILE)/g,"$1°$2'")
     // — OCR dialect repairs (each learned from a real misread) —
     // doubled quadrant letters: "WW"/"EE"/"NN"/"SS" -> single
@@ -10896,12 +10973,28 @@ function _deedAzToBearingStr(az){
    (OCR lowercase L) became a 0 ft line with no warning. Null makes it a loud
    partial the reviewer has to fix. */
 function _deedParseDistance(seg){const r=_deedParseDistance0(seg);return (r&&r.ft>0)?r:null;}
+/* 4.8.11: a width or an offset that sits in the same call ("along the 60 foot
+   right of way … for 250.52 feet", "30 feet from and parallel to the
+   centerline, 100.00 feet") was taken as the course distance. Those figures
+   are set aside first — but only when a real distance is still left, so a call
+   whose only number is such a figure reads exactly as before. */
 function _deedParseDistance0(seg){
+  const w=seg.replace(/\b\d{1,4}(?:\.\d+)?\s*(?:-\s*)?(?:FOOT|FEET|FT\.?|')\s*(?:WIDE\b|IN\s+WIDTH\b|(?:WIDE\s+)?(?:RIGHT[- ]OF[- ]WAY|R\s*\/\s*W\b|EASEMENT|ROADWAY|ROAD\b|STREET|ALLEY|STRIP|LANE\b|HIGHWAY)|(?:(?:NORTH|SOUTH|EAST|WEST)[A-Z]*\s+)?(?:OF|FROM)\s+AND\s+PARALLEL\b)/g," ");
+  if(w!==seg){ const r=_deedParseDistance1(w); if(r&&r.ft>0) return r; }
+  return _deedParseDistance1(seg);
+}
+function _deedParseDistance1(seg){
   const scrub=seg.replace(/\b(RADIUS|DELTA|CENTRAL ANGLE|ARC)\s*(?:OF|LENGTH|=|:)?\s*[\d.]+\s*(?:FEET|FT|')?/g," ");
   // Prefer an explicitly introduced course distance over incidental widths,
   // acreage references, coordinates, and monument dimensions earlier in the
   // same call: "50 feet wide ... for a distance of 815.11 feet".
   const explicit=scrub.match(/(?:FOR\s+)?(?:AN?\s+)?(?:HORIZONTAL\s+|GROUND\s+|ACTUAL\s+)?(?:ARC\s+)?DISTANCE\s+(?:OF\s+)?(\d{1,6}(?:\.\d+)?)\s*(FEET|FOOT|FT\.?|YARDS?|YDS?\.?|CHAINS?|CH\.?|RODS?|POLES?|PERCH(?:ES)?|LINKS?|LKS?\.?|VARAS?|VRS?\.?|METERS?|METRES?|M\b)/);
+  // 4.8.11: "20 rods and 5 feet" — the feet were dropped
+  const compF=scrub.match(/(\d{1,4}(?:\.\d+)?)\s*(CHAINS?|POLES?|RODS?|PERCHES?)\s*AND\s+(\d{1,3}(?:\.\d+)?)\s*(?:FEET|FOOT|FT)\b/);
+  if(compF && (!explicit || compF.index===explicit.index+explicit[0].indexOf(explicit[1]))){
+    const base=_DEED_UNIT_FT[compF[2].replace(/S$/,"")]||_DEED_UNIT_FT[compF[2]]||16.5;
+    return {val:compF[1]+" "+compF[2].toLowerCase()+" "+compF[3]+" feet", unit:compF[2], ft:parseFloat(compF[1])*base+parseFloat(compF[3])};
+  }
   if(explicit){
     const u=explicit[2].replace(/\./g,"");
     const key=u.replace(/S$/,"");
@@ -10944,7 +11037,22 @@ function parseDeedText(txt){
   // ", AND NORTH…" chains two courses in one clause ("the following 2
   // courses and distances") — it starts a new segment. The comma guard keeps
   // "4 chains and 20 links" intact.
-  const segs=t.split(/\bTHENCE\b|\bTHEN\b|;|\bRUNNING\b|,\s*AND\s+(?=(?:NORTH|SOUTH|N\s|S\s|DUE\b))|(?:\b\d{1,2}\s*[.)]\s+(?=[NSDC]))/).map(x=>x.trim()).filter(x=>x.length>3);
+  const segs0=t.split(/\bTHENCE\b|\bTHEN\b|;|\bRUNNING\b|,\s*AND\s+(?=(?:NORTH|SOUTH|N\s|S\s|DUE\b))|(?:\b\d{1,2}\s*[.)]\s+(?=[NSDC]))/).map(x=>x.trim()).filter(x=>x.length>3);
+  /* 4.8.11 — "the following courses: N 10° E 100 feet, N 12°30' E 50 feet and
+     N 15° E 75 feet". Only the first course was read and the rest vanished.
+     A segment is divided at a comma / AND that is followed by a bearing, and
+     the division is kept only if EVERY piece is a complete quadrant bearing
+     with a distance. Curve data, reference bearings, and record-vs-measured
+     pairs are never divided. */
+  const _courseOK=s=>{const b=_deedParseBearing(s);
+    return !!(b&&!b.card&&_deedParseDistance(s.replace(/\b(N|S|NORTH|SOUTH)\s*\.?\s*\d{1,2}[^EW]{0,24}?(E|W|EAST|WEST)\b/," ")));};
+  const segs=segs0.flatMap(seg=>{
+    if(/\bCURV|\bRADIUS\b|\bCHORD\b|\bARC\b|\bBEARS?\b|DEFLECT|\bANGLE\b|\bDELTA\b|\bSPIRAL\b|\bRECORD|\bDEED\b|\bPLAT\b|\bMEAS/.test(seg)) return [seg];
+    const parts=seg.split(/(?:,|\bAND\b)\s*(?=(?:N|S|NORTH|SOUTH)\s*\.?\s*\d{1,2}(?:\.\d+)?\s*(?:°|DEGREES?\b|-\s*\d)[^,;]{0,40}?\b(?:E|W|EAST|WEST)\b)/).map(x=>x.trim()).filter(x=>x.length>3);
+    if(parts.length<2) return [seg];
+    if(parts.slice(1).some(p=>/\b(?:FROM|WITNESS|REFERENCE)\b/.test(p))) return [seg];
+    return parts.every(_courseOK)?parts:[seg];
+  });
   const calls=[];
   // pending-curve state must never survive from a previous read — a stale
   // parked curve contaminates the next deed's first curve
@@ -11078,9 +11186,17 @@ function parseDeedText(txt){
         if(ccvAz===undefined)ccvAz=null;
       }
       let radAz=null;
-      const rb=seg.match(/(?:RADIUS(?:\s+POINT)?|CENTER\s+OF\s+WHICH|RADIAL\s+LINE)\s+BEARS\s+/);
+      const rb=seg.match(/(?:RADIUS(?:\s+POINT)?(?:\s+OF\s+WHICH)?|CENTER(?:\s+POINT)?\s+OF\s+WHICH|RADIAL\s+LINE)\s+BEARS\s+/);
       if(rb){const rbB=_deedParseBearing(seg.slice(rb.index+rb[0].length,rb.index+rb[0].length+70));
         if(rbB&&!rbB.card)radAz=_deedBearingToAz(rbB);}
+      // 4.8.11: "…the radius point of which bears N 40° W 500.00 feet" — the
+      // figure after the radial bearing is the radius. It used to be left for
+      // the line parser, which published the radial as a straight course.
+      let rLen=null;
+      if(rb&&!rm&&radAz!=null){
+        const rl=seg.slice(rb.index+rb[0].length).match(/^[^,;]{0,40}?\b(?:E|W|EAST|WEST)\b[\s,]*(?:A\s+DISTANCE\s+OF\s+)?(\d{1,6}(?:\.\d+)?)\s*(?:FEET|FOOT|FT\b|')/);
+        if(rl)rLen=parseFloat(rl[1]);
+      }
       const am=seg.match(/ARC\s*(?:LENGTH|DISTANCE)?\s*(?:OF|=|:)?\s*(\d{1,6}(?:\.\d+)?)/);
       const delta=_deedParseAngle(seg,"(?:DELTA|CENTRAL)");
       // chord: bearing+dist appearing after CHORD
@@ -11118,7 +11234,7 @@ function parseDeedText(txt){
       // bearing and radius LENGTH but no arc/delta yet. Park a pending radial
       // curve; the following "along said curve, delta, arc" segment completes it.
       if(radAz!=null && rm==null && am==null && delta==null && !chB){
-        const rlen=seg.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
+        const rlen=seg.match(/DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/)||(rLen!=null?[null,String(rLen)]:null);
         if(rlen){
           window.__pendCurve={radius:parseFloat(rlen[1]),chordB:null,chordD:null,
             concaveAz:null,radialAz:radAz,delta:null,arc:null,_radialEntry:true};
@@ -11135,7 +11251,7 @@ function parseDeedText(txt){
         window.__pendCurve=null; window.__pendRadial=null;
         return;
       }
-      if((dir||ccvAz!=null||radAz!=null||window.__pendRadial!=null||chB||delta!=null||pc.chordB||pc.chordD!=null||pc.radius!=null)&&(rm||chD||chB||pc.radius!=null||pc.chordD!=null||pc.chordB)){
+      if((dir||ccvAz!=null||radAz!=null||window.__pendRadial!=null||chB||delta!=null||pc.chordB||pc.chordD!=null||pc.radius!=null)&&(rm||rLen!=null||chD||chB||pc.radius!=null||pc.chordD!=null||pc.chordB)){
         // Last-resort recovery: a leading "bearing … distance … to the
         // beginning of" line course in THIS segment is emitted before the
         // curve, no matter which upstream path was taken.
@@ -11158,13 +11274,13 @@ function parseDeedText(txt){
         // the arc length even when the word ARC is omitted. Previously this
         // stayed null and the following straight course could be swallowed as
         // curve continuation data.
-        if(arcV==null&&(chB||chD||rm||pc.chordB||pc.chordD!=null||pc.radius!=null)){
+        if(arcV==null&&rLen==null&&(chB||chD||rm||pc.chordB||pc.chordD!=null||pc.radius!=null)){
           const dm=seg.match(/(?:A\s+)?(?<!CHORD\s+(?:LENGTH\s+)?)DISTANCE\s+OF\s+(\d{1,6}(?:\.\d+)?)/);
           if(dm)arcV=parseFloat(dm[1]);
         }
         calls.push({type:"curve",_si,_pob:_POBARR,
           _pt:/POINT OF TANGENCY/.test(seg),_pcPrev:_pcPrev,dir:dir||null,
-          radius:rm?parseFloat(rm[1]):(pc.radius!=null?pc.radius:null),
+          radius:rm?parseFloat(rm[1]):(rLen!=null?rLen:(pc.radius!=null?pc.radius:null)),
           arc:arcV!=null?arcV:(pc.arc!=null?pc.arc:null),
           delta:delta!=null?delta:(pc.delta!=null?pc.delta:null),
           chordB:chB||pc.chordB||null,
@@ -11175,11 +11291,17 @@ function parseDeedText(txt){
         window.__pendRadial=null;window.__pendCurve=null;
         return;
       }
+      // 4.8.11: an arc length or central angle that could not be assembled into
+      // a curve must not fall through and be read as a straight course
+      if((am||delta!=null)&&!(begIdx>0)){
+        calls.push({type:"partial",_si,_pob:_POBARR,bearing:null,dist:null,unit:null,raw:seg.slice(0,140)});
+        return;
+      }
     }
     // "…to a point on a curve from which the radius bears S 39°E 614.58
     // feet" arrives in the LINE segment before the curve — park the radial
     if(!/\bCURVE\b[\s\S]*RADIUS\s*(?:OF|=|:)/.test(seg)){
-      const rb0=seg.match(/(?:RADIUS(?:\s+POINT)?|CENTER\s+OF\s+WHICH|RADIAL\s+LINE)\s+BEARS\s+/);
+      const rb0=seg.match(/(?:RADIUS(?:\s+POINT)?(?:\s+OF\s+WHICH)?|CENTER(?:\s+POINT)?\s+OF\s+WHICH|RADIAL\s+LINE)\s+BEARS\s+/);
       if(rb0){const rbB0=_deedParseBearing(seg.slice(rb0.index+rb0[0].length,rb0.index+rb0[0].length+70));
         if(rbB0&&!rbB0.card)window.__pendRadial=_deedBearingToAz(rbB0);}
     }
@@ -11201,6 +11323,8 @@ function parseDeedText(txt){
       if(/EXTERIOR\s+ANGLE/.test(seg))return "exterior";
       if(/DEFLECT/.test(seg))return "deflection";
       if(/\bANGLE\s+OF\b|\bTURN(?:ING|ED)?\s+AN?\s+ANGLE\b/.test(seg))return "angle";
+      // 4.8.11: "turn 89°30' left and run 420 feet" — no word ANGLE at all
+      if(/\bTURN(?:ING|ED|S)?\b[^0-9;]{0,24}\d{1,3}(?:\.\d+)?\s*(?:°|DEGREES?)[\s\S]{0,40}?\b(?:RIGHT|LEFT)\b/.test(seg))return "angle";
       return null;
     })();
     if(/DEFLECT/.test(seg)||bareDefl||angKind){
@@ -11228,7 +11352,7 @@ function parseDeedText(txt){
         const wcd=seg.match(/\b(NORTH|SOUTH)?(EAST|WEST)?ERLY\b/);
         const wAz=wcd&&(wcd[1]||wcd[2])?{NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[(wcd[1]||"")+(wcd[2]||"")]:null;
         calls.push({type:"line",_si,_pob:_POBARR,
-          defl:{ang:dAng,dir:dDir||null,kind:angKind||"deflection",srcAng:_deedParseAngle(seg,/DEFLECT/.test(seg)?"DEFLECT(?:ION)?[^0-9]{0,50}?":(angKind?"ANGLE[^0-9]{0,20}?":"")),assumed:angAssumed},
+          defl:{ang:dAng,dir:dDir||null,kind:angKind||"deflection",srcAng:_deedParseAngle(seg,/DEFLECT/.test(seg)?"DEFLECT(?:ION)?[^0-9]{0,50}?":((angKind&&/\bANGLE\b/.test(seg))?"ANGLE[^0-9]{0,20}?":"")),assumed:angAssumed},
           wordAz:(wAz!==undefined?wAz:null),bearing:null,dist:dd.ft,unit:dd.unit,rawVal:dd.val,raw:seg.slice(0,140)});
         return;
       }
@@ -11262,26 +11386,33 @@ function parseDeedText(txt){
       }
     }
     // "thence continue Southeasterly, 270.08 feet" — deflect zero
-    if(!b&&/\bCONTINUE\b/.test(seg)){
+    const _continueOn=()=>{
+      if(b||!/\bCONTINUE\b/.test(seg)) return false;
       const dd0=_deedParseDistance(seg);
-      if(dd0){
-        const wc0=seg.match(/\b(NORTH|SOUTH)?(EAST|WEST)?ERLY\b/);
-        const wAz0=wc0&&(wc0[1]||wc0[2])?{NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[(wc0[1]||"")+(wc0[2]||"")]:null;
-        calls.push({type:"line",_si,_pob:_POBARR,defl:{ang:0,dir:"R"},wordAz:(wAz0!==undefined?wAz0:null),bearing:null,dist:dd0.ft,unit:dd0.unit,rawVal:dd0.val,raw:seg.slice(0,140)});
-        return;
-      }
-    }
+      if(!dd0) return false;
+      const wc0=seg.match(/\b(NORTH|SOUTH)?(EAST|WEST)?ERLY\b/);
+      const wAz0=wc0&&(wc0[1]||wc0[2])?{NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[(wc0[1]||"")+(wc0[2]||"")]:null;
+      calls.push({type:"line",_si,_pob:_POBARR,defl:{ang:0,dir:"R"},wordAz:(wAz0!==undefined?wAz0:null),bearing:null,dist:dd0.ft,unit:dd0.unit,rawVal:dd0.val,raw:seg.slice(0,140)});
+      return true;
+    };
+    if(_continueOn()) return;
     // A word-cardinal is only a course direction if it comes BEFORE the
     // distance ("due West 410.00 feet"). Direction after the number is
     // locator prose ("131.50 feet northerly along East Avenue"), not a call.
     if(b&&b.card&&typeof b.idx==="number"){
       const di=seg.search(/\d/);
+      // 4.8.11: "CONTINUE SOUTH 210 FEET" / "RUN DUE …" — a run-verb in front of
+      // the cardinal is not mid-sentence prose; measure from the end of it
+      var _lead=(seg.match(/^\s*(?:AND\s+)?(?:(?:RUN(?:NING)?|CONTINU(?:E|ING)|PROCEED(?:ING)?|GO(?:ING)?|EXTEND(?:ING)?)\s+){1,2}/)||[""])[0].length;
       // "(running) 50 feet East ..." — a run-verb + distance + cardinal at the
       // segment head is a real course, not "being 131.50 feet northerly" prose
       const runDistCard=/^\s*(?:RUN(?:NING)?\s+)?\d{1,6}(?:\.\d+)?\s*(?:FEET|FOOT|FT|YARDS?|CHAINS?|RODS?|POLES?|VARAS?)\s+(?:NORTH|SOUTH|EAST|WEST|DUE)\b/.test(seg);
       if(di>=0&&b.idx>di&&!runDistCard&&!b.due)b=null; // explicit DUE direction may follow offset/reference prose
-      else if(b&&!b.due&&b.idx>6&&!runDistCard)b=null; // bare cardinal mid-sentence = a street name
+      else if(b&&!b.due&&b.idx-_lead>6&&!runDistCard)b=null; // bare cardinal mid-sentence = a street name
     }
+    // 4.8.11: "continue along said South line 210 feet" — the cardinal was a
+    // line name, so the course carries on in the direction it was already going
+    if(_continueOn()) return;
     // "run Northeasterly, … 61.12 feet" — word-compass course; direction
     // must PRECEDE the distance or it's locator prose
     if(!b){
