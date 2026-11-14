@@ -13,7 +13,12 @@
       carried; what they did not carry must not be borrowed from the job that
       was open; State Plane jobs with no anchor must be recoverable from their
       own grid, landing exactly where the old version had them.
-   4. The real BAC.csv that exposed the missing anchor (4.8.13 copy).
+   4. Jobs on assumed coordinates (10000/10000) written by older versions: deleted and
+      reloaded from their anchor-less CSV copy, they get their anchor back from the
+      phone's anchor record — and never take another job's anchor for sharing a point.
+   5. Anchors older versions copied from the open job into a loaded one: set aside when
+      they are tied far from the job's points, flagged when tied at a shared point.
+   6. The real BAC.csv that exposed the missing anchor (4.8.13 copy).
    A field that is deliberately not round-tripped must be listed in NOT_KEPT
    with the reason — otherwise the test fails. */
 const fs=require('fs'),path=require('path');
@@ -50,6 +55,8 @@ function diffPoints(want,got){
     for(const k of Object.keys(p)) diff(p[k],g[k],ptTol(k),"point "+p.Point+"."+k,out);});
   return out;
 }
+// a call into a feature an older build may not have: a missing function counts as a failed check, not a crash
+const sr=(a,code)=>{ try{ return a.run(code); }catch(e){ return undefined; } };
 const boot=(storage)=>{const a=makeApp(html,storage||{}); if(a.loadError)throw a.loadError; a.run('loadData()'); return a;};
 const cap=a=>a.run('JSON.parse(JSON.stringify(_jobCapture()))');
 // another job, anchored far away with imagery, area labels and NGS marks — what a loaded file must never inherit
@@ -77,7 +84,9 @@ FIELDS.forEach(k=>{
 t("loaded CSV is its own job, not the one that was open", C.run('_jobIndex().length')===2&&c3.name==="COMPAT");
 
 console.log("— phone storage left by older versions opens with nothing lost —");
-const fixtures=fs.readdirSync(FX).filter(f=>/^\d.*\.json$/.test(f)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+const allFx=fs.readdirSync(FX).filter(f=>/^\d.*\.json$/.test(f)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}))
+  .map(f=>Object.assign({file:f},JSON.parse(fs.readFileSync(path.join(FX,f),'utf8'))));
+const fixtures=allFx.filter(x=>!x.kind||x.kind==="scenario").map(x=>x.file);
 for(const f of fixtures){
   const fx=JSON.parse(fs.readFileSync(path.join(FX,f),'utf8')), v=fx.version;
   let a,c; try{ a=boot(fx.storage); c=cap(a); }catch(e){ t(v+": opens", false, e.message); continue; }
@@ -133,6 +142,51 @@ for(const f of fixtures){
     t(v+" CSV: recovered anchor is where "+v+" had it", g&&Math.abs(g.lat-want.geoAnchor.lat)<1e-9&&Math.abs(g.lon-want.geoAnchor.lon)<1e-9&&g.E===want.geoAnchor.E&&g.N===want.geoAnchor.N,
       g&&[g.lat,g.lon,want.geoAnchor.lat,want.geoAnchor.lon]);
   }
+}
+
+console.log("— jobs on assumed coordinates keep their imagery —");
+for(const fx of allFx.filter(x=>x.kind==="local")){
+  const v=fx.version, want=fx.capture.geoAnchor;
+  const a=boot(fx.storage), id=sr(a,'_activeJobId');
+  const g0=sr(a,'JSON.parse(JSON.stringify(geoAnchor))');
+  t(v+" local: opens anchored where it was", g0&&!diff(want,g0,1e-12).length&&sr(a,'satOn'));
+  const e=sr(a,'_anchorBook().find(x=>x.id===_activeJobId)');
+  t(v+" local: its anchor is in the anchor record with 4 points", !!e&&e.fp.length===4&&!diff(want,e.a,1e-12).length, e&&e.fp);
+  sr(a,'confirmDialog=(m,cb)=>cb(true); _jobDelete('+JSON.stringify(id)+')');
+  t(v+" local: deleted permanently", !a.store['cl_job_'+id]);
+  sr(a,OTHER);   // an open job anchored somewhere else, tied at the same 10000/10000
+  loadCsv(a,fx.csv,"LOCALJOB.csv"); const c=cap(a);
+  t(v+" local: its old CSV copy has no anchor", !/"geoAnchor"/.test(fx.csv));
+  t(v+" local: reloaded from that CSV, the anchor comes back exactly", c.geoAnchor&&!diff(want,c.geoAnchor,1e-12).length&&c.satOn, c.geoAnchor&&[c.geoAnchor.lat,c.geoAnchor.lon,c.geoAnchor.E,c.geoAnchor.N]);
+  t(v+" local: with its imagery rotation and basemap", c.satRotNudge===fx.capture.satRotNudge&&c.satBasemap===(fx.capture.satBasemap||c.satBasemap), [c.satRotNudge,c.satBasemap]);
+  const b2=boot(a.store), c2=cap(b2);
+  t(v+" local: still anchored after save and reopen", c2.geoAnchor&&!diff(want,c2.geoAnchor,1e-12).length);
+  const f=boot({}); loadCsv(f,fx.csv,"LOCALJOB.csv");
+  t(v+" local: on a phone that never anchored it, no anchor is guessed", !sr(f,'geoAnchor')&&sr(f,'_gridZoneGuess().length')===0);
+}
+
+console.log("— anchors older versions copied from another job —");
+for(const fx of allFx.filter(x=>x.kind==="copied-anchor")){
+  const v=fx.version, a=boot(fx.storage), id=sr(a,'_activeJobId');
+  const st=sr(a,'({job:jobName,g:geoAnchor,sa:anchorSetAside&&{lat:anchorSetAside.lat,mi:anchorSetAside._miles},sat:satOn})');
+  t(v+" copied: the anchor 270 miles from the points is set aside, imagery off", !!st&&st.job==="OLDJOB"&&!st.g&&!!st.sa&&st.sa.lat===34.02&&st.sa.mi>=200&&!st.sat, st);
+  t(v+" copied: State Plane recovery is offered", sr(a,'_gridZoneGuess().some(h=>/^AL East/.test(h.z.name))'));
+  t(v+" copied: the copied anchor never enters the anchor record for this job", !sr(a,'_anchorBook().some(e=>e.id===_activeJobId)'));
+  sr(a,'saveData()'); const blob=JSON.parse(a.store['cl_job_'+id]);
+  t(v+" copied: saved with no anchor and the set-aside one kept", !blob.geoAnchor&&!!blob.anchorSetAside&&blob.anchorSetAside.lat===34.02);
+  t(v+" copied: its CSV copy keeps the set-aside anchor", /"anchorSetAside":\{/.test(sr(a,'_buildCSV()')||""));
+  const hid=sr(a,'(_jobIndex().find(j=>j.name==="HOUSE")||{}).id'); sr(a,'_jobOpen('+JSON.stringify(hid)+')');
+  t(v+" copied: the job it came from keeps its own anchor", sr(a,'!!geoAnchor&&geoAnchor.lat===34.02&&!anchorSetAside&&satOn'));
+}
+for(const fx of allFx.filter(x=>x.kind==="copied-local")){
+  const v=fx.version, a=boot(fx.storage), id=sr(a,'_activeJobId');
+  const hid=sr(a,'(_jobIndex().find(j=>j.name==="HOUSE")||{}).id');
+  t(v+" copied-local: tied at a real point, so the anchor stays", sr(a,'jobName==="FARM"&&!!geoAnchor&&!anchorSetAside'));
+  t(v+" copied-local: flagged as identical to HOUSE's anchor", (JSON.parse(a.store.cl_anchorTwinAck||"[]")).includes(id+"|"+hid));
+  t(v+" copied-local: flagged once, not every time", !sr(a,'_anchorAudit("open").twin'));
+  sr(a,'confirmDialog=(m,cb)=>cb(true); _jobDelete('+JSON.stringify(id)+')');
+  loadCsv(a,fx.csv,"FARM.csv");
+  t(v+" copied-local: reloaded, it does not take HOUSE's anchor for sharing 10000/10000", !sr(a,'geoAnchor'));
 }
 
 console.log("— BAC.csv, the real file (4.8.13 copy) —");

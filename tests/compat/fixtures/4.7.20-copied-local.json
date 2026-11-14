@@ -1,0 +1,98 @@
+{
+ "kind": "copied-local",
+ "version": "4.7.20",
+ "commit": "ef9a3b1",
+ "written": "2026-11-14",
+ "storage": {
+  "cl_version": "4.7.20",
+  "cl_job_jmwgwd53x0yuv9c": "{\"v\":1,\"id\":\"jmwgwd53x0yuv9c\",\"name\":\"HOUSE\",\"updatedAt\":1794690464542,\"points\":[{\"Point\":1,\"Northing\":10000,\"Easting\":10000,\"Elevation\":0,\"Type\":\"Setup\",\"Description\":\"\",\"Flag\":\"\"},{\"Point\":2,\"Northing\":10050,\"Easting\":10010,\"Elevation\":0,\"Type\":\"Shot\",\"Description\":\"\",\"Flag\":\"\"},{\"Point\":3,\"Northing\":10050,\"Easting\":10060,\"Elevation\":0,\"Type\":\"Shot\",\"Description\":\"\",\"Flag\":\"\"}],\"plotConnections\":[],\"polylines\":[],\"areaLabels\":[],\"deedPlot\":null,\"geoAnchor\":{\"lat\":34.02,\"lon\":-86,\"E\":10000,\"N\":10000,\"mx\":-9573476.208221527,\"my\":4031487.8537438456,\"conv\":-0.09324722369727886,\"zoneName\":\"AL East (0101)\",\"m2u\":3.2808333333333333},\"satOn\":true,\"satOpacity\":0.85,\"satRotNudge\":0,\"satBasemap\":\"esri\",\"units\":\"ft\",\"surveyMode\":\"2D\",\"distMode\":\"SD\",\"prismConstant\":0,\"combinedScaleFactor\":1,\"orientationOffset\":0,\"occupied\":1,\"ngsMarks\":[],\"ngsShow\":true,\"ppmEnabled\":false,\"ppmValue\":0,\"atmTempC\":15,\"atmPressHPa\":1013.25}",
+  "cl_jobs": "[{\"id\":\"jmwgwd53x0yuv9c\",\"name\":\"HOUSE\",\"updatedAt\":1794690464542,\"pts\":3,\"conns\":0,\"units\":\"ft\",\"records\":0},{\"id\":\"jmwgwd53y98im9t\",\"name\":\"FARM\",\"updatedAt\":1794690464542,\"pts\":4,\"conns\":0,\"units\":\"ft\",\"records\":0}]",
+  "cl_activeJob": "jmwgwd53y98im9t",
+  "cl_showLabels": "true",
+  "cl_showElev": "false",
+  "cl_lightMode": "false",
+  "cl_bearingMode": "az",
+  "cl_job_jmwgwd53y98im9t": "{\"v\":1,\"id\":\"jmwgwd53y98im9t\",\"name\":\"FARM\",\"updatedAt\":1794690464542,\"points\":[{\"Point\":1,\"Northing\":10000,\"Easting\":10000,\"Elevation\":0,\"Description\":\"CP\",\"Type\":\"Import\",\"Flag\":\"\",\"ih\":0},{\"Point\":2,\"Northing\":10300,\"Easting\":10000,\"Elevation\":0,\"Description\":\"\",\"Type\":\"Import\",\"Flag\":\"\",\"ih\":0},{\"Point\":3,\"Northing\":10300,\"Easting\":10250,\"Elevation\":0,\"Description\":\"\",\"Type\":\"Import\",\"Flag\":\"\",\"ih\":0},{\"Point\":4,\"Northing\":10000,\"Easting\":10250,\"Elevation\":0,\"Description\":\"\",\"Type\":\"Import\",\"Flag\":\"\",\"ih\":0}],\"plotConnections\":[],\"polylines\":[],\"areaLabels\":[],\"deedPlot\":null,\"geoAnchor\":{\"lat\":34.02,\"lon\":-86,\"E\":10000,\"N\":10000,\"mx\":-9573476.208221527,\"my\":4031487.8537438456,\"conv\":-0.09324722369727886,\"zoneName\":\"AL East (0101)\",\"m2u\":3.2808333333333333},\"satOn\":true,\"satOpacity\":0.85,\"satRotNudge\":0,\"satBasemap\":\"esri\",\"units\":\"ft\",\"surveyMode\":\"2D\",\"distMode\":\"SD\",\"prismConstant\":0,\"combinedScaleFactor\":1,\"orientationOffset\":0,\"occupied\":1,\"ngsMarks\":[],\"ngsShow\":true,\"ppmEnabled\":false,\"ppmValue\":0,\"atmTempC\":15,\"atmPressHPa\":1013.25}"
+ },
+ "csv": "Point,Northing,Easting,Elevation,Description,Type,Flag\n1,10000.0000,10000.0000,0.0000,CP,Import,\n2,10300.0000,10000.0000,0.0000,,Import,\n3,10300.0000,10250.0000,0.0000,,Import,\n4,10000.0000,10250.0000,0.0000,,Import,\n#CHAINLINK:{\"connections\":[],\"surveyMode\":\"2D\",\"units\":\"ft\",\"v\":\"4.7.20\",\"raw\":{\"1\":{\"ih\":0},\"2\":{\"ih\":0},\"3\":{\"ih\":0},\"4\":{\"ih\":0}}}\n",
+ "capture": {
+  "v": 1,
+  "id": "jmwgwd53y98im9t",
+  "name": "FARM",
+  "updatedAt": 1794690464543,
+  "points": [
+   {
+    "Point": 1,
+    "Northing": 10000,
+    "Easting": 10000,
+    "Elevation": 0,
+    "Description": "CP",
+    "Type": "Import",
+    "Flag": "",
+    "ih": 0
+   },
+   {
+    "Point": 2,
+    "Northing": 10300,
+    "Easting": 10000,
+    "Elevation": 0,
+    "Description": "",
+    "Type": "Import",
+    "Flag": "",
+    "ih": 0
+   },
+   {
+    "Point": 3,
+    "Northing": 10300,
+    "Easting": 10250,
+    "Elevation": 0,
+    "Description": "",
+    "Type": "Import",
+    "Flag": "",
+    "ih": 0
+   },
+   {
+    "Point": 4,
+    "Northing": 10000,
+    "Easting": 10250,
+    "Elevation": 0,
+    "Description": "",
+    "Type": "Import",
+    "Flag": "",
+    "ih": 0
+   }
+  ],
+  "plotConnections": [],
+  "polylines": [],
+  "areaLabels": [],
+  "deedPlot": null,
+  "geoAnchor": {
+   "lat": 34.02,
+   "lon": -86,
+   "E": 10000,
+   "N": 10000,
+   "mx": -9573476.208221527,
+   "my": 4031487.8537438456,
+   "conv": -0.09324722369727886,
+   "zoneName": "AL East (0101)",
+   "m2u": 3.2808333333333333
+  },
+  "satOn": true,
+  "satOpacity": 0.85,
+  "satRotNudge": 0,
+  "satBasemap": "esri",
+  "units": "ft",
+  "surveyMode": "2D",
+  "distMode": "SD",
+  "prismConstant": 0,
+  "combinedScaleFactor": 1,
+  "orientationOffset": 0,
+  "occupied": 1,
+  "ngsMarks": [],
+  "ngsShow": true,
+  "ppmEnabled": false,
+  "ppmValue": 0,
+  "atmTempC": 15,
+  "atmPressHPa": 1013.25
+ }
+}

@@ -1,0 +1,112 @@
+{
+ "kind": "copied-anchor",
+ "version": "4.8.13",
+ "commit": "577beb5",
+ "written": "2026-11-14",
+ "storage": {
+  "cl_version": "4.8.13",
+  "cl_legacyDone": "1",
+  "cl_job_jmwgwcvxo6b1a4s": "{\"v\":1,\"id\":\"jmwgwcvxo6b1a4s\",\"name\":\"HOUSE\",\"updatedAt\":1794690452652,\"points\":[{\"Point\":1,\"Northing\":5000,\"Easting\":5000,\"Elevation\":0,\"Type\":\"Setup\",\"Description\":\"\",\"Flag\":\"\"}],\"plotConnections\":[],\"polylines\":[],\"areaLabels\":[],\"deedPlot\":null,\"geoAnchor\":{\"lat\":34.02,\"lon\":-86,\"E\":5000,\"N\":5000,\"mx\":-9573476.208221527,\"my\":4031487.8537438456,\"conv\":-0.09324722369727886,\"zoneName\":\"AL East (0101)\",\"m2u\":3.2808333333333333},\"satOn\":true,\"satOpacity\":0.85,\"satRotNudge\":0,\"satBasemap\":\"esri\",\"units\":\"ft\",\"surveyMode\":\"2D\",\"distMode\":\"SD\",\"prismConstant\":0,\"combinedScaleFactor\":1,\"footKind\":\"us\",\"orientationOffset\":0,\"occupied\":1,\"ngsMarks\":[],\"ngsShow\":true,\"ppmEnabled\":false,\"ppmValue\":0,\"atmTempC\":15,\"atmPressHPa\":1013.25}",
+  "cl_jobs": "[{\"id\":\"jmwgwcvxphw1afj\",\"name\":\"OLDJOB\",\"updatedAt\":1794690452653,\"pts\":3,\"conns\":2,\"units\":\"ft\",\"records\":0},{\"id\":\"jmwgwcvxo6b1a4s\",\"name\":\"HOUSE\",\"updatedAt\":1794690452652,\"pts\":1,\"conns\":0,\"units\":\"ft\",\"records\":0}]",
+  "cl_activeJob": "jmwgwcvxphw1afj",
+  "cl_showLabels": "true",
+  "cl_showPtNames": "true",
+  "cl_showElev": "false",
+  "cl_lightMode": "false",
+  "cl_bearingMode": "az",
+  "cl_job_jmwgwcvxphw1afj": "{\"v\":1,\"id\":\"jmwgwcvxphw1afj\",\"name\":\"OLDJOB\",\"updatedAt\":1794690452653,\"points\":[{\"Point\":1,\"Northing\":1271228.583,\"Easting\":665013.9634,\"Elevation\":550.4,\"Description\":\"Start\",\"Type\":\"Setup\",\"Flag\":\"\",\"ih\":0},{\"Point\":2,\"Northing\":1271328.583,\"Easting\":665013.9634,\"Elevation\":550.4,\"Description\":\"PEE\",\"Type\":\"Shot\",\"Flag\":\"\",\"ih\":0,\"From\":1,\"InstReading\":\"0.0\",\"RawAz\":\"0°00'00\\\"\",\"TrueAz\":\"0°00'00\\\"\",\"HorizDist\":100},{\"Point\":4,\"Northing\":1271328.583,\"Easting\":664958.9634,\"Elevation\":550.4,\"Description\":\"\",\"Type\":\"Shot\",\"Flag\":\"\",\"ih\":0,\"From\":2,\"InstReading\":\"270.0\",\"RawAz\":\"270°00'00\\\"\",\"TrueAz\":\"270°00'00\\\"\",\"HorizDist\":55}],\"plotConnections\":[{\"from\":1,\"to\":2,\"style\":\"solid\"},{\"from\":2,\"to\":4,\"style\":\"solid\"}],\"polylines\":[],\"areaLabels\":[],\"deedPlot\":null,\"geoAnchor\":{\"lat\":34.02,\"lon\":-86,\"E\":5000,\"N\":5000,\"mx\":-9573476.208221527,\"my\":4031487.8537438456,\"conv\":-0.09324722369727886,\"zoneName\":\"AL East (0101)\",\"m2u\":3.2808333333333333},\"satOn\":true,\"satOpacity\":0.85,\"satRotNudge\":0,\"satBasemap\":\"esri\",\"units\":\"ft\",\"surveyMode\":\"2D\",\"distMode\":\"SD\",\"prismConstant\":0,\"combinedScaleFactor\":1,\"footKind\":\"us\",\"orientationOffset\":0,\"occupied\":1,\"ngsMarks\":[],\"ngsShow\":true,\"ppmEnabled\":false,\"ppmValue\":0,\"atmTempC\":15,\"atmPressHPa\":1013.25}"
+ },
+ "csv": "Point,Northing,Easting,Elevation,Description,Type,Flag\n1,1271228.5830,665013.9634,550.4000,Start,Setup,\n2,1271328.5830,665013.9634,550.4000,PEE,Shot,\n4,1271328.5830,664958.9634,550.4000,,Shot,\n#CHAINLINK:{\"connections\":[{\"from\":1,\"to\":2,\"style\":\"solid\"},{\"from\":2,\"to\":4,\"style\":\"solid\"}],\"surveyMode\":\"2D\",\"units\":\"ft\",\"v\":\"4.8.13\",\"raw\":{\"1\":{\"ih\":0},\"2\":{\"ih\":0,\"From\":1,\"InstReading\":\"0.0\",\"RawAz\":\"0°00'00\\\"\",\"TrueAz\":\"0°00'00\\\"\",\"HorizDist\":100},\"4\":{\"ih\":0,\"From\":2,\"InstReading\":\"270.0\",\"RawAz\":\"270°00'00\\\"\",\"TrueAz\":\"270°00'00\\\"\",\"HorizDist\":55}}}\n",
+ "capture": {
+  "v": 1,
+  "id": "jmwgwcvxphw1afj",
+  "name": "OLDJOB",
+  "updatedAt": 1794690452653,
+  "points": [
+   {
+    "Point": 1,
+    "Northing": 1271228.583,
+    "Easting": 665013.9634,
+    "Elevation": 550.4,
+    "Description": "Start",
+    "Type": "Setup",
+    "Flag": "",
+    "ih": 0
+   },
+   {
+    "Point": 2,
+    "Northing": 1271328.583,
+    "Easting": 665013.9634,
+    "Elevation": 550.4,
+    "Description": "PEE",
+    "Type": "Shot",
+    "Flag": "",
+    "ih": 0,
+    "From": 1,
+    "InstReading": "0.0",
+    "RawAz": "0°00'00\"",
+    "TrueAz": "0°00'00\"",
+    "HorizDist": 100
+   },
+   {
+    "Point": 4,
+    "Northing": 1271328.583,
+    "Easting": 664958.9634,
+    "Elevation": 550.4,
+    "Description": "",
+    "Type": "Shot",
+    "Flag": "",
+    "ih": 0,
+    "From": 2,
+    "InstReading": "270.0",
+    "RawAz": "270°00'00\"",
+    "TrueAz": "270°00'00\"",
+    "HorizDist": 55
+   }
+  ],
+  "plotConnections": [
+   {
+    "from": 1,
+    "to": 2,
+    "style": "solid"
+   },
+   {
+    "from": 2,
+    "to": 4,
+    "style": "solid"
+   }
+  ],
+  "polylines": [],
+  "areaLabels": [],
+  "deedPlot": null,
+  "geoAnchor": {
+   "lat": 34.02,
+   "lon": -86,
+   "E": 5000,
+   "N": 5000,
+   "mx": -9573476.208221527,
+   "my": 4031487.8537438456,
+   "conv": -0.09324722369727886,
+   "zoneName": "AL East (0101)",
+   "m2u": 3.2808333333333333
+  },
+  "satOn": true,
+  "satOpacity": 0.85,
+  "satRotNudge": 0,
+  "satBasemap": "esri",
+  "units": "ft",
+  "surveyMode": "2D",
+  "distMode": "SD",
+  "prismConstant": 0,
+  "combinedScaleFactor": 1,
+  "footKind": "us",
+  "orientationOffset": 0,
+  "occupied": 1,
+  "ngsMarks": [],
+  "ngsShow": true,
+  "ppmEnabled": false,
+  "ppmValue": 0,
+  "atmTempC": 15,
+  "atmPressHPa": 1013.25
+ }
+}

@@ -13,7 +13,7 @@ path to `index.html` as an optional argument and defaults to `./index.html`.
     node tests/kml-tests.js            # KML import and shifting one import
     node tests/jobmove-tests.js        # move / shift job
     node tests/app-smoke.js            # whole-app load test
-    node tests/compat-tests.js         # every saved field survives save/reopen and the CSV copy; jobs and CSVs from 10 older versions load whole
+    node tests/compat-tests.js         # every saved field survives save/reopen and the CSV copy; jobs and CSVs from older versions load whole; anchors survive and copied ones are caught
 
 All of them must pass (or match the expected table) before a new `index.html` ships.
 
@@ -22,7 +22,11 @@ All of them must pass (or match the expected table) before a new `index.html` sh
 `tests/compat/fixtures/<version>.json` hold the phone storage, the CSV copy and the
 job record that each listed older version (4.4.21 through 4.8.14) wrote for the same
 job (`tests/compat/scenario.js`), produced by running that version's own code from
-this repo's history. `BAC-4.8.13.csv` is a real CSV copy from the field.
+this repo's history. `BAC-4.8.13.csv` is a real CSV copy from the field. Fixtures with a suffix are other
+situations the same versions produced: `-local` (a job on assumed 10000/10000
+coordinates, anchored), `-copied-anchor` (a State Plane job that picked up another job's
+anchor when loaded from CSV), `-copied-local` (two local jobs sharing one anchor);
+their scenarios are in `tests/compat/scenarios-extra.js`.
 
 To add the version you are about to replace, add it to `VERSIONS` in
 `tests/compat/make-fixtures.js` and run `node tests/compat/make-fixtures.js` from the

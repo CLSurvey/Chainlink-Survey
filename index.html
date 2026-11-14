@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.14">
+<meta name="application-name" content="ChainLink-v4.8.15">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.14</title>
+<title>ChainLink Survey v4.8.15</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1190,7 +1190,7 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
   <div id="plotControls">
     <button id="plotControlsToggle" title="Hide map controls" aria-label="Hide map controls" aria-expanded="true" onclick="togglePlotControls()">HIDE</button>
     <!-- 4.7.36: pinch zooms; the panel carries imagery and the label cycle -->
-    <button id="btnSat" title="Satellite imagery on / off" aria-label="Satellite imagery on or off" onclick="toggleSatAndGps()" style="font-size:1.05rem;letter-spacing:0">🛰</button>
+    <button id="btnSat" title="Satellite imagery — tap: on / off · hold: imagery menu and re-anchor" aria-label="Satellite imagery on or off; hold for the imagery menu" onclick="toggleSatAndGps()" style="font-size:1.05rem;letter-spacing:0">🛰</button>
     <button id="btnLabels" title="Point labels: number → number + elevation → elevation" aria-label="Cycle point labels" onclick="cyclePointLabels()" style="letter-spacing:0">PT</button>
     <button title="Fit All" aria-label="Fit all" onclick="resetPlot()">FIT</button>
     <button title="Zoom to Occupied" aria-label="Locate occupied point" onclick="zoomToOccupied()">OCC</button>
@@ -1436,7 +1436,7 @@ html.light-mode .job-all-row{background:rgba(0,0,0,.03)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.14";
+const APP_VERSION = "4.8.15";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1943,7 +1943,8 @@ function _jobSummaryFrom(blob){
     pts: (blob.points||[]).length,
     conns: (blob.plotConnections||[]).length,
     units: blob.units||"ft",
-    records: recs.size
+    records: recs.size,
+    ank: blob.geoAnchor?_ankKey(blob.geoAnchor):null   // 4.8.15: spots one anchor shared by two jobs
   };
 }
 function _jobWriteBlob(blob){
@@ -1979,6 +1980,7 @@ function _jobCapture(){
     areaLabels: JSON.parse(JSON.stringify(((typeof _areaLabels!=="undefined"&&_areaLabels)||[]).map(l=>({E:l.E,N:l.N,label:l.label,ptNums:l.ptNums,u:l.u,arcSigs:l.arcSigs||[]})))),
     deedPlot: deed,
     geoAnchor: (typeof geoAnchor!=="undefined"&&geoAnchor)?JSON.parse(JSON.stringify(geoAnchor)):null,
+    anchorSetAside: (typeof anchorSetAside!=="undefined"&&anchorSetAside)?JSON.parse(JSON.stringify(anchorSetAside)):null,
     satOn: !!satOn,
     satOpacity: typeof satOpacity==="number"?satOpacity:0.85,
     satRotNudge: typeof satRotNudge==="number"?satRotNudge:0,
@@ -2016,6 +2018,7 @@ function _jobApply(blob){
   footKind=blob.footKind==="intl"?"intl":"us";
   orientationOffset=blob.orientationOffset||0;
   if(typeof geoAnchor!=="undefined") geoAnchor=blob.geoAnchor||null;
+  anchorSetAside=blob.anchorSetAside||null;
   if(blob.geoAnchor&&isFinite(blob.geoAnchor.lat)) _lsSet("cl_lastPlace",JSON.stringify({lat:+(+blob.geoAnchor.lat).toFixed(4),lon:+(+blob.geoAnchor.lon).toFixed(4)}));
   if(typeof satOn!=="undefined"){
     satOn=!!blob.satOn && !!blob.geoAnchor;
@@ -2053,6 +2056,7 @@ function _jobApply(blob){
   _activeJobId=blob.id||_activeJobId;
   _jobRamLive=true;
   _undoRestore(_activeJobId);   // 4.8.10: bring this job's undo history back
+  try{ _anchorAudit("open"); }catch(e){}
 }
 function _jobCommitActive(){
   if(!_jobRamLive || !_activeJobId) return true;
@@ -2075,6 +2079,7 @@ function _jobPersistFromRam(){
   _jobPendingNew=false;
   _jobRamLive=true;
   _jobSaveOk=true;
+  try{ _anchorBookMaybe(); }catch(e){}
   try{ if(typeof _saveFailClear==="function") _saveFailClear(); }catch(e){}
   return true;
 }
@@ -2141,7 +2146,7 @@ function _jobDelete(id,after){
   // 4.7.26: map was self-mapping, so a job name with < went into the dialog as raw HTML
   const safe=String(name).replace(/[&<>]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[ch]));
   // 4.8.14: only reached from All saved jobs → Delete permanently
-  confirmDialog("Delete “"+safe+"” permanently? Its points, lines, deed, anchor and undo history are removed from this phone. The CSV copy in your save folder is not touched. This cannot be undone.", yes=>{
+  confirmDialog("Delete “"+safe+"” permanently? Its points, lines, deed and undo history are removed from this phone. The CSV copy in your save folder is not touched — load it again and its imagery anchor comes back. This cannot be undone.", yes=>{
     if(!yes){ if(after)after(); return; }
     _lsRemove(_jobBlobKey(id)); _undoDrop(id); _jobUnhide(id);
     _jobIndexSet(_jobIndex().filter(j=>j.id!==id));
@@ -2204,6 +2209,7 @@ function _stageNewJobScratch(){
   selectedPoint=null;currentPoint=null;
   if(typeof selectedConn!=="undefined")selectedConn=null;
   if(typeof geoAnchor!=="undefined") geoAnchor=null;
+  anchorSetAside=null;
   if(typeof satOn!=="undefined"){ satOn=false; satRotNudge=0; }
   if(typeof _deedPlot!=="undefined") _deedPlot=null;
   try{ stopLiveGps(); }catch(e){}
@@ -2312,7 +2318,7 @@ function _startNewJob(jn,N,E,Z,deferSetup,noStart){
            Type:"Setup",Description:"Start",Flag:"",ih:0}];
   undoStack=[];_snapshots=[];_redoStack=[];pointCounter=noStart?1:2;plotConnections=[];currentPoint=noStart?null:points[0];
   _polylines=[];
-  recentShots=[];tempGeom=[];tempIntersections=[];_areaLabels=[];geoAnchor=null;satOn=false;satRotNudge=0;stopLiveGps();_deedPlot=null;
+  recentShots=[];tempGeom=[];tempIntersections=[];_areaLabels=[];geoAnchor=null;anchorSetAside=null;satOn=false;satRotNudge=0;stopLiveGps();_deedPlot=null;
   jobName=jn;
   saveData();
   updateStatus();plotPoints();
@@ -2360,6 +2366,7 @@ function loadData() {
   try { _waybackRestore(); } catch(e){}
   try { _lsRemove("cl_gisParcels"); _lsRemove("cl_parcelSources"); } catch(e){}
   _jobMigrateFromLegacy();
+  try{ _anchorBookBuild(); }catch(e){}
   const _jid=_lsGet("cl_activeJob")||(_jobIndex()[0]||{}).id||null;
   const _blob=_jid?_jobReadBlob(_jid):null;
   if(_blob){
@@ -2492,7 +2499,7 @@ function _buildCSV(){
   // restored from its CSV copy comes back whole — not as points with no place on the map
   try{
     const b=_jobCapture(), j={};
-    ["geoAnchor","satOn","satOpacity","satRotNudge","satBasemap","areaLabels","ngsMarks","ngsShow","distMode","prismConstant",
+    ["geoAnchor","anchorSetAside","satOn","satOpacity","satRotNudge","satBasemap","areaLabels","ngsMarks","ngsShow","distMode","prismConstant",
      "combinedScaleFactor","footKind","orientationOffset","occupied","ppmEnabled","ppmValue","atmTempC","atmPressHPa"]
       .forEach(k=>{ const v=b[k]; if(v!==undefined&&v!==null&&!(Array.isArray(v)&&!v.length)) j[k]=v; });
     meta.job=j;
@@ -4448,6 +4455,7 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
       const J=(embeddedMeta&&embeddedMeta.job)||{};
       const A=J.geoAnchor;
       geoAnchor=(A&&isFinite(A.lat)&&isFinite(A.lon)&&isFinite(A.E)&&isFinite(A.N))?A:null;
+      anchorSetAside=(J.anchorSetAside&&isFinite(J.anchorSetAside.lat))?J.anchorSetAside:null;
       satOn=!!J.satOn&&!!geoAnchor;
       satRotNudge=typeof J.satRotNudge==="number"?J.satRotNudge:0;
       if(typeof J.satOpacity==="number") satOpacity=J.satOpacity;
@@ -4479,6 +4487,7 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
         }
       }catch(e){_deedPlot=null;}
     }
+    const _aud=_anchorAudit("csv");
     saveData();
     const _gridZones=geoAnchor?[]:_gridZoneGuess();
     showResult("\u2713 Loaded",[
@@ -4488,7 +4497,8 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
       ...(dups.length?[{lbl:"⚠ Renumbered:",val:dups.length+" repeated point #"+(dups.length===1?"":"s")+" ("+dups.slice(0,6).join(", ")+(dups.length>6?", …":"")+")"}]:[]),
       ...(noZ?[{lbl:"⚠ No elevation:",val:noZ+" point"+(noZ===1?"":"s")+" had a blank elevation — set to 0"}]:[]),
       ...(typeof _deedPlot!=="undefined"&&_deedPlot?[{lbl:"Deed:",val:"plotted deed restored"}]:[]),
-      ...(geoAnchor?[{lbl:"Imagery:",val:"anchor restored ("+_esc(geoAnchor.zoneName||"")+")"+(satOn?" — ON":"")}]:[]),
+      ...(geoAnchor?[{lbl:"Imagery:",val:(_aud&&_aud.fromBook?"anchor restored from this phone's anchor record (last anchored as “"+_esc(_aud.fromBook)+"”)":"anchor restored ("+_esc(geoAnchor.zoneName||"")+")")+(satOn?" — ON":"")}]:[]),
+      ...(_aud&&_aud.setAside?[{lbl:"⚠ Imagery:",val:"the file's anchor was "+_aud.setAside+" miles from its points and has been set aside"}]:[]),
       ...(!geoAnchor&&_gridZones.length?[{lbl:"Imagery:",val:"this file has no anchor, but its coordinates look like State Plane — tap Anchor to place it from them"}]:[]),
     ],(!geoAnchor&&_gridZones.length)?[{txt:"🛰 Anchor from grid coordinates…",cls:"ok",fn:()=>_satSetupFlow()}]:[]);
   }catch(err){alert("Load error: "+err.message)}
@@ -14721,6 +14731,7 @@ function deedPlotterMenu(){
    visual context ONLY — never measure against it. */
 
 let geoAnchor=null;          // {lat,lon,E,N,mx,my,conv,zoneName,m2u}
+let anchorSetAside=null;      // 4.8.15: an anchor that did not belong to this job's points, kept so it can be put back
 let satOn=false, satOpacity=0.85, satRotNudge=0, satBasemap="esri";
 /* Wayback = Esri's archive of every World Imagery release since Feb 2014.
    The release number is the time parameter in the tile path, so a historical
@@ -14988,6 +14999,7 @@ function _setAnchor(lat,lon,zone,E,N){
   const m=_ll2merc(lat,lon);
   const p=_projForward(lat,lon,zone);
   geoAnchor={lat,lon,E,N,mx:m.mx,my:m.my,conv:p.conv,zoneName:zone.name,m2u:_m2u()};
+  anchorSetAside=null; _anchorPendingBook=true;
   _lsSet("cl_lastPlace",JSON.stringify({lat:+lat.toFixed(4),lon:+lon.toFixed(4)}));   // 4.8.14: ranks State Plane zone guesses
   _jobZoneCache=null;
   try{ _ensureLiveGps(); }catch(e){}   // anchored -> marker on by default
@@ -15785,6 +15797,138 @@ function _basemapMenu(){
   });
 }
 
+/* ── 4.8.15: ANCHOR CHECKS AND THE ANCHOR BOOK ───────────────────────────
+   An anchor ties one job point to a place on the earth. Two things went wrong with
+   anchors before 4.8.14: loading a CSV as a new job kept the anchor of the job that
+   was open (so a saved job could carry another job's place), and the CSV copy never
+   held an anchor at all (so a job restored from it came back with none).
+   - _anchorAudit runs whenever a job is opened or loaded. An anchor tied more than a
+     mile from every point cannot be this job's: it is set aside (kept, announced, and
+     can be put back) instead of drawing imagery somewhere else. An anchor identical
+     to a different job's is flagged once — older versions made such copies.
+   - The anchor book (cl_anchorBook) records each job's anchor with a fingerprint of
+     its points. A job that comes back without an anchor — deleted and reloaded from
+     a CSV copy written before 4.8.14, on assumed coordinates where nothing else can
+     place it — gets its anchor back when at least three of its points are exactly
+     where they were when it was anchored, including the point it was tied at. */
+let _anchorPendingBook=false;
+function _ankKey(a){ return a?[(+a.lat).toFixed(7),(+a.lon).toFixed(7),(+a.E).toFixed(3),(+a.N).toFixed(3)].join(","):null; }
+function _anchorTieMiles(A,pts){
+  if(!A||!pts||!pts.length)return null;
+  let best=Infinity;
+  for(const p of pts){ if(!isFinite(p.Easting)||!isFinite(p.Northing))continue; const d=Math.hypot(p.Easting-A.E,p.Northing-A.N); if(d<best)best=d; }
+  if(!isFinite(best))return null;
+  return best/(A.m2u||_m2u())/1609.344;
+}
+function _ptKey(p){ return p.Point+":"+(+p.Northing).toFixed(3)+":"+(+p.Easting).toFixed(3); }
+function _anchorFp(pts){ return (pts||[]).filter(p=>isFinite(p.Northing)&&isFinite(p.Easting)).slice().sort((a,b)=>a.Point-b.Point).slice(0,12).map(_ptKey); }
+function _anchorBook(){ try{ const a=JSON.parse(_lsGet("cl_anchorBook")||"[]"); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function _anchorBookPut(id,name,A,pts,extra){
+  if(!A||!pts||!pts.length)return;
+  const mi=_anchorTieMiles(A,pts); if(mi==null||mi>1)return;            // never record a misplaced anchor
+  const fp=_anchorFp(pts), book=_anchorBook().filter(e=>e.id!==id);
+  book.unshift(Object.assign({id,name:name||"survey",fp,a:A,at:Date.now()},extra||{}));
+  _lsSet("cl_anchorBook",JSON.stringify(book.slice(0,200)));
+}
+function _anchorBookBuild(){
+  if(_lsGet("cl_anchorBookV1")==="1")return;
+  const idx=_jobIndex(); let changed=false;
+  idx.slice().reverse().forEach(r=>{
+    const b=_jobReadBlob(r.id); if(!b)return;
+    if(r.ank===undefined){ r.ank=b.geoAnchor?_ankKey(b.geoAnchor):null; changed=true; }
+    if(b.geoAnchor)_anchorBookPut(b.id,b.name,b.geoAnchor,b.points||[],{rot:b.satRotNudge||0,base:b.satBasemap||null,op:b.satOpacity||null});
+  });
+  if(changed)_jobIndexSet(idx);
+  _lsSet("cl_anchorBookV1","1");
+}
+// after a save: record a new anchor, and keep a young job's fingerprint growing to 12 points
+function _anchorBookMaybe(){
+  if(!geoAnchor||!_activeJobId)return;
+  const e=_anchorBook().find(x=>x.id===_activeJobId);
+  if(_anchorPendingBook||!e||e.fp.length<Math.min(12,points.length)||_ankKey(e.a)!==_ankKey(geoAnchor)){
+    _anchorPendingBook=false;
+    _anchorBookPut(_activeJobId,jobName,geoAnchor,points,{rot:satRotNudge||0,base:satBasemap||null,op:satOpacity||null});
+  }
+}
+function _anchorFromBook(){
+  if(points.length<3)return null;
+  const have=new Set(points.map(_ptKey)), book=_anchorBook();
+  const matched=e=>Array.isArray(e.fp)?e.fp.filter(k=>have.has(k)).length:0;
+  let best=null;
+  book.forEach(e=>{
+    if(!e||!e.a||!Array.isArray(e.fp))return;
+    if(!points.some(p=>Math.abs(p.Easting-e.a.E)<0.01&&Math.abs(p.Northing-e.a.N)<0.01))return;   // the tie point must be in this job
+    const n=matched(e);
+    if(n<3)return;
+    if(!best||n>best.n||(n===best.n&&e.at>best.e.at))best={e,n};
+  });
+  if(!best)return null;
+  // shared: the same anchor is recorded for a job with different points (an older version's copy).
+  // The same job recorded twice (deleted and reloaded) is not shared.
+  const k=_ankKey(best.e.a);
+  return {e:best.e,shared:book.some(e=>e!==best.e&&e.a&&_ankKey(e.a)===k&&matched(e)<3)};
+}
+function _anchorTwin(){
+  if(!geoAnchor)return null;
+  const k=_ankKey(geoAnchor);
+  const r=_jobIndex().find(j=>j.id!==_activeJobId&&j.ank===k);
+  if(!r)return null;
+  // the same place for the same points is not a copy (a job saved twice)
+  const b=_jobReadBlob(r.id), mine=new Set(points.map(_ptKey));
+  if(b&&(b.points||[]).filter(p=>mine.has(_ptKey(p))).length>=Math.min(3,points.length))return null;
+  return r;
+}
+function _anchorAudit(ctx){
+  const out={};
+  if(geoAnchor){
+    const mi=_anchorTieMiles(geoAnchor,points);
+    if(mi!=null&&mi>1){
+      anchorSetAside=Object.assign(JSON.parse(JSON.stringify(geoAnchor)),{_miles:Math.round(mi)});
+      geoAnchor=null; satOn=false; try{_jobZoneCache=null;}catch(e){}
+      out.setAside=Math.round(mi);
+      if(ctx==="open")try{ _notify("This job's imagery anchor was "+Math.round(mi)+" miles from its points — an older version copied it from another job. It has been set aside. Tap the satellite button to anchor this job."); }catch(e){}
+    }else{
+      const tw=_anchorTwin();
+      if(tw){
+        let ack=[]; try{ack=JSON.parse(_lsGet("cl_anchorTwinAck")||"[]");}catch(e){}
+        const key=_activeJobId+"|"+tw.id;
+        if(!ack.includes(key)){
+          ack.push(key); _lsSet("cl_anchorTwinAck",JSON.stringify(ack.slice(-200)));
+          out.twin=tw.name;
+          try{ _notify("This job's imagery anchor is identical to “"+(tw.name||"another job")+"”'s. Older versions copied anchors between jobs — if the imagery is not under your points, hold the satellite button and re-anchor."); }catch(e){}
+        }
+      }
+    }
+  }
+  if(!geoAnchor){
+    const hit=_anchorFromBook();
+    if(hit&&!hit.shared){
+      geoAnchor=JSON.parse(JSON.stringify(hit.e.a)); satOn=true; anchorSetAside=null;
+      if(typeof hit.e.rot==="number")satRotNudge=hit.e.rot;
+      if(hit.e.base&&typeof _BASEMAPS!=="undefined"&&_BASEMAPS[hit.e.base])satBasemap=hit.e.base;
+      if(typeof hit.e.op==="number")satOpacity=hit.e.op;
+      try{_jobZoneCache=null;}catch(e){}
+      out.fromBook=hit.e.name||"this job";
+      if(ctx==="open"){
+        try{ _notify("Imagery anchor restored — this job was anchored on this phone before, as “"+(hit.e.name||"this job")+"”."); }catch(e){}
+        setTimeout(()=>{ try{ if(_jobRamLive&&geoAnchor)saveData(); }catch(e){} },0);
+      }
+    }else if(hit&&hit.shared){ out.bookShared=hit.e.name; }
+  }
+  try{_syncSatBtn();}catch(e){} try{_ensureLiveGps();}catch(e){}
+  return out;
+}
+/* hold the satellite button for the imagery menu (re-anchor, basemap, history) */
+function _satHoldInit(){
+  const b=document.getElementById("btnSat"); if(!b||b._hold)return; b._hold=true;
+  let tm=null;
+  const go=()=>{ tm=null; window._satHeld=true; try{ if(navigator.vibrate)navigator.vibrate(15); }catch(e){} satelliteMenu(); };
+  b.addEventListener("pointerdown",()=>{ window._satHeld=false; clearTimeout(tm); tm=setTimeout(go,550); });
+  ["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>{ clearTimeout(tm); tm=null; }));
+  b.addEventListener("contextmenu",e=>e.preventDefault());
+}
+try{ if(document.readyState!=="loading")setTimeout(_satHoldInit,0); else document.addEventListener("DOMContentLoaded",_satHoldInit); }catch(e){}
+
 /* 4.8.14 — ANCHORING FROM THE JOB'S OWN STATE PLANE COORDINATES.
    Grid coordinates fix the job exactly once the zone is known, with no GPS at a point.
    The zone is the hard part: the same pair of numbers is valid State Plane in many
@@ -15854,9 +15998,27 @@ function _gridAnchorByState(hits){
   });
 }
 function _satSetupFlow(){
+  // 4.8.15: an anchor that was set aside can be put back — the user knows the job
+  if(anchorSetAside){
+    const sa=anchorSetAside;
+    openModal((modal,close)=>{
+      modal.innerHTML="<h2>🛰 Anchor imagery</h2><p class='info'>This job had an anchor at "+(+sa.lat).toFixed(5)+", "+(+sa.lon).toFixed(5)+
+        " tied "+(sa._miles!=null?sa._miles+" miles":"far")+" from its points, so it was set aside — it most likely belongs to another job.</p>";
+      const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+      mk("Anchor this job now","ok",()=>{close();_satSetupFlowNew();});
+      mk("Put the set-aside anchor back anyway","",()=>{close();
+        const a=Object.assign({},sa); delete a._miles; geoAnchor=a; anchorSetAside=null; satOn=true; try{_jobZoneCache=null;}catch(e){}
+        saveData(); try{_syncSatBtn();}catch(e){} });
+      mk("Cancel","",close);
+    });
+    return;
+  }
+  _satSetupFlowNew();
+}
+function _satSetupFlowNew(){
   const hits=_gridZoneGuess();
   if(!hits.length){_satSetupPick();return;}
-  const near=hits.filter(h=>h.km!=null&&h.km<400);
+  const near=hits.filter(h=>h.km!=null&&h.km<150);
   openModal((modal,close)=>{
     modal.innerHTML="<h2>🛰 Anchor imagery</h2><p class='info'>This job's coordinates look like State Plane, so they can place it exactly — no GPS at a point. The same numbers fit "+
       (hits.length===1?"one zone":hits.length+" zones in different states")+", so first say which one.</p>";
@@ -16037,6 +16199,7 @@ document.addEventListener("visibilitychange",()=>{ try{_syncWakeLock();}catch(e)
 document.addEventListener("pointerdown",()=>{ try{_syncWakeLock();}catch(e){} },{passive:true,capture:true});
 
 function toggleSatAndGps(){
+  if(window._satHeld){window._satHeld=false;return;}   // 4.8.15: a hold opened the menu instead
   if(!geoAnchor){_satSetupFlow();return;} // not anchored yet — run setup
   satOn=!satOn;
   _ensureLiveGps();   // marker is independent of imagery — it stays on
@@ -16047,9 +16210,11 @@ function toggleSatAndGps(){
 function satelliteMenu(){
   if(!geoAnchor){_satSetupFlow();return;}
   openModal((modal,close)=>{
-    modal.innerHTML="<h2>🛰 Satellite Imagery</h2><p class='info'>"+geoAnchor.zoneName+
-      " · anchor "+geoAnchor.lat.toFixed(5)+", "+geoAnchor.lon.toFixed(5)+"</p>";
+    const _tp=points.find(p=>Math.abs(p.Easting-geoAnchor.E)<0.01&&Math.abs(p.Northing-geoAnchor.N)<0.01);
+    modal.innerHTML="<h2>🛰 Satellite Imagery</h2><p class='info'>"+_esc(geoAnchor.zoneName||"")+
+      " · anchor "+geoAnchor.lat.toFixed(5)+", "+geoAnchor.lon.toFixed(5)+(_tp?" · tied at point "+_tp.Point:"")+"</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    mk("📡 Re-anchor this job","blue",()=>{close();_satSetupFlow();});
     mk(satOn?"Hide imagery":"Show imagery",satOn?"":"ok",()=>{satOn=!satOn;saveData();_syncSatBtn();close();});
     const sl=(label,val,min,max,step,set)=>{
       const wrap=document.createElement("div");
@@ -16104,10 +16269,11 @@ function satelliteMenu(){
        ()=>{if(_gpsWatchId!=null){_lsSet("cl_gpsLive","off");stopLiveGps();}
             else{_lsSet("cl_gpsLive","on");_ensureLiveGps();}
             close();plotPoints();});
-    mk("📡 Re-anchor / GPS again","blue",()=>{close();_satSetupFlow();});
     mk("Remove anchor & imagery","danger",()=>{
       confirmDialog("Remove the imagery anchor? (Coordinates are not changed.)",yes=>{
-        if(!yes)return;geoAnchor=null;satOn=false;satRotNudge=0;saveData();});
+        if(!yes)return;geoAnchor=null;satOn=false;satRotNudge=0;
+        try{ _lsSet("cl_anchorBook",JSON.stringify(_anchorBook().filter(e=>e.id!==_activeJobId))); }catch(e){}   // removed on purpose: don't bring it back
+        saveData();});
       close();});
     mk("Done","",close);
   });

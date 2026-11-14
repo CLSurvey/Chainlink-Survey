@@ -1,0 +1,89 @@
+{
+ "kind": "local",
+ "version": "4.4.21",
+ "commit": "8686e98",
+ "written": "2026-11-14",
+ "storage": {
+  "cl_version": "4.4.21",
+  "cl_points": "[{\"Point\":1,\"Northing\":10000,\"Easting\":10000,\"Elevation\":100,\"Type\":\"Setup\",\"Description\":\"CP1\",\"Flag\":\"\"},{\"Point\":2,\"Northing\":10120.55,\"Easting\":10000,\"Elevation\":100.5,\"Type\":\"Shot\",\"Description\":\"IPF\",\"Flag\":\"\",\"From\":1,\"HorizDist\":120.55},{\"Point\":3,\"Northing\":10120.55,\"Easting\":10088.31,\"Elevation\":101,\"Type\":\"Shot\",\"Description\":\"IPF\",\"Flag\":\"\",\"From\":1},{\"Point\":4,\"Northing\":10000,\"Easting\":10088.31,\"Elevation\":100.2,\"Type\":\"Shot\",\"Description\":\"IPS\",\"Flag\":\"\",\"From\":1}]",
+  "cl_connections": "[{\"from\":1,\"to\":2,\"style\":\"solid\"},{\"from\":2,\"to\":3,\"style\":\"solid\"},{\"from\":3,\"to\":4,\"style\":\"solid\"},{\"from\":4,\"to\":1,\"style\":\"solid\"}]",
+  "cl_polylines": "[]",
+  "cl_orientOffset": "0",
+  "cl_surveyMode": "2D",
+  "cl_distMode": "SD",
+  "cl_prismK": "0",
+  "cl_csf": "1",
+  "cl_jobName": "LOCALJOB",
+  "cl_units": "ft",
+  "cl_showLabels": "true",
+  "cl_showElev": "false",
+  "cl_lightMode": "false",
+  "cl_bearingMode": "az",
+  "cl_areaLabels": "[]",
+  "cl_geoAnchor": "{\"lat\":34.0012,\"lon\":-85.8123,\"E\":10000,\"N\":10000,\"mx\":-9552581.539799629,\"my\":4028963.1579539403,\"conv\":0.011762056305439717,\"zoneName\":\"AL East (0101)\",\"m2u\":3.2808333333333333}",
+  "cl_satOn": "true",
+  "cl_satOpacity": "0.85",
+  "cl_satRot": "0.4",
+  "cl_satBase": "esri",
+  "cl_deedPlot": ""
+ },
+ "csv": "Point,Northing,Easting,Elevation,Description,Type,Flag\n1,10000.0000,10000.0000,100.0000,CP1,Setup,\n2,10120.5500,10000.0000,100.5000,IPF,Shot,\n3,10120.5500,10088.3100,101.0000,IPF,Shot,\n4,10000.0000,10088.3100,100.2000,IPS,Shot,\n#CHAINLINK:{\"connections\":[{\"from\":1,\"to\":2,\"style\":\"solid\"},{\"from\":2,\"to\":3,\"style\":\"solid\"},{\"from\":3,\"to\":4,\"style\":\"solid\"},{\"from\":4,\"to\":1,\"style\":\"solid\"}],\"surveyMode\":\"2D\",\"units\":\"ft\",\"v\":\"4.4.21\",\"raw\":{\"2\":{\"From\":1,\"HorizDist\":120.55},\"3\":{\"From\":1},\"4\":{\"From\":1}}}\n",
+ "capture": {
+  "name": "LOCALJOB",
+  "points": [
+   {
+    "Point": 1,
+    "Northing": 10000,
+    "Easting": 10000,
+    "Elevation": 100,
+    "Type": "Setup",
+    "Description": "CP1",
+    "Flag": ""
+   },
+   {
+    "Point": 2,
+    "Northing": 10120.55,
+    "Easting": 10000,
+    "Elevation": 100.5,
+    "Type": "Shot",
+    "Description": "IPF",
+    "Flag": "",
+    "From": 1,
+    "HorizDist": 120.55
+   },
+   {
+    "Point": 3,
+    "Northing": 10120.55,
+    "Easting": 10088.31,
+    "Elevation": 101,
+    "Type": "Shot",
+    "Description": "IPF",
+    "Flag": "",
+    "From": 1
+   },
+   {
+    "Point": 4,
+    "Northing": 10000,
+    "Easting": 10088.31,
+    "Elevation": 100.2,
+    "Type": "Shot",
+    "Description": "IPS",
+    "Flag": "",
+    "From": 1
+   }
+  ],
+  "geoAnchor": {
+   "lat": 34.0012,
+   "lon": -85.8123,
+   "E": 10000,
+   "N": 10000,
+   "mx": -9552581.539799629,
+   "my": 4028963.1579539403,
+   "conv": 0.011762056305439717,
+   "zoneName": "AL East (0101)",
+   "m2u": 3.2808333333333333
+  },
+  "satRotNudge": 0.4,
+  "satBasemap": "esri"
+ }
+}
