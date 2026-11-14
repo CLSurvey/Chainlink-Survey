@@ -1,6 +1,7 @@
 // 4.7.2 harness: turned-angle geometry + blunder detection.
 // 4.8.11: + 65 deed phrasings (one row per wording) and their geometry.
 // 4.8.12: + 19 real published descriptions from eight states, as printed.
+// 4.8.13: + bridging a gap, solving incomplete courses by closure and acreage, source tags.
 const fs=require('fs');
 const html=fs.readFileSync(process.argv[2]||'./index.html','utf8');
 global.window={};
@@ -11,7 +12,7 @@ M._compile('let units="ft";var window=global.window;'
   +html.slice(p1,p2)
   .replace(/function _deedSyncPoints[\s\S]*?\n}\n/,'function _deedSyncPoints(){}\n')
   .replace(/function _deedRemovePoints[\s\S]*?\n}\n/,'function _deedRemovePoints(){}\n')
-  +';module.exports={parseDeedText,parseDeedFigures,computeDeed,_deedBlunders,_deedArea,_deedBearingToAz,_deedAzToBearingStr};','h.js');
+  +';module.exports={parseDeedText,parseDeedFigures,computeDeed,_deedBlunders,_deedArea,_deedBearingToAz,_deedAzToBearingStr,_deedGapSolve,_deedGapApply,_deedSrcTag,_deedPolyCalls,_deedRevertCalls};','h.js');
 const P=M.exports;
 
 let pass=0,fail=0;
@@ -266,6 +267,88 @@ REAL.forEach(([n,src,txt,want,close,acres,kind])=>{
   t("KY: a THENCE call with no bearing and no distance is a review row, not dropped", ky.calls[0].type==="partial"&&/LAWSON/.test(ky.calls[0].raw), ky.calls[0]);
   const al=P.parseDeedFigures(REAL[0][2])[0];
   t("AL: 'TOWNSHIP ELEVEN (11) SOUTH, RANGE SIX (6) EAST' raises no false review row", al.calls.every(c=>c.type!=="partial"), al.calls.filter(c=>c.type==="partial").map(c=>c.raw));
+}
+
+console.log("— what the deed leaves out (4.8.13) —");
+{
+  const near=(a,b,t)=>Math.abs(a-b)<(t||0.01);
+  const brgAz=c=>P._deedBearingToAz(c.bearing);
+  const comp=calls=>P.computeDeed(calls,0,0,0);
+  const fg=calls=>{const f={calls,pobE:0,pobN:0,kind:"boundary",name:"B"};f.computed=comp(calls);return f;};
+  // 200 x 100 rectangle whose second side is a bounds call
+  const gapTxt='Begin; thence N 0-0-0 E 100 feet; thence with the creek to a stake; thence S 0-0-0 W 100 feet; thence N 90-0-0 W 200 feet to the point of beginning.';
+  const gc=P.parseDeedText(gapTxt), G=comp(gc);
+  t("the bounds call is still a review row in the calls", gc[1].type==="partial"&&gc.length===4, gc.map(c=>c.type));
+  t("the figure is bridged across it", !!G.gap&&G.gap.call===gc[1], G.gap);
+  t("bridge is S 90 E 200.00", G.gap&&near(G.gap.az,90,1e-6)&&near(G.gap.dist,200), G.gap&&[G.gap.az,G.gap.dist]);
+  t("corners after the gap land where the deed puts them", G.verts.length===5&&near(G.verts[2].E,200)&&near(G.verts[2].N,100)&&near(G.verts[3].E,200)&&near(G.verts[3].N,0), G.verts);
+  t("bridged figure holds 20,000 sq ft", near(Math.abs(P._deedArea(G)),20000,1), P._deedArea(G));
+  t("the bridging course is flagged, not passed off as a call", G.usable[1].gap===true&&P._deedSrcTag(G.usable[1])===" · bridged");
+  t("diagnostics say it is bridged and still list the unread course", codes(fg(gc)).includes("gap")&&codes(fg(gc)).includes("partial"), codes(fg(gc)));
+  const gd=P.parseDeedText(gapTxt.replace("with the creek to a stake","with the creek 150 feet to a stake")), Gd=comp(gd);
+  t("a stated distance is kept beside the bridged one", Gd.gap&&Gd.gap.hasDist&&near(Gd.gap.statedDist,150)&&near(Gd.gap.dist,200), Gd.gap);
+  const g2p=P.parseDeedText('Begin; thence N 0-0-0 E 100 feet; thence with the creek to a stake; thence with the road to a pin; thence N 90-0-0 W 200 feet to the point of beginning.');
+  t("two unread courses are not bridged automatically", !comp(g2p).gap&&g2p.filter(c=>c.type==="partial").length===2);
+  const gdf=P.parseDeedText('Begin; thence N 0-0-0 E 100 feet; thence with the creek to a stake; thence deflect 90 degrees to the right 100 feet; thence N 90-0-0 W 200 feet to the point of beginning.');
+  t("a gap followed by a deflection is left alone", !comp(gdf).gap);
+
+  console.log("— solve by closure —");
+  let s=P._deedGapSolve(gc,null);
+  t("one course with nothing: one answer, S 90 E 200", s.n===1&&s.solutions.length===1&&near(s.solutions[0].fills[0].az,90,1e-6)&&near(s.solutions[0].fills[0].dist,200)&&s.solutions[0].leaves<0.01, s);
+  const gcA=JSON.parse(JSON.stringify(gc)); P._deedGapApply(gcA,P._deedGapSolve(gcA,null).solutions[0]);
+  t("applied: a real course, tagged computed", gcA[1].type==="line"&&gcA[1].src.b==="C"&&gcA[1].src.d==="C"&&P._deedSrcTag(gcA[1])===" · computed"&&!!gcA[1].corrected, gcA[1]);
+  t("applied: closes with no bridge", comp(gcA).closeDist<0.01&&!comp(gcA).gap);
+  P._deedRevertCalls(gcA);
+  t("revert puts the deed's own call back", gcA[1].type==="partial"&&!gcA[1].src&&!gcA[1].corrected, gcA[1]);
+  const gb=P.parseDeedText(gapTxt.replace("with the creek to a stake","N 88-0-0 E to a stake"));
+  s=P._deedGapSolve(gb,null);
+  t("bearing only: first answer keeps the deed's bearing", s.solutions.length===2&&near(s.solutions[0].fills[0].az,88,1e-6)&&s.solutions[0].fills[0].srcB==null&&s.solutions[0].fills[0].srcD==="C", s.solutions[0]);
+  t("…distance 199.88, and it says what that leaves (6.98)", near(s.solutions[0].fills[0].dist,200*Math.cos(2*Math.PI/180))&&near(s.solutions[0].leaves,200*Math.sin(2*Math.PI/180)), [s.solutions[0].fills[0].dist,s.solutions[0].leaves]);
+  t("…second answer closes exactly and is marked as overriding the bearing", s.solutions[1].leaves<0.01&&s.solutions[1].fills[0].srcB==="C");
+  const gbA=JSON.parse(JSON.stringify(gb)); P._deedGapApply(gbA,P._deedGapSolve(gbA,null).solutions[0]);
+  t("…applied: only the distance is tagged", P._deedSrcTag(gbA[1])===" · distance computed"&&near(brgAz(gbA[1]),88,1e-6), [P._deedSrcTag(gbA[1]),gbA[1].bearing]);
+  s=P._deedGapSolve(gd,null);
+  t("distance only: first answer keeps 150 and computes the bearing, leaves 50", s.solutions.length===2&&near(s.solutions[0].fills[0].dist,150)&&near(s.solutions[0].fills[0].az,90,1e-6)&&near(s.solutions[0].leaves,50)&&s.solutions[0].fills[0].srcB==="C"&&s.solutions[0].fills[0].srcD==null, s.solutions[0]);
+  const mkc=(o)=>Object.assign({type:"partial",bearing:null,dist:null,raw:""},o);
+  const L=(az,d,pob)=>({type:"line",bearing:{q1:az===0||az===90?"N":"S",deg:az===0?0:az===90?90:az===180?0:90,min:0,sec:0,q2:az===0||az===90?"E":"W",_az:az},dist:d,unit:"FEET",rawVal:d,raw:"",_pob:!!pob});
+  const B=az=>({q1:"N",deg:0,min:0,sec:0,q2:"E",_az:az});
+  // square 100: N 100, E ?, S ?, W 100
+  s=P._deedGapSolve([L(0,100),mkc({bearing:B(90)}),mkc({bearing:B(180)}),L(270,100,true)],null);
+  t("two bearings, no distances: both are 100.00", s.solutions.length===1&&near(s.solutions[0].fills[0].dist,100)&&near(s.solutions[0].fills[1].dist,100)&&s.solutions[0].leaves<0.01, s);
+  s=P._deedGapSolve([L(0,100),mkc({bearing:B(90)}),mkc({dist:120}),L(270,100,true)],null);
+  t("a bearing and a distance: two answers, both close", s.solutions.length===2&&s.solutions.every(x=>x.leaves<0.01)&&near(s.solutions[0].fills[0].dist,100-Math.sqrt(4400))&&near(s.solutions[1].fills[0].dist,100+Math.sqrt(4400)), s.solutions.map(x=>x.fills.map(f=>[f.az,f.dist])));
+  s=P._deedGapSolve([L(0,100),mkc({bearing:B(90)}),mkc({dist:50}),L(270,100,true)],null);
+  t("…a distance too short to reach says so", s.solutions.length===0&&/too short/.test(s.why), s.why);
+  s=P._deedGapSolve([L(0,100),mkc({dist:100}),mkc({dist:100}),L(270,100,true)],null);
+  t("two distances, no bearings: two answers (east-then-south, south-then-east)", s.solutions.length===2&&s.solutions.every(x=>x.leaves<0.01)&&
+    s.solutions.some(x=>near(x.fills[0].az,90,1e-6)&&near(x.fills[1].az,180,1e-6))&&s.solutions.some(x=>near(x.fills[0].az,180,1e-6)&&near(x.fills[1].az,90,1e-6)), s.solutions.map(x=>x.fills.map(f=>f.az)));
+  // strip: N 100, E ?, S 100, W ?  — closure cannot split it, the acreage can
+  const strip=()=>[L(0,100),mkc({bearing:B(90)}),L(180,100),mkc({bearing:B(270),_pob:true})];
+  s=P._deedGapSolve(strip(),null);
+  t("parallel courses with no acreage: explains, does not guess", s.solutions.length===0&&/parallel/.test(s.why)&&/acreage/.test(s.why), s.why);
+  s=P._deedGapSolve(strip(),0.5);
+  t("parallel courses + 0.5 acre recited: both are 217.80", s.solutions.length===1&&near(s.solutions[0].fills[0].dist,217.8,0.01)&&near(s.solutions[0].fills[1].dist,217.8,0.01)&&near(s.solutions[0].acres,0.5,1e-4), s.solutions[0]);
+  // triangle: N 100, E ? , then a course with nothing back to the beginning; 0.25 acre
+  s=P._deedGapSolve([L(0,100),mkc({bearing:B(90)}),mkc({_pob:true})],0.25);
+  t("a bearing-only course and an empty one + 0.25 acre: distance 217.80, closing course computed", s.solutions.length===1&&near(s.solutions[0].fills[0].dist,217.8,0.01)&&near(s.solutions[0].fills[1].dist,Math.hypot(217.8,100),0.01)&&s.solutions[0].leaves<0.01, s.solutions[0]);
+  s=P._deedGapSolve([L(0,100),mkc({}),mkc({dist:50}),L(270,100,true)],null);
+  t("an empty course beside another incomplete one: explains", s.solutions.length===0&&/Closure cannot place both/.test(s.why), s.why);
+  s=P._deedGapSolve([L(0,100),mkc({}),mkc({}),mkc({}),L(270,100,true)],null);
+  t("three incomplete courses: asks for some to be filled in first", s.n===3&&s.solutions.length===0&&/More than two/.test(s.why));
+  t("nothing incomplete: nothing to solve", P._deedGapSolve([L(0,100),L(90,100),L(180,100),L(270,100,true)],null).n===0);
+
+  console.log("— source tags and field fill-ins —");
+  t("tags read plainly", P._deedSrcTag({src:{b:"A",d:"A"}})===" · assumed"&&P._deedSrcTag({src:{b:"F",d:"F"}})===" · field"&&P._deedSrcTag({src:{b:"C",d:"F"}})===" · bearing computed · distance field"&&P._deedSrcTag({})===""&&P._deedSrcTag({src:{}})==="");
+  const pl={name:"Creek",verts:[{E:0,N:0},{E:100,N:0},{E:100,N:100}],segs:[{type:"line"},{type:"line"}]};
+  let pc=P._deedPolyCalls(pl,false,0);
+  t("a polyline becomes one course per segment, tagged field", pc.length===2&&near(brgAz(pc[0]),90,1e-6)&&near(pc[0].dist,100)&&near(brgAz(pc[1]),0,1e-6)&&pc.every(c=>c.src.b==="F"&&c.src.d==="F"), pc);
+  pc=P._deedPolyCalls(pl,true,0);
+  t("reversed runs the other way", near(brgAz(pc[0]),180,1e-6)&&near(brgAz(pc[1]),270,1e-6), pc.map(brgAz));
+  t("the figure's swing is taken off", near(brgAz(P._deedPolyCalls(pl,false,10)[0]),80,1e-6));
+  const pa={name:"Road",verts:[{E:0,N:0},{E:100,N:0}],segs:[{type:"arc",centerE:50,centerN:-50,R:Math.hypot(50,50),dir:"cw"}]};
+  pc=P._deedPolyCalls(pa,false,0);
+  t("an arc segment becomes a curve by its chord", pc.length===1&&pc[0].type==="curve"&&pc[0].dir==="R"&&near(pc[0].chordD,100)&&near(P._deedBearingToAz(pc[0].chordB),90,1e-6)&&near(pc[0].radius,70.7107,0.001), pc[0]);
+  t("…and flips side when reversed", P._deedPolyCalls(pa,true,0)[0].dir==="L");
 }
 
 console.log("\n"+pass+" passed, "+fail+" failed");

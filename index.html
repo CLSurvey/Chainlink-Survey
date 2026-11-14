@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.12">
+<meta name="application-name" content="ChainLink-v4.8.13">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.12</title>
+<title>ChainLink Survey v4.8.13</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1414,6 +1414,11 @@ html:not(.light-mode) #workspacePanel{background:linear-gradient(180deg,rgba(18,
 .job-storage.is-full .job-storage-bar i{background:var(--danger,#e5484d)}
 .job-storage-tip{margin-top:6px;color:var(--text)}
 html.light-mode .job-storage{background:rgba(0,0,0,.03)}
+
+/* ── 4.8.13: deed call editor — source picker and fill-in tools ── */
+.deed-src-sel{width:100%;background:#111;color:var(--text,#ddd);border:1px solid #444;border-radius:6px;padding:9px;font-family:var(--font-ui);font-size:.86em;margin-bottom:6px}
+html.light-mode .deed-src-sel{background:#fff;color:#111;border-color:#bbb}
+.btn.deed-tool{font-size:.76em;min-height:40px;text-align:left;letter-spacing:.01em}
 </style>
 
 <script>
@@ -1423,7 +1428,7 @@ html.light-mode .job-storage{background:rgba(0,0,0,.03)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.12";
+const APP_VERSION = "4.8.13";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -11621,7 +11626,7 @@ function parseDeedText(txt){
 }
 
 /* Geometry: run calls from a POB with rotation; returns vertices + arcs + closure */
-function computeDeed(calls,pobE,pobN,rotDeg,_turnSide,_solve){
+function computeDeed(calls,pobE,pobN,rotDeg,_turnSide,_solve,_noGap){
   const rad=Math.PI/180;
   /* A described turn whose side is not stated ("an interior angle of 88°30'")
      has exactly two readings. A traverse turns consistently one way around a
@@ -11629,14 +11634,43 @@ function computeDeed(calls,pobE,pobN,rotDeg,_turnSide,_solve){
      kept — the deed itself picks the branch. Geometry is always produced, even
      when neither branch closes; the misclosure is reported, never hidden. */
   if(_turnSide===undefined&&calls.some(c=>c.type==="line"&&c.defl&&!c.defl.dir&&!c.tie)){
-    const R=computeDeed(calls,pobE,pobN,rotDeg,"R");
-    const L=computeDeed(calls,pobE,pobN,rotDeg,"L");
+    const R=computeDeed(calls,pobE,pobN,rotDeg,"R",undefined,_noGap);
+    const L=computeDeed(calls,pobE,pobN,rotDeg,"L",undefined,_noGap);
     const useR=R.closeDist<=L.closeDist;
     const best=useR?R:L;
     best.turnSide=useR?"R":"L";
     best.turnSideAlt=useR?L.closeDist:R.closeDist;
     best.turnSideAmbig=Math.abs(R.closeDist-L.closeDist)<0.05*Math.max(R.closeDist,L.closeDist,1);
     return best;
+  }
+  /* 4.8.13 — PLOT AROUND A GAP. When exactly one course of the boundary could not be
+     read and it is not the last one, leaving it out drew every corner after it in the
+     wrong place. The courses before it still run forward from the point of beginning,
+     and the courses after it are fixed by where the description ends, so the unread
+     course can only be the line between the two halves. It is put in as a "gap" course
+     (flagged, drawn dashed, never written into the deed's own calls) and the result
+     carries g.gap so every screen can say the figure was bridged. A gap whose following
+     course turns from it (a deflection, a tangent curve) is left alone: its direction
+     decides that course, and closure cannot give it. */
+  if(!_noGap){
+    const act=calls.filter(c=>c&&!c.tie&&!c.omit);
+    const parts=act.filter(c=>c.type==="partial");
+    if(parts.length===1){
+      const p=parts[0], nx=act[act.indexOf(p)+1];
+      const free=c=>c&&((c.type==="line"&&!c.defl&&(c.bearing||c.compassAz!=null))||(c.type==="curve"&&(c.chordB||c.radialAz!=null)));
+      if(free(nx)){
+        const g0=computeDeed(calls,pobE,pobN,rotDeg,_turnSide,_solve,true);
+        if(g0.closeDist>0.01&&!g0.verts.some(v=>v.skip)){
+          const az0=((g0.closeAz-rotDeg)%360+360)%360, bo=_deedAzToBrgObj(az0); bo._az=az0;
+          const gc={type:"line",gap:true,_si:p._si,_pob:false,bearing:bo,dist:g0.closeDist,unit:"FT",rawVal:g0.closeDist,raw:p.raw||""};
+          const g2=computeDeed(calls.map(c=>c===p?gc:c),pobE,pobN,rotDeg,_turnSide,_solve,true);
+          g2.gap={call:p,az:az0,dist:g0.closeDist,hasBearing:!!p.bearing,hasDist:p.dist!=null&&p.dist>0,
+                  statedAz:p.bearing?_deedBearingToAz(p.bearing):null,statedDist:(p.dist!=null&&p.dist>0)?p.dist:null};
+          return g2;
+        }
+        return g0;
+      }
+    }
   }
   let E=pobE,N=pobN,tangent=null;
   const _noDir=[];   // 4.8.12: curves whose length is known but whose direction is not
@@ -11772,7 +11806,7 @@ function computeDeed(calls,pobE,pobN,rotDeg,_turnSide,_solve){
     const nd=_noDir[0], tol=Math.max(0.5,nd.chLen*0.01);
     if(Math.abs(closeDist-nd.chLen)<=tol){
       const az=((Math.atan2(closeE,closeN)/rad)%360+360)%360;
-      const g2=computeDeed(calls,pobE,pobN,rotDeg,_turnSide,{call:nd.c,az});
+      const g2=computeDeed(calls,pobE,pobN,rotDeg,_turnSide,{call:nd.c,az},_noGap);
       if(g2.closeDist<=tol){ g2.curveSolved={az:((az-rotDeg)%360+360)%360,gap:closeDist}; return g2; }
     }
   }
@@ -11780,6 +11814,162 @@ function computeDeed(calls,pobE,pobN,rotDeg,_turnSide,_solve){
     precision:closeDist>0.001?Math.round(perim/closeDist):null,
     closeAz:closeDist>0.001?((Math.atan2(closeE,closeN)/rad)%360+360)%360:0,
     skipped:calls.length-usable.length};
+}
+/* ── 4.8.13: WHAT THE DEED LEAVES OUT ──────────────────────────────────
+   A value on a call is one of four things, and the app never lets one pass
+   for another:
+     Record    as written on the deed (no tag)
+     Computed  worked out by closure or from the recited acreage   src "C"
+     Assumed   the user's own judgement                            src "A"
+     Field     measured on the ground / taken from job points      src "F"
+   c.src = {b:<tag for the bearing>, d:<tag for the distance>}. */
+function _deedSrcTag(c){
+  if(!c)return "";
+  if(c.gap)return " · bridged";
+  const s=c.src; if(!s||(!s.b&&!s.d))return "";
+  const N={C:"computed",A:"assumed",F:"field"};
+  if(s.b&&s.d&&s.b===s.d)return " · "+N[s.b];
+  return (s.b?" · bearing "+N[s.b]:"")+(s.d?" · distance "+N[s.d]:"");
+}
+function _deedSrcTagShort(c){
+  if(!c)return "";
+  if(c.gap)return " bridged";
+  const s=c.src; if(!s||(!s.b&&!s.d))return "";
+  const N={C:"calc",A:"assumed",F:"field"}, k=(s.b&&s.d&&s.b!==s.d)?null:(s.b||s.d);
+  return k?" "+N[k]:(" brg "+N[s.b]+" dist "+N[s.d]);
+}
+/* Solve one or two incomplete courses. Everything else in the description is
+   taken as written, so the incomplete courses must add up to the vector R that
+   closes the figure:
+     one course                  its bearing and/or distance follow from R
+     two with bearings only      the two distances (bearing-bearing)
+     bearing only + distance only  line and circle: none, one or two answers
+     two with distances only     two circles: none or two answers
+   Where closure leaves one distance free (two parallel courses, or a course with
+   a bearing next to one with nothing), the recited acreage fixes it.
+   Returns {n, solutions:[{label,fills:[{i,az,dist,srcB,srcD}],leaves,acres}], why}. */
+function _deedGapSolve(calls,statedAcres){
+  const rad=Math.PI/180, out={n:0,solutions:[],why:null};
+  const act=(calls||[]).filter(c=>c&&!c.tie&&!c.omit);
+  const inc=act.filter(c=>c.type==="partial");
+  out.n=inc.length;
+  if(!inc.length)return out;
+  if(inc.length>2){out.why="More than two courses are incomplete. Fill some in from the deed or from the field first, then solve the last one or two.";return out;}
+  const free=c=>!c||c.type==="partial"||(c.type==="line"&&!c.defl&&(c.bearing||c.compassAz!=null))||(c.type==="curve"&&(c.chordB||c.radialAz!=null));
+  for(const p of inc){ if(!free(act[act.indexOf(p)+1])){out.why="The course after an incomplete one turns from it (a deflection angle or a tangent curve), so closure cannot fix its direction. Give that next course a bearing first.";return out;} }
+  const run=cs=>computeDeed(cs,0,0,0,undefined,undefined,true);
+  const g0=run(calls);
+  if(g0.verts.some(v=>v.skip)){out.why="Another course cannot be plotted yet (a curve or spiral is missing data). Complete it first.";return out;}
+  const RE=g0.closeE,RN=g0.closeN,RL=Math.hypot(RE,RN);
+  const azOf=(e,n)=>((Math.atan2(e,n)/rad)%360+360)%360;
+  const X=inc.map(p=>{const az=p.bearing?_deedBearingToAz(p.bearing):null;
+    return {p,i:calls.indexOf(p),az,d:(p.dist!=null&&p.dist>0)?p.dist:null,uE:az!=null?Math.sin(az*rad):0,uN:az!=null?Math.cos(az*rad):0};});
+  const mk=(az,dist)=>{const b=_deedAzToBrgObj(az);b._az=az;return {type:"line",bearing:b,dist,unit:"FT",rawVal:dist,raw:""};};
+  const trial=fills=>run(calls.map(c=>{const f=fills.find(q=>calls[q.i]===c);return f?mk(f.az,f.dist):c;}));
+  const finish=(label,fills)=>{
+    if(fills.some(f=>!(f.dist>0.0005)||!isFinite(f.dist)||!isFinite(f.az)))return false;
+    const g=trial(fills);
+    out.solutions.push({label,fills,leaves:g.closeDist,acres:_deedAc(Math.abs(_deedArea(g)))});
+    return true;
+  };
+  const areaRoots=build=>{
+    if(!(statedAcres>0))return 0;
+    const f=d=>{const fl=build(d);if(!fl||fl.some(q=>!(q.dist>0)))return null;return _deedAc(Math.abs(_deedArea(trial(fl))))-statedAcres;};
+    const dmax=Math.max(4*(g0.perim||0),2000), NN=800; let prev=null,pd=0,found=0;
+    for(let k=1;k<=NN&&found<2;k++){
+      const d=dmax*k/NN, v=f(d);
+      if(v!=null&&prev!=null&&((prev<0)!==(v<0))){
+        let lo=pd,hi=d,flo=prev;
+        for(let t=0;t<60;t++){const m=(lo+hi)/2,fm=f(m);if(fm==null)break;if((fm<0)===(flo<0)){lo=m;flo=fm;}else hi=m;}
+        const fl=build((lo+hi)/2);
+        if(fl&&finish("Distance set so the figure holds the recited "+statedAcres+" acres",fl))found++;
+      }
+      prev=v;pd=d;
+    }
+    return found;
+  };
+  if(X.length===1){
+    const x=X[0];
+    if(RL<0.01){out.why="The figure already closes without this course. Delete it if it is not a side of the tract.";return out;}
+    const azR=azOf(RE,RN);
+    if(x.az!=null){
+      finish("Keep the deed's bearing and compute the distance",[{i:x.i,az:x.az,dist:RE*x.uE+RN*x.uN,srcB:null,srcD:"C"}]);
+      finish("Compute both — closes exactly, but overrides the deed's bearing",[{i:x.i,az:azR,dist:RL,srcB:"C",srcD:"C"}]);
+    }else if(x.d!=null){
+      finish("Keep the deed's distance and compute the bearing",[{i:x.i,az:azR,dist:x.d,srcB:"C",srcD:null}]);
+      finish("Compute both — closes exactly, but overrides the deed's distance",[{i:x.i,az:azR,dist:RL,srcB:"C",srcD:"C"}]);
+    }else finish("Bearing and distance from closure",[{i:x.i,az:azR,dist:RL,srcB:"C",srcD:"C"}]);
+    return out;
+  }
+  const a=X[0], b=X[1], cross=(e1,n1,e2,n2)=>e1*n2-n1*e2;
+  const kind=x=>x.az!=null?"b":(x.d!=null?"d":"n"), ka=kind(a), kb=kind(b);
+  if(ka==="b"&&kb==="b"){
+    const det=cross(a.uE,a.uN,b.uE,b.uN);
+    if(Math.abs(det)>1e-6){
+      finish("Both distances from closure",[{i:a.i,az:a.az,dist:cross(RE,RN,b.uE,b.uN)/det,srcD:"C"},{i:b.i,az:b.az,dist:cross(a.uE,a.uN,RE,RN)/det,srcD:"C"}]);
+      if(!out.solutions.length)out.why="These two bearings cannot close the figure with forward distances — one of them is probably reversed.";
+    }else{
+      const dot=a.uE*b.uE+a.uN*b.uN;
+      const n=areaRoots(d=>[{i:a.i,az:a.az,dist:d,srcD:"C"},{i:b.i,az:b.az,dist:(RE*b.uE+RN*b.uN)-d*dot,srcD:"C"}]);
+      if(!n)out.why="The two incomplete courses are parallel, so closure alone cannot split the distance between them."+(statedAcres>0?" No split gives the recited "+statedAcres+" acres either.":" A recited acreage would settle it, and none was read from this deed.");
+    }
+    return out;
+  }
+  if((ka==="b"&&kb==="d")||(ka==="d"&&kb==="b")){
+    const B=ka==="b"?a:b, D=ka==="b"?b:a;
+    const pr=RE*B.uE+RN*B.uN, disc=pr*pr-(RL*RL-D.d*D.d);
+    if(disc<0){out.why="The stated distance on course "+(D.i+1)+" is too short to reach the line of course "+(B.i+1)+" — one of the two is misread.";return out;}
+    const roots=[pr-Math.sqrt(disc),pr+Math.sqrt(disc)].filter(t=>t>0.0005);
+    if(roots.length===2&&Math.abs(roots[0]-roots[1])<0.001)roots.pop();
+    roots.forEach((t,k)=>finish("Distance on course "+(B.i+1)+", bearing on course "+(D.i+1)+(roots.length>1?(k===0?" — shorter answer":" — longer answer"):""),
+      [{i:B.i,az:B.az,dist:t,srcD:"C"},{i:D.i,az:azOf(RE-t*B.uE,RN-t*B.uN),dist:D.d,srcB:"C"}]));
+    if(!out.solutions.length)out.why="Closure puts course "+(B.i+1)+" backwards along its bearing — check the calls around it.";
+    return out;
+  }
+  if(ka==="d"&&kb==="d"){
+    if(RL<1e-6||RL>a.d+b.d+1e-9||RL<Math.abs(a.d-b.d)-1e-9){out.why="These two distances cannot span the gap between the rest of the courses ("+RL.toFixed(2)+") — one of them is misread.";return out;}
+    const x0=(a.d*a.d-b.d*b.d+RL*RL)/(2*RL), h=Math.sqrt(Math.max(0,a.d*a.d-x0*x0)), eE=RE/RL, eN=RN/RL;
+    (h<0.0005?[1]:[1,-1]).forEach((s,k)=>{
+      const aE=x0*eE-s*h*eN, aN=x0*eN+s*h*eE;
+      finish("Both bearings from closure"+(h<0.0005?"":(k===0?" — first of two answers":" — second of two answers")),
+        [{i:a.i,az:azOf(aE,aN),dist:a.d,srcB:"C"},{i:b.i,az:azOf(RE-aE,RN-aN),dist:b.d,srcB:"C"}]);
+    });
+    return out;
+  }
+  if((ka==="b"&&kb==="n")||(ka==="n"&&kb==="b")){
+    const B=ka==="b"?a:b, Q=ka==="b"?b:a;
+    const n=areaRoots(d=>{const vE=RE-d*B.uE,vN=RN-d*B.uN;return [{i:B.i,az:B.az,dist:d,srcD:"C"},{i:Q.i,az:azOf(vE,vN),dist:Math.hypot(vE,vN),srcB:"C",srcD:"C"}];});
+    if(!n)out.why="Course "+(B.i+1)+" has a bearing but no distance and course "+(Q.i+1)+" has neither, so closure leaves one distance free."+(statedAcres>0?" No distance gives the recited "+statedAcres+" acres.":" A recited acreage would settle it, and none was read from this deed.");
+    return out;
+  }
+  out.why="One course has neither a bearing nor a distance and the other is incomplete too. Closure cannot place both — fill one in from the deed, the field, or two job points.";
+  return out;
+}
+/* Write a solution into the calls. It goes through the same patch record as a
+   blunder fix, so the deed's own wording is kept and "Revert to record" undoes it. */
+function _deedGapApply(calls,sol){
+  (sol&&sol.fills||[]).forEach(f=>{
+    const c=calls[f.i]; if(!c)return;
+    const patch={type:"line",dist:f.dist,unit:(typeof units!=="undefined"&&units==="m")?"M":"FT",rawVal:+f.dist.toFixed(3),defl:null,compassAz:null};
+    if(f.srcB||!c.bearing){const b=_deedAzToBrgObj(f.az);b._az=f.az;patch.bearing=b;}
+    const s={}; if(f.srcB)s.b=f.srcB; if(f.srcD)s.d=f.srcD; patch.src=s;
+    _deedPatchCall(c,{patch,what:"computed from closure"});
+  });
+}
+/* A drawn polyline as a run of courses (one per segment; arcs become curve calls by
+   chord). rot is the figure's swing, taken off so the courses are in the deed's basis. */
+function _deedPolyCalls(pl,rev,rot){
+  const V=rev?pl.verts.slice().reverse():pl.verts, S=rev?(pl.segs||[]).slice().reverse():(pl.segs||[]), out=[];
+  for(let k=0;k+1<V.length;k++){
+    const u=V[k],v=V[k+1],dE=v.E-u.E,dN=v.N-u.N,d=Math.hypot(dE,dN); if(d<0.005)continue;
+    const az=((Math.atan2(dE,dN)*180/Math.PI-(rot||0))%360+360)%360, bo=_deedAzToBrgObj(az); bo._az=az;
+    const s=S[k]||{type:"line"};
+    if(s.type==="arc"&&s.R>0&&s.R>=d/2){
+      const ccw=(s.dir==="ccw")!==!!rev;
+      out.push({type:"curve",dir:ccw?"L":"R",radius:s.R,arc:2*s.R*Math.asin(Math.min(1,d/(2*s.R))),delta:null,chordB:bo,chordD:d,concaveAz:null,radialAz:null,src:{b:"F",d:"F"},raw:""});
+    }else out.push({type:"line",bearing:bo,dist:d,unit:(typeof units!=="undefined"&&units==="m")?"M":"FT",rawVal:+d.toFixed(3),src:{b:"F",d:"F"},raw:""});
+  }
+  return out;
 }
 
 
@@ -11979,7 +12169,7 @@ function _deedBlunders(f,rotDeg){
   // — unreadable courses are reported first: they bound everything else —
   const partials=calls.filter(c=>c.type==="partial");
   if(partials.length)out.push({sev:"warn",code:"partial",
-    msg:partials.length+" course"+(partials.length===1?"":"s")+" could not be read and "+(partials.length===1?"was":"were")+" left out of the geometry",
+    msg:partials.length+" course"+(partials.length===1?"":"s")+" could not be read and "+(g.gap?"is bridged by closure":((partials.length===1?"was":"were")+" left out of the geometry")),
     detail:partials.map(c=>(c.raw||"").slice(0,60)).join(" | ")});
 
   // — assumed / resolved turn sides —
@@ -11989,6 +12179,12 @@ function _deedBlunders(f,rotDeg){
         msg:"course "+(i+1)+": a bare \u201cangle of "+(c.defl.srcAng!=null?c.defl.srcAng.toFixed(4).replace(/\.?0+$/,""):"?")+"\u00b0\u201d was read as an INTERIOR angle",
         detail:"the deed does not say interior, exterior or deflection \u2014 verify against the record"});
   });
+  if(g.gap)out.push({sev:"warn",code:"gap",
+    msg:"course "+((f.calls||[]).indexOf(g.gap.call)+1)+" is not fully on the deed — the figure is bridged across it",
+    detail:"drawn as "+_deedAzToBearingStr(g.gap.az)+" "+g.gap.dist.toFixed(2)+" "+U+
+      (g.gap.hasDist?" (the deed gives "+g.gap.statedDist.toFixed(2)+" "+U+")":"")+
+      (g.gap.hasBearing?" (the deed gives "+_deedAzToBearingStr(g.gap.statedAz)+")":"")+
+      " so the corners after it land where the deed puts them — solve it or fill it in from the call list"});
   if(g.curveSolved)out.push({sev:"info",code:"curve-solved",
     msg:"a curve with no stated direction was placed by closure",
     detail:"its chord was set on "+_deedAzToBearingStr(g.curveSolved.az)+", the only direction that closes the figure — check it against the plat"});
@@ -12959,7 +13155,9 @@ function _deedCallLabel(c,i){
     const usable=((c.arc!=null)||(c.delta!=null)||(c.chordD!=null))&&(c.dir||c.concaveAz!=null||c.radialAz!=null||c.chordB);
     return (i+1)+". Curve "+(c.dir==="L"?"LEFT":"RIGHT")+(c.radius?" R="+c.radius.toFixed(2):"")+(c.arc?" arc="+c.arc.toFixed(2):"")+(c.chordD?" ch="+c.chordD.toFixed(2):"")+(usable?"":"  ⚠ needs arc/chord/delta — tap");
   }
-  return (i+1)+". ⚠ incomplete — tap to fix";
+  // 4.8.13: say what the deed does give
+  return (i+1)+". ⚠ incomplete — "+(c&&c.bearing?_deedAzToBearingStr(_deedBearingToAz(c.bearing))+", no distance":
+    (c&&c.dist!=null&&c.dist>0?c.dist.toFixed(2)+" "+units+", no bearing":"no bearing or distance"))+" — tap";
 }
 function _deedReview(calls,opts){
   opts=opts||{};window._deedRevOpts=opts;
@@ -12976,6 +13174,11 @@ function _deedReview(calls,opts){
       const ac=pc.all.find(d=>d.code==="acreage");
       if(ac)row(ac.sev==="info"?"\u2713 Acreage:":"\u26a0 Acreage:",_esc(ac.msg));
       _deedFlagRows(pc).forEach(r=>row(r.lbl,r.val));
+      if(g.gap){
+        // 4.8.13: a bridged figure "closes" only because the unread course was made to fit
+        box.innerHTML=box.innerHTML.replace("✓ Closes:","Closes (bridged):");
+        box.innerHTML+=`<span class="lbl">⚠ Not on the deed:</span>&nbsp;<span class="val">course ${calls.indexOf(g.gap.call)+1} is drawn as ${_deedAzToBearingStr(g.gap.az)} ${g.gap.dist.toFixed(2)} ${U} so the rest lands in place</span><br>`;
+      }
       modal.appendChild(box);
       if(pc.fix)mk(_deedFixLabel(pc.fix),"ok",()=>{
         _deedApplyFixToCalls(calls,pc.fix);close();_deedReview(calls,window._deedRevOpts);});
@@ -12984,11 +13187,14 @@ function _deedReview(calls,opts){
         const rows=pc.all.map(d=>({lbl:(d.sev==="error"?"\u26d4":d.sev==="warn"?"\u26a0":"\u2713")+" "+d.code+":",val:_esc(d.msg)+(d.detail?" \u2014 "+_esc(d.detail):"")}));
         showResult("\ud83d\udd0e Deed Diagnostics",rows,[{txt:"\u2190 Back to the calls",cls:"ok",fn:()=>_deedReview(calls,window._deedRevOpts)}]);});
     }
+    // 4.8.13: courses the deed leaves incomplete can be worked out instead of typed
+    const nInc=calls.filter(c=>c&&c.type==="partial"&&!c.tie&&!c.omit).length;
+    if(nInc)mk("🧮 Solve "+nInc+" incomplete course"+(nInc===1?"":"s")+" from closure","ok",()=>{close();_deedSolveUI(calls);});
     const nCorr=calls.filter(c=>c&&c.corrected).length;
     if(nCorr)mk("\u21a9 Revert "+nCorr+" corrected course"+(nCorr===1?"":"s")+" to record","",()=>{
       _deedRevertCalls(calls);close();_deedReview(calls,window._deedRevOpts);});
     calls.forEach((c,i)=>{
-      const b=mk(_deedCallLabel(c,i)+(c&&c.corrected?(c.inserted?" (added)":c.omit?" (dropped)":" (corr)"):""),c.type==="partial"?"danger":(c.tie?"":"blue"),()=>{
+      const b=mk(_deedCallLabel(c,i)+_deedSrcTag(c)+(c&&c.corrected?(c.inserted?" (added)":c.omit?" (dropped)":" (corr)"):""),c.type==="partial"?"danger":(c.tie?"":"blue"),()=>{
         if(c.tie){
           confirmDialog("This looks like a commencement tie to the POINT OF BEGINNING and is excluded from the boundary. Include it as a boundary course instead?",yes=>{
             if(yes){c.tie=false;}
@@ -13153,11 +13359,28 @@ function _deedEditCall(calls,i){
       return inp;
     };
     const bIn=fld("Bearing (e.g. N 47°23'10\" E — or CURVE L/R R=250 ARC=130.9)",
-      c.type==="line"?_deedAzToBearingStr(_deedBearingToAz(c.bearing)):
+      ((c.type==="line"||c.type==="partial")&&c.bearing)?_deedAzToBearingStr(_deedBearingToAz(c.bearing)):
+      (c.type==="line"&&c.compassAz!=null&&!c.defl)?(({0:"NORTHERLY",45:"NORTHEASTERLY",90:"EASTERLY",135:"SOUTHEASTERLY",180:"SOUTHERLY",225:"SOUTHWESTERLY",270:"WESTERLY",315:"NORTHWESTERLY"})[c.compassAz]||""):
+      c.type==="line"?"":
       c.type==="curve"?("CURVE "+c.dir+(c.radius?" R="+c.radius:"")+(c.arc?" ARC="+c.arc:"")+(c.chordD?" CH="+c.chordD:"")):
       c.type==="spiral"?("SPIRAL "+c.dir+" "+(c.transition||"AUTO").toUpperCase()+(c.length?" L="+c.length:"")+(c.radius?" R="+c.radius:"")):"","bearing");
     const dIn=fld("Distance ("+units+", or e.g. '12 chains')",
-      c.type==="line"?(c.rawVal!=null?c.rawVal+" "+(c.unit||""):c.dist):"","distance");
+      ((c.type==="line"||c.type==="partial")&&c.dist!=null)?(c.rawVal!=null?c.rawVal+" "+(c.unit||""):+c.dist.toFixed(3)):"","distance");
+    // 4.8.13: where the values come from, and ways to fill in what the deed leaves out
+    const srcW=document.createElement("div");
+    srcW.innerHTML="<div class='input-label'>These values are</div>";
+    const srcSel=document.createElement("select");
+    srcSel.className="deed-src-sel";
+    [["","Record — as written on the deed"],["A","Assumed — my own judgement"],["F","Field — measured on the ground"]].forEach(([v,t])=>{
+      const o=document.createElement("option");o.value=v;o.textContent=t;srcSel.appendChild(o);});
+    {const s0=c.src||{}, v0=s0.b||s0.d||""; srcSel.value=(v0==="A"||v0==="F")?v0:"";}
+    srcW.appendChild(srcSel);modal.appendChild(srcW);
+    const tool=(t,fn)=>{const b=document.createElement("button");b.className="btn deed-tool";b.textContent=t;b.onclick=fn;modal.appendChild(b);};
+    {const nI=calls.filter(x=>x&&x.type==="partial"&&!x.tie&&!x.omit).length;
+     if(nI)tool("🧮 Solve the incomplete course"+(nI>1?"s":"")+" from closure",()=>{close();_deedSolveUI(calls);});}
+    tool("📍 Take this course from two job points",()=>{close();_deedFromPoints(calls,i);});
+    if(typeof _polylines!=="undefined"&&_polylines&&_polylines.length)tool("〰 Follow a drawn polyline (road, creek, fence)",()=>{close();_deedFromPolyline(calls,i);});
+    if(c.corrected&&!c.inserted)tool("↩ Put this course back as the deed has it",()=>{_deedUnpatchCall(c);close();_deedReview(calls,window._deedRevOpts);});
     // 4.8.4: Save / Delete / Back stay pinned to the bottom of the sheet —
     // they were two screens of scrolling below the keypads
     const foot=document.createElement("div");
@@ -13178,16 +13401,97 @@ function _deedEditCall(calls,i){
         calls[i]={type:"curve",dir,radius:r?parseFloat(r[1]):null,arc:a?parseFloat(a[1]):null,
                   chordD:ch?parseFloat(ch[1]):null,chordB:null,delta:null,raw:c.raw||""};
       }else{
-        const b=_deedParseBearing(bt);
+        let b=_deedParseBearing(bt), _cAz=null;
+        { // a direction word ("northerly", "southeast") is a course direction, never an exact bearing
+          const wd=bt.match(/^\s*(NORTH|SOUTH)?(EAST|WEST)?ERLY\s*$/)||bt.match(/^\s*(NORTH|SOUTH)(EAST|WEST)\s*$/);
+          if(wd&&(wd[1]||wd[2])){ const z={NORTH:0,NORTHEAST:45,EAST:90,SOUTHEAST:135,SOUTH:180,SOUTHWEST:225,WEST:270,NORTHWEST:315}[(wd[1]||"")+(wd[2]||"")]; if(z!==undefined){_cAz=z;b=null;} } }
         let d=_deedParseDistance(dt);
         if(!d&&parseFloat(dt))d={val:parseFloat(dt),unit:units.toUpperCase(),ft:parseFloat(dt)*(units==="ft"?1:3.280833333)};
-        if(!b||!d){alert("Couldn't read that — bearing like N 47°23'10\" E, distance like 156.48 or 12 chains.");return;}
-        calls[i]={type:"line",bearing:b,dist:units==="m"?d.ft/3.280833333:d.ft,unit:d.unit,rawVal:d.val,raw:c.raw||""};
+        if(!b&&!d&&_cAz==null){alert("Couldn't read that — bearing like N 47°23'10\" E, distance like 156.48 or 12 chains.");return;}
+        const _sv=srcSel.value, _dj=d?(units==="m"?d.ft/3.280833333:d.ft):null;
+        const _tag=o=>{ if(_sv){o.src={};if(o.bearing||o.compassAz!=null)o.src.b=_sv;if(o.dist!=null)o.src.d=_sv;}
+          if(c.record){o.record=c.record;o.corrected=c.corrected;} return o; };
+        if(_cAz!=null){
+          if(!d){alert("A direction word needs a distance with it.");return;}
+          calls[i]=_tag({type:"line",compassAz:_cAz,bearing:null,dist:_dj,unit:d.unit,rawVal:d.val,raw:c.raw||""});
+          if(!_sv)calls[i].src={b:"A"};
+        }else if(b&&d){
+          calls[i]=_tag({type:"line",bearing:b,dist:_dj,unit:d.unit,rawVal:d.val,raw:c.raw||""});
+        }else{
+          // 4.8.13: half a call is still worth keeping — it stays flagged and can be solved by closure
+          calls[i]=_tag({type:"partial",bearing:b||null,dist:d?_dj:null,unit:d?d.unit:null,rawVal:d?d.val:null,raw:c.raw||""});
+        }
       }
       close();_deedReview(calls,window._deedRevOpts);
     });
     mk("Delete call","danger",()=>{calls.splice(i,1);close();_deedReview(calls,window._deedRevOpts);});
     mk("Back","",()=>{close();_deedReview(calls,window._deedRevOpts);});
+  });
+}
+/* ── 4.8.13: tools for what the deed leaves out ── */
+function _deedFigRot(calls){
+  try{ if(typeof _deedPlot!=="undefined"&&_deedPlot&&_deedPlot.figures){const f=_deedPlot.figures.find(x=>x.calls===calls); if(f)return (_deedPlot.rot||0)+(f.recordRot||0);} }catch(e){}
+  return 0;
+}
+function _deedSolveUI(calls){
+  const acres=(window._deedRevOpts&&window._deedRevOpts.statedAcres)||calls.statedAcres||null;
+  const r=_deedGapSolve(calls,acres);
+  openModal((modal,close)=>{
+    const back=()=>{close();_deedReview(calls,window._deedRevOpts);};
+    modal.innerHTML="<h2>🧮 Solve from closure</h2>";
+    const p=document.createElement("p");p.className="info";modal.appendChild(p);
+    if(!r.solutions.length){
+      p.textContent=r.why||"Every course has a bearing and a distance — there is nothing to solve.";
+    }else{
+      p.textContent="Every other course is taken as written. "+(r.solutions.length>1?"Pick the answer that matches the ground: ":"")+"the values are marked as computed, the line is drawn dashed, and the deed's own wording can be put back at any time.";
+      r.solutions.forEach((s,k)=>{
+        const b=document.createElement("button");b.className="btn "+(k===0?"ok":"blue");b.style.cssText="text-align:left;line-height:1.35;font-size:.78em";
+        b.innerHTML="<b>"+_esc(s.label)+"</b><br>"+s.fills.map(f=>"Course "+(f.i+1)+": "+_esc(_deedAzToBearingStr(f.az))+" — "+f.dist.toFixed(2)+" "+units).join("<br>")+
+          "<br>"+(s.leaves>(units==="m"?0.003:0.01)?"leaves "+s.leaves.toFixed(2)+" "+units+" of misclosure":"closes")+" · "+s.acres.toFixed(3)+" acres"+(acres?" (deed: "+acres+")":"");
+        b.onclick=()=>{_deedGapApply(calls,s);back();};
+        modal.appendChild(b);
+      });
+    }
+    const bk=document.createElement("button");bk.className="btn";bk.textContent="Back to the calls";bk.onclick=back;modal.appendChild(bk);
+  });
+}
+function _deedFromPoints(calls,i){
+  const back=()=>_deedReview(calls,window._deedRevOpts);
+  calculatorInput("Course "+(i+1)+" starts at point #:","",a=>{
+    if(a===null||a===""){back();return;}
+    calculatorInput("…and ends at point #:","",b2=>{
+      if(b2===null||b2===""){back();return;}
+      const pA=points.find(p=>p.Point===parseInt(a,10)), pB=points.find(p=>p.Point===parseInt(b2,10));
+      if(!pA||!pB){alert("One of those points is not in this job.");back();return;}
+      const dE=pB.Easting-pA.Easting, dN=pB.Northing-pA.Northing, d=Math.hypot(dE,dN);
+      if(d<0.005){alert("Those two points are in the same place.");back();return;}
+      const az=((Math.atan2(dE,dN)*180/Math.PI-_deedFigRot(calls))%360+360)%360, bo=_deedAzToBrgObj(az); bo._az=az;
+      _deedPatchCall(calls[i],{patch:{type:"line",bearing:bo,dist:d,unit:units==="m"?"M":"FT",rawVal:+d.toFixed(3),src:{b:"F",d:"F"},defl:null,compassAz:null},
+        what:"from points #"+pA.Point+" and #"+pB.Point});
+      back();
+    });
+  });
+}
+function _deedPolyApply(calls,i,pl,rev){
+  const seq=_deedPolyCalls(pl,rev,_deedFigRot(calls)); if(!seq.length)return false;
+  const what="follows "+(pl.name||"a polyline")+(rev?" (reversed)":"");
+  const patch=Object.assign({defl:null,compassAz:null},seq[0]); delete patch.raw;
+  _deedPatchCall(calls[i],{patch,what});
+  for(let k=1;k<seq.length;k++){ const nc=seq[k]; nc.inserted=true; nc.corrected=what; nc.raw=calls[i].raw||""; calls.splice(i+k,0,nc); }
+  return true;
+}
+function _deedFromPolyline(calls,i){
+  const back=()=>_deedReview(calls,window._deedRevOpts);
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>〰 Follow a polyline</h2><p class='info'>Course "+(i+1)+" will follow the line you pick, one course per segment, marked as field values. Pick the direction the deed travels.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b);};
+    (_polylines||[]).forEach((pl,pi)=>{
+      if(!pl||!pl.verts||pl.verts.length<2)return;
+      const nm=pl.name||("Polyline "+(pi+1));
+      mk(nm+" — as drawn","blue",()=>{close();_deedPolyApply(calls,i,pl,false);back();});
+      mk(nm+" — reversed","",()=>{close();_deedPolyApply(calls,i,pl,true);back();});
+    });
+    mk("Back","",()=>{close();back();});
   });
 }
 function _deedPickPOB(calls){
@@ -16709,6 +17013,20 @@ function plotPoints(extCtx,extW,extH){
           ctx.restore();
         }
       }
+      // 4.8.13: a course that is not the deed's own (bridged, computed, assumed, field)
+      // is redrawn as an amber dotted line so it can never be taken for a record line
+      (g.verts||[]).forEach((v,i)=>{
+        if(!i||v.skip)return;
+        const cq=(g.usable||[])[i-1];
+        if(!cq||!(cq.gap||(cq.src&&(cq.src.b||cq.src.d))))return;
+        const u=g.verts[i-1];
+        const seg=()=>{ctx.beginPath();ctx.moveTo(X(u.E),Y(u.N));ctx.lineTo(X(v.E),Y(v.N));ctx.stroke();};
+        ctx.save();ctx.globalAlpha=1;
+        // over the plain map the record-coloured line underneath is taken out first
+        if(!(typeof satOn!=="undefined"&&satOn)){ctx.strokeStyle=lightMode?"#ffffff":"#05080c";ctx.lineWidth=5.5;ctx.setLineDash([]);seg();}
+        ctx.strokeStyle=lightMode?"#b36b00":"#ffb020";ctx.lineWidth=2.6;ctx.lineCap="round";ctx.setLineDash([1.5,6.5]);seg();
+        ctx.restore();
+      });
       // bearing + distance annotation along each course (respects the LBL
       // toggle; segments too short on screen stay clean)
       if(showLabels){
@@ -16780,7 +17098,7 @@ function plotPoints(extCtx,extW,extH){
           ctx.fillStyle=st.col;
           const fs=fsFor(slen);
           const cc=(g.usable||[])[i-1];
-          placeCourseLabel(fmtBrg(az),dd.toFixed(2)+unitSuf+(cc&&cc.corrected?(cc.inserted?" (added)":" (corr)"):""),(sx1+sx2)/2,(sy1+sy2)/2,ang,fs,slen);
+          placeCourseLabel(fmtBrg(az),dd.toFixed(2)+unitSuf+(cc&&cc.corrected?(cc.inserted?" (added)":" (corr)"):"")+_deedSrcTagShort(cc),(sx1+sx2)/2,(sy1+sy2)/2,ang,fs,slen);
         });
         g.arcs.forEach(a=>{
           const sx1=X(a.sE),sy1=Y(a.sN),sx2=X(a.eE),sy2=Y(a.eN);
