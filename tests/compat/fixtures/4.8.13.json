@@ -1,0 +1,322 @@
+{
+ "version": "4.8.13",
+ "commit": "577beb5",
+ "written": "2026-11-14",
+ "storage": {
+  "cl_version": "4.8.13",
+  "cl_legacyDone": "1",
+  "cl_job_jmwfq3rjzhd47ab": "{\"v\":1,\"id\":\"jmwfq3rjzhd47ab\",\"name\":\"COMPAT\",\"updatedAt\":1794619483200,\"points\":[{\"Point\":1,\"Northing\":1271228.583,\"Easting\":665013.963,\"Elevation\":550.4,\"Type\":\"Setup\",\"Description\":\"IPF START\",\"Flag\":\"\",\"ih\":5.1},{\"Point\":2,\"Northing\":1271328.583,\"Easting\":665013.963,\"Elevation\":551.25,\"Type\":\"Shot\",\"Description\":\"IPS, CAPPED \\\"LS 123\\\"\",\"Flag\":\"\",\"ih\":0,\"From\":1,\"InstReading\":\"0.0000\",\"RawAz\":\"0°00'00\\\"\",\"TrueAz\":\"0°00'00\\\"\",\"HorizDist\":100},{\"Point\":3,\"Northing\":1271328.583,\"Easting\":665069.463,\"Elevation\":552.1,\"Type\":\"Shot\",\"Description\":\"PP\",\"Flag\":\"\",\"ih\":0,\"From\":2,\"InstReading\":\"90.0000\",\"RawAz\":\"90°00'00\\\"\",\"TrueAz\":\"90°00'00\\\"\",\"HorizDist\":55.5},{\"Point\":4,\"Northing\":1271228.583,\"Easting\":665069.463,\"Elevation\":550.9,\"Type\":\"Shot\",\"Description\":\"OAK 24\",\"Flag\":\"X\",\"ih\":0,\"From\":1,\"HorizDist\":55.5},{\"Point\":5,\"Northing\":1271228.583,\"Easting\":665013.963,\"Elevation\":551.25,\"Type\":\"Deed\",\"Flag\":\"\",\"ih\":0,\"Description\":\"Deed POB\"},{\"Point\":6,\"Northing\":1271328.583,\"Easting\":665013.963,\"Elevation\":551.25,\"Type\":\"Deed\",\"Flag\":\"\",\"ih\":0,\"Description\":\"Deed crn 1\"},{\"Point\":7,\"Northing\":1271328.583,\"Easting\":665069.463,\"Elevation\":551.25,\"Type\":\"Deed\",\"Flag\":\"\",\"ih\":0,\"Description\":\"Deed crn 2\"},{\"Point\":8,\"Northing\":1271228.583,\"Easting\":665069.463,\"Elevation\":551.25,\"Type\":\"Deed\",\"Flag\":\"\",\"ih\":0,\"Description\":\"Deed crn 3\"}],\"plotConnections\":[{\"from\":1,\"to\":2,\"style\":\"solid\"},{\"from\":2,\"to\":3,\"style\":\"dashed\"},{\"from\":3,\"to\":4,\"style\":\"solid\"},{\"from\":4,\"to\":1,\"style\":\"solid\"}],\"polylines\":[{\"name\":\"FENCE\",\"verts\":[{\"E\":665013.963,\"N\":1271228.583},{\"E\":665033.963,\"N\":1271268.583},{\"E\":665069.463,\"N\":1271328.583}],\"segs\":[{\"type\":\"line\"},{\"type\":\"line\"}]}],\"areaLabels\":[{\"E\":665041.713,\"N\":1271278.583,\"label\":\"0.127 ac\",\"ptNums\":[1,2,3,4],\"u\":\"ft\",\"arcSigs\":[]}],\"deedPlot\":{\"v\":2,\"rot\":0,\"figures\":[{\"kind\":\"boundary\",\"name\":\"Parcel 1\",\"calls\":[{\"type\":\"line\",\"_si\":1,\"_pob\":false,\"bearing\":{\"q1\":\"N\",\"deg\":0,\"min\":0,\"sec\":0,\"q2\":\"E\"},\"dist\":100,\"unit\":\"FEET\",\"rawVal\":100,\"raw\":\"N 0-0-0 E 100 FEET\"},{\"type\":\"line\",\"_si\":2,\"_pob\":false,\"bearing\":{\"q1\":\"S\",\"deg\":90,\"min\":0,\"sec\":0,\"q2\":\"E\"},\"dist\":55.5,\"unit\":\"FEET\",\"rawVal\":55.5,\"raw\":\"S 90-0-0 E 55.5 FEET\"},{\"type\":\"line\",\"_si\":3,\"_pob\":false,\"bearing\":{\"q1\":\"S\",\"deg\":0,\"min\":0,\"sec\":0,\"q2\":\"W\"},\"dist\":100,\"unit\":\"FEET\",\"rawVal\":100,\"raw\":\"S 0-0-0 W 100 FEET\"},{\"type\":\"line\",\"_si\":4,\"_pob\":true,\"bearing\":{\"q1\":\"N\",\"deg\":90,\"min\":0,\"sec\":0,\"q2\":\"W\"},\"dist\":55.5,\"unit\":\"FEET\",\"rawVal\":55.5,\"raw\":\"N 90-0-0 W 55.5 FEET TO THE POINT OF BEGINNING, CONTAINING 0.127 ACRES.\"}],\"pobE\":665013.963,\"pobN\":1271228.583,\"ptNums\":[5,6,7,8],\"tiePtNums\":[],\"width\":null,\"aliquot\":false,\"aliquotSpec\":null,\"aliquotCal\":null,\"sectionAxes\":null,\"recordId\":\"deed-1\",\"recordName\":\"Deed 1\",\"recordRot\":0,\"ownerKey\":null,\"parentRef\":null,\"parcelKey\":null,\"startRef\":null,\"cornerRef\":null,\"sectionNo\":null,\"statedAcres\":0.127}]},\"geoAnchor\":{\"lat\":33.99429017770163,\"lon\":-85.80414466661493,\"E\":665013.963,\"N\":1271228.583,\"mx\":-9551673.692239953,\"my\":4028035.362268536,\"conv\":0.01631968467365565,\"zoneName\":\"AL East (0101)\",\"m2u\":3.2808333333333333},\"satOn\":true,\"satOpacity\":0.6,\"satRotNudge\":0.15,\"satBasemap\":\"usgs\",\"units\":\"ft\",\"surveyMode\":\"3D\",\"distMode\":\"HD\",\"prismConstant\":-0.03,\"combinedScaleFactor\":0.99991,\"footKind\":\"us\",\"orientationOffset\":0,\"occupied\":2,\"ngsMarks\":[{\"pid\":\"AA1234\",\"name\":\"GADSDEN TEST\",\"lat\":34,\"lon\":-85.8,\"E\":665913.963,\"N\":1272428.583,\"orthoHt\":180.5,\"cond\":\"GOOD\"}],\"ngsShow\":false,\"ppmEnabled\":true,\"ppmValue\":4.2,\"atmTempC\":28,\"atmPressHPa\":990}",
+  "cl_jobs": "[{\"id\":\"jmwfq3rjzhd47ab\",\"name\":\"COMPAT\",\"updatedAt\":1794619483200,\"pts\":8,\"conns\":4,\"units\":\"ft\",\"records\":1}]",
+  "cl_activeJob": "jmwfq3rjzhd47ab",
+  "cl_showLabels": "true",
+  "cl_showPtNames": "true",
+  "cl_showElev": "false",
+  "cl_lightMode": "false",
+  "cl_bearingMode": "az"
+ },
+ "csv": "Point,Northing,Easting,Elevation,Description,Type,Flag\n1,1271228.5830,665013.9630,550.4000,IPF START,Setup,\n2,1271328.5830,665013.9630,551.2500,\"IPS, CAPPED \"\"LS 123\"\"\",Shot,\n3,1271328.5830,665069.4630,552.1000,PP,Shot,\n4,1271228.5830,665069.4630,550.9000,OAK 24,Shot,X\n5,1271228.5830,665013.9630,551.2500,Deed POB,Deed,\n6,1271328.5830,665013.9630,551.2500,Deed crn 1,Deed,\n7,1271328.5830,665069.4630,551.2500,Deed crn 2,Deed,\n8,1271228.5830,665069.4630,551.2500,Deed crn 3,Deed,\n#CHAINLINK:{\"connections\":[{\"from\":1,\"to\":2,\"style\":\"solid\"},{\"from\":2,\"to\":3,\"style\":\"dashed\"},{\"from\":3,\"to\":4,\"style\":\"solid\"},{\"from\":4,\"to\":1,\"style\":\"solid\"}],\"surveyMode\":\"3D\",\"units\":\"ft\",\"v\":\"4.8.13\",\"deed\":{\"v\":2,\"rot\":0,\"figures\":[{\"kind\":\"boundary\",\"name\":\"Parcel 1\",\"calls\":[{\"type\":\"line\",\"_si\":1,\"_pob\":false,\"bearing\":{\"q1\":\"N\",\"deg\":0,\"min\":0,\"sec\":0,\"q2\":\"E\"},\"dist\":100,\"unit\":\"FEET\",\"rawVal\":100,\"raw\":\"N 0-0-0 E 100 FEET\"},{\"type\":\"line\",\"_si\":2,\"_pob\":false,\"bearing\":{\"q1\":\"S\",\"deg\":90,\"min\":0,\"sec\":0,\"q2\":\"E\"},\"dist\":55.5,\"unit\":\"FEET\",\"rawVal\":55.5,\"raw\":\"S 90-0-0 E 55.5 FEET\"},{\"type\":\"line\",\"_si\":3,\"_pob\":false,\"bearing\":{\"q1\":\"S\",\"deg\":0,\"min\":0,\"sec\":0,\"q2\":\"W\"},\"dist\":100,\"unit\":\"FEET\",\"rawVal\":100,\"raw\":\"S 0-0-0 W 100 FEET\"},{\"type\":\"line\",\"_si\":4,\"_pob\":true,\"bearing\":{\"q1\":\"N\",\"deg\":90,\"min\":0,\"sec\":0,\"q2\":\"W\"},\"dist\":55.5,\"unit\":\"FEET\",\"rawVal\":55.5,\"raw\":\"N 90-0-0 W 55.5 FEET TO THE POINT OF BEGINNING, CONTAINING 0.127 ACRES.\"}],\"pobE\":665013.963,\"pobN\":1271228.583,\"ptNums\":[5,6,7,8],\"tiePtNums\":[],\"width\":null,\"aliquot\":false,\"aliquotSpec\":null,\"aliquotCal\":null,\"sectionAxes\":null,\"recordId\":\"deed-1\",\"recordName\":\"Deed 1\",\"recordRot\":0,\"ownerKey\":null,\"parentRef\":null,\"parcelKey\":null,\"startRef\":null,\"cornerRef\":null,\"sectionNo\":null,\"statedAcres\":0.127}]},\"raw\":{\"1\":{\"ih\":5.1},\"2\":{\"ih\":0,\"From\":1,\"InstReading\":\"0.0000\",\"RawAz\":\"0°00'00\\\"\",\"TrueAz\":\"0°00'00\\\"\",\"HorizDist\":100},\"3\":{\"ih\":0,\"From\":2,\"InstReading\":\"90.0000\",\"RawAz\":\"90°00'00\\\"\",\"TrueAz\":\"90°00'00\\\"\",\"HorizDist\":55.5},\"4\":{\"ih\":0,\"From\":1,\"HorizDist\":55.5},\"5\":{\"ih\":0},\"6\":{\"ih\":0},\"7\":{\"ih\":0},\"8\":{\"ih\":0}},\"polylines\":[{\"name\":\"FENCE\",\"verts\":[{\"E\":665013.963,\"N\":1271228.583},{\"E\":665033.963,\"N\":1271268.583},{\"E\":665069.463,\"N\":1271328.583}],\"segs\":[{\"type\":\"line\"},{\"type\":\"line\"}]}]}\n",
+ "capture": {
+  "v": 1,
+  "id": "jmwfq3rjzhd47ab",
+  "name": "COMPAT",
+  "updatedAt": 1794619483203,
+  "points": [
+   {
+    "Point": 1,
+    "Northing": 1271228.583,
+    "Easting": 665013.963,
+    "Elevation": 550.4,
+    "Type": "Setup",
+    "Description": "IPF START",
+    "Flag": "",
+    "ih": 5.1
+   },
+   {
+    "Point": 2,
+    "Northing": 1271328.583,
+    "Easting": 665013.963,
+    "Elevation": 551.25,
+    "Type": "Shot",
+    "Description": "IPS, CAPPED \"LS 123\"",
+    "Flag": "",
+    "ih": 0,
+    "From": 1,
+    "InstReading": "0.0000",
+    "RawAz": "0°00'00\"",
+    "TrueAz": "0°00'00\"",
+    "HorizDist": 100
+   },
+   {
+    "Point": 3,
+    "Northing": 1271328.583,
+    "Easting": 665069.463,
+    "Elevation": 552.1,
+    "Type": "Shot",
+    "Description": "PP",
+    "Flag": "",
+    "ih": 0,
+    "From": 2,
+    "InstReading": "90.0000",
+    "RawAz": "90°00'00\"",
+    "TrueAz": "90°00'00\"",
+    "HorizDist": 55.5
+   },
+   {
+    "Point": 4,
+    "Northing": 1271228.583,
+    "Easting": 665069.463,
+    "Elevation": 550.9,
+    "Type": "Shot",
+    "Description": "OAK 24",
+    "Flag": "X",
+    "ih": 0,
+    "From": 1,
+    "HorizDist": 55.5
+   },
+   {
+    "Point": 5,
+    "Northing": 1271228.583,
+    "Easting": 665013.963,
+    "Elevation": 551.25,
+    "Type": "Deed",
+    "Flag": "",
+    "ih": 0,
+    "Description": "Deed POB"
+   },
+   {
+    "Point": 6,
+    "Northing": 1271328.583,
+    "Easting": 665013.963,
+    "Elevation": 551.25,
+    "Type": "Deed",
+    "Flag": "",
+    "ih": 0,
+    "Description": "Deed crn 1"
+   },
+   {
+    "Point": 7,
+    "Northing": 1271328.583,
+    "Easting": 665069.463,
+    "Elevation": 551.25,
+    "Type": "Deed",
+    "Flag": "",
+    "ih": 0,
+    "Description": "Deed crn 2"
+   },
+   {
+    "Point": 8,
+    "Northing": 1271228.583,
+    "Easting": 665069.463,
+    "Elevation": 551.25,
+    "Type": "Deed",
+    "Flag": "",
+    "ih": 0,
+    "Description": "Deed crn 3"
+   }
+  ],
+  "plotConnections": [
+   {
+    "from": 1,
+    "to": 2,
+    "style": "solid"
+   },
+   {
+    "from": 2,
+    "to": 3,
+    "style": "dashed"
+   },
+   {
+    "from": 3,
+    "to": 4,
+    "style": "solid"
+   },
+   {
+    "from": 4,
+    "to": 1,
+    "style": "solid"
+   }
+  ],
+  "polylines": [
+   {
+    "name": "FENCE",
+    "verts": [
+     {
+      "E": 665013.963,
+      "N": 1271228.583
+     },
+     {
+      "E": 665033.963,
+      "N": 1271268.583
+     },
+     {
+      "E": 665069.463,
+      "N": 1271328.583
+     }
+    ],
+    "segs": [
+     {
+      "type": "line"
+     },
+     {
+      "type": "line"
+     }
+    ]
+   }
+  ],
+  "areaLabels": [
+   {
+    "E": 665041.713,
+    "N": 1271278.583,
+    "label": "0.1274 ac",
+    "ptNums": [
+     1,
+     2,
+     3,
+     4
+    ],
+    "u": "ft",
+    "arcSigs": []
+   }
+  ],
+  "deedPlot": {
+   "v": 2,
+   "rot": 0,
+   "figures": [
+    {
+     "kind": "boundary",
+     "name": "Parcel 1",
+     "calls": [
+      {
+       "type": "line",
+       "_si": 1,
+       "_pob": false,
+       "bearing": {
+        "q1": "N",
+        "deg": 0,
+        "min": 0,
+        "sec": 0,
+        "q2": "E"
+       },
+       "dist": 100,
+       "unit": "FEET",
+       "rawVal": 100,
+       "raw": "N 0-0-0 E 100 FEET"
+      },
+      {
+       "type": "line",
+       "_si": 2,
+       "_pob": false,
+       "bearing": {
+        "q1": "S",
+        "deg": 90,
+        "min": 0,
+        "sec": 0,
+        "q2": "E"
+       },
+       "dist": 55.5,
+       "unit": "FEET",
+       "rawVal": 55.5,
+       "raw": "S 90-0-0 E 55.5 FEET"
+      },
+      {
+       "type": "line",
+       "_si": 3,
+       "_pob": false,
+       "bearing": {
+        "q1": "S",
+        "deg": 0,
+        "min": 0,
+        "sec": 0,
+        "q2": "W"
+       },
+       "dist": 100,
+       "unit": "FEET",
+       "rawVal": 100,
+       "raw": "S 0-0-0 W 100 FEET"
+      },
+      {
+       "type": "line",
+       "_si": 4,
+       "_pob": true,
+       "bearing": {
+        "q1": "N",
+        "deg": 90,
+        "min": 0,
+        "sec": 0,
+        "q2": "W"
+       },
+       "dist": 55.5,
+       "unit": "FEET",
+       "rawVal": 55.5,
+       "raw": "N 90-0-0 W 55.5 FEET TO THE POINT OF BEGINNING, CONTAINING 0.127 ACRES."
+      }
+     ],
+     "pobE": 665013.963,
+     "pobN": 1271228.583,
+     "ptNums": [
+      5,
+      6,
+      7,
+      8
+     ],
+     "tiePtNums": [],
+     "width": null,
+     "aliquot": false,
+     "aliquotSpec": null,
+     "aliquotCal": null,
+     "sectionAxes": null,
+     "recordId": "deed-1",
+     "recordName": "Deed 1",
+     "recordRot": 0,
+     "ownerKey": null,
+     "parentRef": null,
+     "parcelKey": null,
+     "startRef": null,
+     "cornerRef": null,
+     "sectionNo": null,
+     "statedAcres": 0.127
+    }
+   ]
+  },
+  "geoAnchor": {
+   "lat": 33.99429017770163,
+   "lon": -85.80414466661493,
+   "E": 665013.963,
+   "N": 1271228.583,
+   "mx": -9551673.692239953,
+   "my": 4028035.362268536,
+   "conv": 0.01631968467365565,
+   "zoneName": "AL East (0101)",
+   "m2u": 3.2808333333333333
+  },
+  "satOn": true,
+  "satOpacity": 0.6,
+  "satRotNudge": 0.15,
+  "satBasemap": "usgs",
+  "units": "ft",
+  "surveyMode": "3D",
+  "distMode": "HD",
+  "prismConstant": -0.03,
+  "combinedScaleFactor": 0.99991,
+  "footKind": "us",
+  "orientationOffset": 0,
+  "occupied": 2,
+  "ngsMarks": [
+   {
+    "pid": "AA1234",
+    "name": "GADSDEN TEST",
+    "lat": 34,
+    "lon": -85.8,
+    "E": 665913.963,
+    "N": 1272428.583,
+    "orthoHt": 180.5,
+    "cond": "GOOD"
+   }
+  ],
+  "ngsShow": false,
+  "ppmEnabled": true,
+  "ppmValue": 4.2,
+  "atmTempC": 28,
+  "atmPressHPa": 990
+ }
+}

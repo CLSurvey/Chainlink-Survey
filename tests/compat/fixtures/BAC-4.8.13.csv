@@ -1,0 +1,5 @@
+Point,Northing,Easting,Elevation,Description,Type,Flag
+1,1271228.5830,665013.9634,550.4000,Start,Setup,
+2,1271328.5830,665013.9634,550.4000,PEE,Shot,
+4,1271328.5830,664958.9634,550.4000,,Shot,
+#CHAINLINK:{"connections":[{"from":1,"to":2,"style":"solid"},{"from":2,"to":4,"style":"solid"}],"surveyMode":"2D","units":"ft","v":"4.8.13","raw":{"1":{"ih":0},"2":{"ih":0,"From":1,"InstReading":"0.0","RawAz":"0°00'00\"","TrueAz":"0°00'00\"","HorizDist":100},"4":{"ih":0,"From":2,"InstReading":"270.0","RawAz":"270°00'00\"","TrueAz":"270°00'00\"","HorizDist":55}}}
