@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.13">
+<meta name="application-name" content="ChainLink-v4.8.14">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.13</title>
+<title>ChainLink Survey v4.8.14</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1419,6 +1419,14 @@ html.light-mode .job-storage{background:rgba(0,0,0,.03)}
 .deed-src-sel{width:100%;background:#111;color:var(--text,#ddd);border:1px solid #444;border-radius:6px;padding:9px;font-family:var(--font-ui);font-size:.86em;margin-bottom:6px}
 html.light-mode .deed-src-sel{background:#fff;color:#111;border-color:#bbb}
 .btn.deed-tool{font-size:.76em;min-height:40px;text-align:left;letter-spacing:.01em}
+
+/* ── 4.8.14: Job Manager — all saved jobs ── */
+.job-all-btn{width:100%;max-width:410px;margin:4px auto 2px;display:block}
+.job-all-row{border:1px solid var(--border);border-radius:10px;padding:10px 11px;margin:8px 0;background:rgba(255,255,255,.03)}
+.job-all-name{font-family:var(--font-ui);font-weight:700;color:var(--text);font-size:.9em}
+.job-all-btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px}
+.job-all-btns .btn{margin:0;min-height:40px;font-size:.7em;padding:6px 6px;line-height:1.2}
+html.light-mode .job-all-row{background:rgba(0,0,0,.03)}
 </style>
 
 <script>
@@ -1428,7 +1436,7 @@ html.light-mode .deed-src-sel{background:#fff;color:#111;border-color:#bbb}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.13";
+const APP_VERSION = "4.8.14";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -1900,6 +1908,19 @@ function _jobIndex(){
 }
 function _jobIndexSet(list){ return _lsSet("cl_jobs", JSON.stringify(list||[]))!==false; }
 function _jobBlobKey(id){ return "cl_job_"+id; }
+/* 4.8.14: the Job Manager list is a quick-select list. Taking a job off it hides
+   the job and nothing else — the job, its anchor, imagery and undo history all
+   stay saved. Hidden ids are kept apart from the index so a save never undoes it. */
+function _jobHiddenIds(){ try{ const a=JSON.parse(_lsGet("cl_jobsHidden")||"[]"); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function _jobHiddenSet(ids){ return _lsSet("cl_jobsHidden", JSON.stringify(Array.from(new Set(ids||[]))))!==false; }
+function _jobIsHidden(id){ return _jobHiddenIds().includes(id); }
+function _jobHide(id){
+  const row=_jobIndex().find(j=>j.id===id);
+  _jobHiddenSet(_jobHiddenIds().concat([id]));
+  _jobRenderList();
+  try{ _notify("“"+((row&&row.name)||"Job")+"” is off the list. It is still saved — All saved jobs brings it back."); }catch(e){}
+}
+function _jobUnhide(id){ _jobHiddenSet(_jobHiddenIds().filter(x=>x!==id)); }
 function _jobReadBlob(id){
   if(!id) return null;
   try{ const j=JSON.parse(_lsGet(_jobBlobKey(id))||"null"); return j&&j.id?j:null; }
@@ -1995,6 +2016,7 @@ function _jobApply(blob){
   footKind=blob.footKind==="intl"?"intl":"us";
   orientationOffset=blob.orientationOffset||0;
   if(typeof geoAnchor!=="undefined") geoAnchor=blob.geoAnchor||null;
+  if(blob.geoAnchor&&isFinite(blob.geoAnchor.lat)) _lsSet("cl_lastPlace",JSON.stringify({lat:+(+blob.geoAnchor.lat).toFixed(4),lon:+(+blob.geoAnchor.lon).toFixed(4)}));
   if(typeof satOn!=="undefined"){
     satOn=!!blob.satOn && !!blob.geoAnchor;
     satOpacity=blob.satOpacity||0.85;
@@ -2101,6 +2123,7 @@ function _jobOpen(id){
   const blob=_jobReadBlob(id);
   if(!blob){ alert("That job is no longer in storage."); _showJobScreen(); return; }
   _jobPendingNew=false;
+  _jobUnhide(id);   // 4.8.14: a job you open goes back on the list
   _jobApply(blob);
   _activeJobId=id;
   _lsSet("cl_activeJob", id);
@@ -2112,14 +2135,15 @@ function _jobOpen(id){
   _hideJobScreen();
   updateStatus(); plotPoints(); _updateUndoBtn();
 }
-function _jobDelete(id){
+function _jobDelete(id,after){
   const row=_jobIndex().find(j=>j.id===id);
   const name=(row&&row.name)||"this job";
   // 4.7.26: map was self-mapping, so a job name with < went into the dialog as raw HTML
   const safe=String(name).replace(/[&<>]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[ch]));
-  confirmDialog("Delete \""+safe+"\"? This cannot be undone. Export a CSV first if you might need it.", yes=>{
-    if(!yes) return;
-    _lsRemove(_jobBlobKey(id)); _undoDrop(id);
+  // 4.8.14: only reached from All saved jobs → Delete permanently
+  confirmDialog("Delete “"+safe+"” permanently? Its points, lines, deed, anchor and undo history are removed from this phone. The CSV copy in your save folder is not touched. This cannot be undone.", yes=>{
+    if(!yes){ if(after)after(); return; }
+    _lsRemove(_jobBlobKey(id)); _undoDrop(id); _jobUnhide(id);
     _jobIndexSet(_jobIndex().filter(j=>j.id!==id));
     if(_activeJobId===id){
       _activeJobId=null; _jobRamLive=false; _lsRemove("cl_activeJob");
@@ -2133,6 +2157,30 @@ function _jobDelete(id){
       }
     }
     _showJobScreen();
+    if(after) after();
+  });
+}
+/* 4.8.14: every saved job, listed or not — the one place a job can be deleted */
+function _jobAllSaved(){
+  openModal((modal,close)=>{
+    const idx=_jobIndex(), hid=_jobHiddenIds(), active=_lsGet("cl_activeJob")||_activeJobId;
+    modal.innerHTML="<h2>🗂 All saved jobs</h2><p class='info'>Every job on this phone. Jobs taken off the Job Manager list are still here. Deleting is permanent.</p>";
+    if(!idx.length){ const p=document.createElement("p");p.className="info";p.textContent="No saved jobs.";modal.appendChild(p); }
+    idx.forEach(j=>{
+      const box=document.createElement("div"); box.className="job-all-row";
+      const t=document.createElement("div"); t.className="job-all-name";
+      t.textContent=(j.name||"survey")+(j.id===active?"  · open":"")+(hid.includes(j.id)?"  · off the list":"");
+      const m=document.createElement("div"); m.className="job-card-meta";
+      m.textContent=(j.pts||0)+" pts · "+(j.conns||0)+" lines · "+(j.units||"ft")+" · "+_jobWhen(j.updatedAt);
+      const row=document.createElement("div"); row.className="job-all-btns";
+      const mk=(txt,cls,fn)=>{const b=document.createElement("button");b.type="button";b.className="btn "+cls;b.textContent=txt;b.onclick=fn;row.appendChild(b);};
+      mk("Open","ok",()=>{close();_jobOpen(j.id);});
+      if(hid.includes(j.id)) mk("Put back on the list","blue",()=>{_jobUnhide(j.id);close();_jobRenderList();_jobAllSaved();});
+      else mk("Take off the list","",()=>{_jobHiddenSet(hid.concat([j.id]));close();_jobRenderList();_jobAllSaved();});
+      mk("Delete permanently…","danger",()=>{close();_jobDelete(j.id,()=>{ if(_jobIndex().length) _jobAllSaved(); });});
+      box.appendChild(t);box.appendChild(m);box.appendChild(row);modal.appendChild(box);
+    });
+    const c=document.createElement("button");c.className="btn";c.textContent="Close";c.onclick=close;modal.appendChild(c);
   });
 }
 function _jobAbortNew(){
@@ -2168,9 +2216,15 @@ function _jobRenderList(){
   if(!host) return;
   host.innerHTML="";
   _jobMigrateFromLegacy();
-  const idx=_jobIndex();
+  const all=_jobIndex(), hid=_jobHiddenIds();
+  const idx=all.filter(j=>!hid.includes(j.id));
   const active=_lsGet("cl_activeJob")||_activeJobId;
-  if(empty) empty.style.display=idx.length?"none":"block";
+  if(empty){
+    empty.style.display=idx.length?"none":"block";
+    empty.textContent=all.length
+      ? "No jobs on the list. "+all.length+" saved job"+(all.length===1?" is":"s are")+" off the list — open All saved jobs."
+      : "No saved jobs yet. Start a new one — it stays here until you delete it.";
+  }
   idx.forEach(j=>{
     const card=document.createElement("div");
     card.className="job-card"+(j.id===active?" is-active":"");
@@ -2185,15 +2239,21 @@ function _jobRenderList(){
     const jsz=(_lsGet(_jobBlobKey(j.id))||"").length;
     if(jsz) meta.textContent+=" · "+_storageSize(jsz);
     const del=document.createElement("button"); del.type="button"; del.className="job-card-del";
-    del.setAttribute("aria-label","Delete job"); del.textContent="✕";
-    del.onclick=ev=>{ ev.stopPropagation(); _jobDelete(j.id); };
+    del.setAttribute("aria-label","Take off the list (the job stays saved)"); del.title="Take off the list — the job stays saved"; del.textContent="✕";
+    del.onclick=ev=>{ ev.stopPropagation(); _jobHide(j.id); };
     card.appendChild(badge); card.appendChild(nm); card.appendChild(meta); card.appendChild(del);
     card.onclick=()=>_jobOpen(j.id);
     host.appendChild(card);
   });
+  // 4.8.14: the full list, where a job can be put back or deleted
+  if(all.length){
+    const ab=document.createElement("button"); ab.type="button"; ab.className="job-btn job-all-btn";
+    ab.textContent="🗂 All saved jobs ("+all.length+(hid.length?" · "+all.filter(j=>hid.includes(j.id)).length+" off the list":"")+")";
+    ab.onclick=_jobAllSaved; host.appendChild(ab);
+  }
   // 4.8.10: how full this device's job storage is
   const st=_storageWatch(true);
-  if(st&&idx.length){
+  if(st&&all.length){
     const g=document.createElement("div");
     g.className="job-storage"+(st.pct>=90?" is-full":st.pct>=80?" is-warn":"");
     g.innerHTML='<div class="job-storage-row"><span>Storage on this device</span><span>'+st.pct+'% used · '+_storageSize(st.used)+' of about '+(st.cap/1e6).toFixed(1)+' MB</span></div>'+
@@ -2428,6 +2488,15 @@ function _buildCSV(){
     meta.deed={v:2,rot:_deedPlot.rot||0,figures:_deedPlot.figures.map(_deedFigSerialize)};
   if(Object.keys(raw).length) meta.raw=raw;
   if(typeof _polylines!=="undefined"&&_polylines.length) meta.polylines=_polylines;
+  // 4.8.14: the anchor, imagery and the rest of the job's settings ride along, so a job
+  // restored from its CSV copy comes back whole — not as points with no place on the map
+  try{
+    const b=_jobCapture(), j={};
+    ["geoAnchor","satOn","satOpacity","satRotNudge","satBasemap","areaLabels","ngsMarks","ngsShow","distMode","prismConstant",
+     "combinedScaleFactor","footKind","orientationOffset","occupied","ppmEnabled","ppmValue","atmTempC","atmPressHPa"]
+      .forEach(k=>{ const v=b[k]; if(v!==undefined&&v!==null&&!(Array.isArray(v)&&!v.length)) j[k]=v; });
+    meta.job=j;
+  }catch(e){}
   csv+="#CHAINLINK:"+JSON.stringify(meta)+"\n";
   return csv;
 }
@@ -2736,6 +2805,7 @@ const _ICONS={
   target:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
   cogo:'<path d="M4 20V5l15 15H4Z"/><path d="M8 16.5V13l3.5 3.5H8Z"/>',
   layers:'<path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
+  satellite:'<rect x="9" y="9" width="6" height="6" rx="1" transform="rotate(45 12 12)"/><path d="m8.5 8.5-4-4M4.5 4.5 2 7l3.5 3.5L8 8M15.5 15.5l4 4M19.5 19.5 22 17l-3.5-3.5L16 16"/><path d="M15 21a6 6 0 0 0 6-6M15 18a3 3 0 0 0 3-3"/>',
   globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/>',
   map:'<path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2V6Z"/><path d="M9 4v14M15 6v14"/>',
   pin:'<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z"/><circle cx="12" cy="10" r="2.3"/>',
@@ -2771,7 +2841,7 @@ const _ICONS={
   pencil:'<path d="M4 20l1-4L16 5l3 3L8 19l-4 1Z"/><path d="m14 7 3 3"/>',
   scissors:'<circle cx="6" cy="7" r="2.5"/><circle cx="6" cy="17" r="2.5"/><path d="M8 8.5 20 18M8 15.5 20 6"/>',
 };
-const _EMOJI_ICON={"🎯":"target","📐":"cogo","🛰":"layers","🌐":"globe","🌍":"globe","🗺":"map","📍":"pin","📌":"pin","🚩":"flag",
+const _EMOJI_ICON={"🎯":"target","📐":"cogo","🛰":"satellite","🌐":"globe","🌍":"globe","🗺":"map","📍":"pin","📌":"pin","🚩":"flag",
   "⚙":"sliders","🔧":"sliders","📤":"upload","📥":"download","📄":"doc","📜":"doc","📋":"doc","📒":"doc","📖":"book","🗑":"trash",
   "🖐":"move","👆":"pointer","📡":"signal","🔺":"triangle","📷":"camera","🌡":"thermo","➕":"plus","🔎":"search","🔍":"search","🕓":"clock",
   "🔄":"refresh","⚖":"scale","🧲":"magnet","🖨":"printer","🗂":"folder","🏠":"home","📱":"phone","🔗":"link","🔓":"unlock",
@@ -4372,6 +4442,31 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
       surveyMode=embeddedMeta.surveyMode||"2D";
       units=embeddedMeta.units||"ft";
     } else {plotConnections=[];_polylines=[];}
+    // 4.8.14: what belongs to a place comes from the file or not at all — never from the
+    // job that was open before (that is how imagery landed hundreds of miles away)
+    {
+      const J=(embeddedMeta&&embeddedMeta.job)||{};
+      const A=J.geoAnchor;
+      geoAnchor=(A&&isFinite(A.lat)&&isFinite(A.lon)&&isFinite(A.E)&&isFinite(A.N))?A:null;
+      satOn=!!J.satOn&&!!geoAnchor;
+      satRotNudge=typeof J.satRotNudge==="number"?J.satRotNudge:0;
+      if(typeof J.satOpacity==="number") satOpacity=J.satOpacity;
+      if(typeof _BASEMAPS!=="undefined"&&_BASEMAPS[J.satBasemap]) satBasemap=J.satBasemap;
+      try{ _jobZoneCache=null; }catch(e){}
+      if(typeof _areaLabels!=="undefined") _areaLabels=Array.isArray(J.areaLabels)?J.areaLabels:[];
+      if(typeof _ngsMarks!=="undefined"){ _ngsMarks=Array.isArray(J.ngsMarks)?J.ngsMarks:[]; _ngsShow=J.ngsShow!==false; try{_ngsSave();}catch(e){} }
+      if(J.distMode==="SD"||J.distMode==="HD") distMode=J.distMode;
+      if(typeof J.prismConstant==="number") prismConstant=J.prismConstant;
+      if(J.combinedScaleFactor>0) combinedScaleFactor=J.combinedScaleFactor;
+      if(J.footKind==="intl"||J.footKind==="us") footKind=J.footKind;
+      if(typeof J.orientationOffset==="number") orientationOffset=J.orientationOffset;
+      if(typeof J.ppmEnabled==="boolean") _ppmEnabled=J.ppmEnabled;
+      if(typeof J.ppmValue==="number") _ppmValue=J.ppmValue;
+      if(typeof J.atmTempC==="number") _atmTempC=J.atmTempC;
+      if(typeof J.atmPressHPa==="number") _atmPressHPa=J.atmPressHPa;
+      if(J.occupied!=null){ const o=points.find(q=>q.Point===J.occupied); if(o) currentPoint=o; }
+      try{ _syncSatBtn(); }catch(e){} try{ _ensureLiveGps(); }catch(e){} try{ _recomputeAreaLabels(); }catch(e){}
+    }
     // 4.8.3: restore the deed from the file, or clear it — the previous
     // job's deed used to stay on screen after loading a different file
     if(typeof _deedPlot!=="undefined"){
@@ -4385,6 +4480,7 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
       }catch(e){_deedPlot=null;}
     }
     saveData();
+    const _gridZones=geoAnchor?[]:_gridZoneGuess();
     showResult("\u2713 Loaded",[
       {lbl:"Points:",  val:String(newPts.length)},
       {lbl:"Job:",     val:_esc(jobName)},
@@ -4392,7 +4488,9 @@ function _doParseCSV(text,fname,colMap,embeddedMeta){
       ...(dups.length?[{lbl:"⚠ Renumbered:",val:dups.length+" repeated point #"+(dups.length===1?"":"s")+" ("+dups.slice(0,6).join(", ")+(dups.length>6?", …":"")+")"}]:[]),
       ...(noZ?[{lbl:"⚠ No elevation:",val:noZ+" point"+(noZ===1?"":"s")+" had a blank elevation — set to 0"}]:[]),
       ...(typeof _deedPlot!=="undefined"&&_deedPlot?[{lbl:"Deed:",val:"plotted deed restored"}]:[]),
-    ]);
+      ...(geoAnchor?[{lbl:"Imagery:",val:"anchor restored ("+_esc(geoAnchor.zoneName||"")+")"+(satOn?" — ON":"")}]:[]),
+      ...(!geoAnchor&&_gridZones.length?[{lbl:"Imagery:",val:"this file has no anchor, but its coordinates look like State Plane — tap Anchor to place it from them"}]:[]),
+    ],(!geoAnchor&&_gridZones.length)?[{txt:"🛰 Anchor from grid coordinates…",cls:"ok",fn:()=>_satSetupFlow()}]:[]);
   }catch(err){alert("Load error: "+err.message)}
 }
 
@@ -14890,6 +14988,7 @@ function _setAnchor(lat,lon,zone,E,N){
   const m=_ll2merc(lat,lon);
   const p=_projForward(lat,lon,zone);
   geoAnchor={lat,lon,E,N,mx:m.mx,my:m.my,conv:p.conv,zoneName:zone.name,m2u:_m2u()};
+  _lsSet("cl_lastPlace",JSON.stringify({lat:+lat.toFixed(4),lon:+lon.toFixed(4)}));   // 4.8.14: ranks State Plane zone guesses
   _jobZoneCache=null;
   try{ _ensureLiveGps(); }catch(e){}   // anchored -> marker on by default
 }
@@ -15686,7 +15785,90 @@ function _basemapMenu(){
   });
 }
 
+/* 4.8.14 — ANCHORING FROM THE JOB'S OWN STATE PLANE COORDINATES.
+   Grid coordinates fix the job exactly once the zone is known, with no GPS at a point.
+   The zone is the hard part: the same pair of numbers is valid State Plane in many
+   states (BAC.csv fits 14 zones, Alabama to Maine), so the coordinates are never
+   allowed to choose it alone. A zone is offered only when every sampled point falls
+   inside it, and it is chosen by where the job is: near the last anchored job, by the
+   phone's position (any accuracy will do — it only has to pick the state), or by the
+   state you type. Local coordinates (5000/5000, 10000/10000…) fit no zone at all. */
+function _gridZoneGuess(){
+  const pts=(points||[]).filter(p=>isFinite(p.Easting)&&isFinite(p.Northing));
+  if(!pts.length||typeof _SPC_ZONES==="undefined")return [];
+  const step=Math.max(1,Math.ceil(pts.length/40)), smp=pts.filter((p,i)=>i%step===0).concat([pts[pts.length-1]]);
+  const u=_m2u(), m=0.05;
+  let ref=null;
+  try{ if(typeof _liveFix!=="undefined"&&_liveFix&&isFinite(_liveFix.lat)) ref={lat:_liveFix.lat,lon:_liveFix.lon}; }catch(e){}
+  if(!ref){ try{ const q=JSON.parse(_lsGet("cl_lastPlace")||"null"); if(q&&isFinite(q.lat)&&isFinite(q.lon)) ref=q; }catch(e){} }
+  const out=[];
+  _SPC_ZONES.forEach(z=>{
+    if(!z.bbox)return;
+    const ok=smp.every(p=>{ let ll; try{ ll=_projInverse(p.Easting/u,p.Northing/u,z); }catch(e){ return false; }
+      return ll&&isFinite(ll.lat)&&isFinite(ll.lon)&&ll.lat>=z.bbox[0]-m&&ll.lat<=z.bbox[1]+m&&ll.lon>=z.bbox[2]-m&&ll.lon<=z.bbox[3]+m; });
+    if(!ok)return;
+    const ll=_projInverse(smp[0].Easting/u,smp[0].Northing/u,z);
+    out.push({z,lat:ll.lat,lon:ll.lon,km:ref?_kmBetween(ll.lat,ll.lon,ref.lat,ref.lon):null});
+  });
+  if(ref)out.sort((a,b)=>a.km-b.km);
+  return out;
+}
+function _kmBetween(a1,o1,a2,o2){ return Math.hypot((a1-a2)*111.2,(o1-o2)*111.2*Math.cos((a1+a2)/2*Math.PI/180)); }
+function _anchorFromGrid(z,how){
+  const pt=(currentPoint&&points.includes(currentPoint))?currentPoint:points[0];
+  if(!pt||!z){alert("No point to anchor on.");return;}
+  const u=_m2u(), ll=_projInverse(pt.Easting/u,pt.Northing/u,z);
+  if(!ll||!isFinite(ll.lat)||!isFinite(ll.lon)){alert("Those coordinates don't compute in "+z.name+".");return;}
+  _setAnchor(ll.lat,ll.lon,z,pt.Easting,pt.Northing);
+  satOn=true; saveData(); try{_syncSatBtn();}catch(e){}
+  showResult("✓ Anchored from grid coordinates",[
+    {lbl:"Zone:",val:_esc(z.name)+" (NAD83, "+(units==="ft"?"US survey ft":"meters")+")"+(how?" — "+_esc(how):"")},
+    {lbl:"Point "+pt.Point+":",val:"N "+pt.Northing.toFixed(2)+"  E "+pt.Easting.toFixed(2)},
+    {lbl:"Position:",val:ll.lat.toFixed(6)+", "+ll.lon.toFixed(6)},
+    {lbl:"Imagery:",val:"ON — placed by the coordinates themselves"}]);
+}
+function _gridAnchorByGps(hits){
+  _gpsFix(pos=>{
+    if(!pos)return;
+    const la=pos.coords.latitude, lo=pos.coords.longitude;
+    hits.forEach(h=>h.km=_kmBetween(h.lat,h.lon,la,lo));
+    const best=hits.slice().sort((a,b)=>a.km-b.km)[0];
+    if(!best||best.km>400){
+      alert("None of the zones these coordinates fit is near this phone"+(best?" (closest is "+best.z.name+", "+Math.round(best.km*0.621)+" mi away)":"")+". Type the state instead.");
+      _gridAnchorByState(hits);return;
+    }
+    _anchorFromGrid(best.z,"chosen from this phone's location ("+Math.round(best.km*0.621)+" mi from the job)");
+  });
+}
+function _gridAnchorByState(hits){
+  alphaInput("State the job is in (two letters, e.g. AL):","",st=>{
+    if(st===null||!st.trim())return;
+    const q=st.trim().toUpperCase(), m=hits.filter(h=>h.z.name.toUpperCase().startsWith(q+" ")||h.z.name.toUpperCase().startsWith(q+"("));
+    if(!m.length){alert("These coordinates don't fit any "+q+" State Plane zone. Check the state, or anchor another way.");return;}
+    if(m.length===1){_anchorFromGrid(m[0].z,"state "+q);return;}
+    openModal((modal,close)=>{
+      modal.innerHTML="<h2>Pick the zone</h2>";
+      m.forEach(h=>{const b=document.createElement("button");b.className="btn blue";b.textContent=h.z.name;b.onclick=()=>{close();_anchorFromGrid(h.z,"state "+q);};modal.appendChild(b);});
+      const c=document.createElement("button");c.className="btn";c.textContent="Cancel";c.onclick=close;modal.appendChild(c);
+    });
+  });
+}
 function _satSetupFlow(){
+  const hits=_gridZoneGuess();
+  if(!hits.length){_satSetupPick();return;}
+  const near=hits.filter(h=>h.km!=null&&h.km<400);
+  openModal((modal,close)=>{
+    modal.innerHTML="<h2>🛰 Anchor imagery</h2><p class='info'>This job's coordinates look like State Plane, so they can place it exactly — no GPS at a point. The same numbers fit "+
+      (hits.length===1?"one zone":hits.length+" zones in different states")+", so first say which one.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
+    near.forEach((h,i)=>mk("Anchor from grid — "+h.z.name+" (near your last anchored job)",i===0?"ok":"blue",()=>{close();_anchorFromGrid(h.z,"near your last anchored job");}));
+    mk("📡 Choose the zone from this phone's location (you don't need to be at the job)",near.length?"blue":"ok",()=>{close();_gridAnchorByGps(hits);});
+    mk("Type the state","blue",()=>{close();_gridAnchorByState(hits);});
+    mk("Anchor another way (GPS at a point, grid entry, lat/lon)","",()=>{close();_satSetupPick();});
+    mk("Cancel","",close);
+  });
+}
+function _satSetupPick(){
   const defPt=(currentPoint&&currentPoint.Point)||1;
   calculatorInput("Anchor at point # (stand HERE for GPS):",String(defPt),pn=>{
     if(pn===null)return;
