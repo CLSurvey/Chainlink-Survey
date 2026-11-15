@@ -1,0 +1,14 @@
+Point,Northing,Easting,Elevation,Description,Type,Flag
+1,10000.0000,10000.0000,100.0000,Start,Import,
+2,10105.4193,10000.3956,100.0000,KLO,Import,
+3,9998.6311,10104.1110,100.0000,Q,Import,
+4,10105.3598,10102.5356,100.0000,ST,Import,
+5,10052.8597,10051.4428,0.0000,INT,Import,
+6,10084.9725,10051.4537,0.0000,INT,Import,
+7,10293.3578,9931.9916,100.0000,,Import,
+8,10167.2914,9977.8760,0.0000,INT,Import,
+9,10000.0000,9900.0000,100.0000,Q,Import,
+10,10025.0374,9990.0939,100.0000,OFS,Import,
+11,10019.4797,9884.3302,0.0000,OFS,COGO,
+12,10277.7135,9912.4914,0.0000,OFS,COGO,
+#CHAINLINK:{"connections":[{"from":1,"to":2,"style":"solid"},{"from":3,"to":1,"style":"solid"},{"from":2,"to":4,"style":"solid"},{"from":4,"to":3,"style":"solid"},{"from":2,"to":6,"style":"dashed"},{"from":4,"to":6,"style":"dashed"},{"type":"arc","centerE":10051.49686072988,"centerN":10159.052927128912,"R":74.08039421592206,"startAngle":-2.332020376514251,"endAngle":-0.8107373445001524,"dir":"ccw","style":"solid","startBrg":223.61492531277574,"endBrg":136.4518281335026,"arcLen":112.69724672559758,"delta":87.16309717927315,"chord":102.1400173304785},{"from":2,"to":7,"style":"solid"},{"type":"arc","centerE":10052.074793058015,"centerN":10000.782873821532,"R":52.08067744812358,"startAngle":-3.1265601435336032,"endAngle":-6.324513235050168,"dir":"cw","style":"solid","startBrg":269.1387006182924,"endBrg":92.36791584300545,"arcLen":166.55156345350386,"delta":183.2292152247131,"chord":104.11999907868187},{"from":1,"to":9,"style":"solid"},{"type":"arc","centerE":9769.124734696215,"centerN":10162.69565623681,"R":208.8018477568204,"startAngle":-0.893367465017926,"endAngle":0.6761196108892484,"dir":"ccw","style":"solid","startBrg":141.18618529982837,"endBrg":51.26119985001861,"arcLen":327.71180147986706,"delta":89.92498544980975,"chord":295.0970370766014},{"type":"arc","centerE":9769.124734696215,"centerN":10162.69565623681,"R":183.8018477568204,"startAngle":-0.893367465017926,"endAngle":0.6761196108892484,"dir":"ccw","style":"solid","startBrg":141.18618529982837,"endBrg":51.26119985001861,"arcLen":288.4746245821877,"delta":89.92498544980975,"chord":259.76485009563606}],"surveyMode":"3D","units":"ft","v":"4.8.15","raw":{"1":{"ih":0},"2":{"ih":0},"3":{"ih":0},"4":{"ih":0},"5":{"ih":0},"6":{"ih":0},"7":{"ih":0},"8":{"ih":0},"9":{"ih":0},"10":{"ih":0},"11":{"ih":0},"12":{"ih":0}},"job":{"geoAnchor":{"lat":33.9941975,"lon":-85.8038388,"E":10000,"N":10000,"mx":-9551639.64332413,"my":4028022.9187606825,"conv":0.016490658319381624,"zoneName":"AL East (0101)","m2u":3.2808333333333333},"satOn":true,"satOpacity":0.95,"satRotNudge":0,"satBasemap":"esri","ngsShow":true,"distMode":"SD","prismConstant":0,"combinedScaleFactor":1,"footKind":"us","orientationOffset":0,"occupied":1,"ppmEnabled":false,"ppmValue":0,"atmTempC":15,"atmPressHPa":1013.25}}

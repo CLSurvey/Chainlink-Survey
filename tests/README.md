@@ -22,7 +22,7 @@ All of them must pass (or match the expected table) before a new `index.html` sh
 `tests/compat/fixtures/<version>.json` hold the phone storage, the CSV copy and the
 job record that each listed older version (4.4.21 through 4.8.14) wrote for the same
 job (`tests/compat/scenario.js`), produced by running that version's own code from
-this repo's history. `BAC-4.8.13.csv` is a real CSV copy from the field. Fixtures with a suffix are other
+this repo's history. `BAC-4.8.13.csv` and `HIJAK-4.8.15.csv` are real CSV copies from the field. Fixtures with a suffix are other
 situations the same versions produced: `-local` (a job on assumed 10000/10000
 coordinates, anchored), `-copied-anchor` (a State Plane job that picked up another job's
 anchor when loaded from CSV), `-copied-local` (two local jobs sharing one anchor);

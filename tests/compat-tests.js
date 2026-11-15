@@ -19,6 +19,9 @@
    5. Anchors older versions copied from the open job into a loaded one: set aside when
       they are tied far from the job's points, flagged when tied at a shared point.
    6. The real BAC.csv that exposed the missing anchor (4.8.13 copy).
+   7. The real HIJAK.csv (4.8.15): an assumed-coordinate job anchored with its
+      coordinates kept. Its anchor names AL East, but the job is not on that grid —
+      the phone's position must land on the job's own coordinates, not 1.4M ft away.
    A field that is deliberately not round-tripped must be listed in NOT_KEPT
    with the reason — otherwise the test fails. */
 const fs=require('fs'),path=require('path');
@@ -201,6 +204,28 @@ console.log("— BAC.csv, the real file (4.8.13 copy) —");
   t("recovered on AL East at 33.99429, -85.80414", g&&g.lat.toFixed(5)==="33.99429"&&g.lon.toFixed(5)==="-85.80414", g&&[g.lat,g.lon]);
   const again=a.run('_buildCSV()');
   t("its next CSV copy carries the anchor", /"job":\{[^\n]*"geoAnchor":\{/.test(again));
+}
+
+console.log("— HIJAK.csv, an assumed job anchored with its coordinates kept (4.8.15 copy) —");
+{
+  const hj=fs.readFileSync(path.join(FX,'HIJAK-4.8.15.csv'),'utf8');
+  const a=boot({}); a.run(OTHER); loadCsv(a,hj,"HIJAK.csv"); const c=cap(a);
+  t("12 points, point 1 at 10000/10000", c.points.length===12&&c.points[0].Northing===10000&&c.points[0].Easting===10000);
+  const A=c.geoAnchor;
+  t("anchor carried by the CSV (AL East, held at 10000/10000)", A&&A.E===10000&&A.N===10000&&/AL East/.test(A.zoneName||""), A);
+  if(A){
+    const at=sr(a,'JSON.stringify(_gpsToJob(geoAnchor.lat,geoAnchor.lon))'), j=at&&JSON.parse(at);
+    t("phone standing on the anchor lands on 10000/10000", j&&Math.hypot(j.E-10000,j.N-10000)<0.01, j);
+    t("not treated as State Plane: the anchor is far off AL East's grid", sr(a,'_jobZone()')===null);
+    const rt=sr(a,'(()=>{const ll=_jobToLL(10000.3956,10105.4193);return JSON.stringify(_gpsToJob(ll.lat,ll.lon));})()'), r=rt&&JSON.parse(rt);
+    t("the blue dot and the imagery agree at point 2", r&&Math.hypot(r.E-10000.3956,r.N-10105.4193)<0.01, r);
+  }
+  // a real State Plane job keeps true grid, even with a GPS-start error in its anchor
+  const s=boot({});
+  const g=sr(s,'(()=>{units="ft";const z=_SPC_ZONES.find(q=>/^AL East/.test(q.name)),u=3937/1200,p=_projForward(34,-85.8,z);'+
+    '_setAnchor(34,-85.8,z,p.E*u+40,p.N*u-25);const k=_gpsToJob(34.001,-85.8),q=_projForward(34.001,-85.8,z);'+
+    'return JSON.stringify({z:(_jobZone()||{}).name,dE:k.E-q.E*u,dN:k.N-q.N*u});})()'), gg=g&&JSON.parse(g);
+  t("a State Plane job 47 ft off by GPS start still reads true grid", gg&&/AL East/.test(gg.z||"")&&Math.abs(gg.dE)<0.001&&Math.abs(gg.dN)<0.001, gg);
 }
 
 console.log("\n"+pass+" passed, "+fail+" failed");
