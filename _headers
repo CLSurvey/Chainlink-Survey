@@ -1,0 +1,7 @@
+# Keep Cloudflare's own copies of this site (the *.pages.dev addresses and
+# preview builds) out of search results. The real addresses are unaffected.
+https://:project.pages.dev/*
+	X-Robots-Tag: noindex
+
+https://:version.:project.pages.dev/*
+	X-Robots-Tag: noindex
