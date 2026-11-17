@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.16">
+<meta name="application-name" content="ChainLink-v4.8.17">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.16</title>
+<title>ChainLink Survey v4.8.17</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1236,6 +1236,10 @@ table.data-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 .modal.modal-shot .sf-row{margin-bottom:5px}
 .modal.modal-shot .sf-label{margin-bottom:2px}
 .sf-row.sf-row3{grid-template-columns:1fr 1fr .8fr}
+/* 4.8.17: ΔZ preview sits at the right end of the Target Ht label */
+.sf-label.sf-label-dz{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.sf-label.sf-label-dz>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.sf-label.sf-label-dz .sf-dz{flex:none;letter-spacing:.02em}
 .sf-opt-row{display:flex;gap:8px;margin:2px 0 0}
 .sf-opt-row .sf-line-row{flex:3;margin:0}
 .sf-opt-row .sf-bpill{flex:2;display:flex;gap:4px}
@@ -1438,7 +1442,7 @@ html.light-mode .job-all-row{background:rgba(0,0,0,.03)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.16";
+const APP_VERSION = "4.8.17";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -5486,10 +5490,11 @@ function _shotForm(prefillDesc, autoLine, onStore){
       if(is3D){
         // Row 3: Vert Angle only (IH shown in header, changeable via tap)
         // 4.7.28: zenith, TH and the ΔZ preview share one row (was two)
-        const r3 = document.createElement("div"); r3.className="sf-row sf-row3";
+        // 4.8.17: VA and TH are full half-width fields like the rows above; ΔZ rides in the TH label
+        const r3 = document.createElement("div"); r3.className="sf-row";
 
         const vaF = document.createElement("div"); vaF.className="sf-field";
-        vaF.innerHTML=`<div class="sf-label">Zenith (90=lvl)</div>`;
+        vaF.innerHTML=`<div class="sf-label">Vertical Angle (VA)</div>`;
         const vaV = document.createElement("div");
         vaV.className="sf-val"+(activeField==="va"?" active":"");
         vaV.textContent = fields.va||"0.0000";
@@ -5498,31 +5503,23 @@ function _shotForm(prefillDesc, autoLine, onStore){
 
         const r4 = r3;
         const thF = document.createElement("div"); thF.className="sf-field";
-        thF.innerHTML=`<div class="sf-label">Target Ht (${units})</div>`;
+        // Live ΔZ preview, shown at the right of the Target Ht label
+        const vaNum=parseDMS(fields.va), distNum=parseFloat(fields.dist);
+        const ihNum=parseFloat(fields.ih)||0, thNum=parseFloat(fields.th)||0;
+        let dzTxt="ΔZ —", dzCol="var(--muted)";
+        if(!isNaN(vaNum)&&!isNaN(distNum)&&distNum>0){
+          // ZA convention: ΔZ = SD × cos(ZA), HI applied, TH subtracted
+          const zaRad = vaNum*Math.PI/180;
+          const dz = distNum*Math.cos(zaRad)+ihNum-thNum;
+          dzTxt = "ΔZ "+(dz>=0?"+":"")+dz.toFixed(3);
+          dzCol = dz>0?"var(--accent2)":dz<0?"var(--danger)":"var(--ok)";
+        }
+        thF.innerHTML=`<div class="sf-label sf-label-dz"><span>Target Ht (${units})</span><span class="sf-dz" style="color:${dzCol}">${dzTxt}</span></div>`;
         const thV = document.createElement("div");
         thV.className="sf-val"+(activeField==="th"?" active":"");
         thV.textContent = fields.th;
         thV.onclick=()=>{activeField="th";freshFields.add("th");render()};
         thF.appendChild(thV); r4.appendChild(thF);
-
-        // Show live ΔZ preview if we have enough data
-        const vaNum=parseDMS(fields.va), distNum=parseFloat(fields.dist);
-        const ihNum=parseFloat(fields.ih)||0, thNum=parseFloat(fields.th)||0;
-        const previewF = document.createElement("div"); previewF.className="sf-field";
-        previewF.innerHTML=`<div class="sf-label">ΔZ</div>`;
-        const previewV = document.createElement("div");
-        previewV.className="sf-val"; previewV.style.cursor="default";
-        previewV.style.borderColor="var(--border)";
-        if(!isNaN(vaNum)&&!isNaN(distNum)&&distNum>0){
-          // ZA convention: ΔZ = SD × cos(ZA), HI applied, TH subtracted
-          const zaRad = vaNum*Math.PI/180;
-          const dz = distNum*Math.cos(zaRad)+ihNum-thNum;
-          previewV.textContent = (dz>=0?"+":"")+dz.toFixed(3);
-          previewV.style.color = dz>0?"var(--accent2)":dz<0?"var(--danger)":"var(--ok)";
-        } else {
-          previewV.textContent="—"; previewV.style.color="var(--muted)";
-        }
-        previewF.appendChild(previewV); r4.appendChild(previewF);
         form.appendChild(r4);
       }
 
