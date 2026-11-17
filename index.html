@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.17">
+<meta name="application-name" content="ChainLink-v4.8.18">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.17</title>
+<title>ChainLink Survey v4.8.18</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -987,6 +987,18 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 #intersectBanner{top:12px;background:rgba(16,25,29,.92);border:1px solid rgba(230,183,95,.38);border-radius:999px;padding:8px 18px;box-shadow:0 12px 32px rgba(0,0,0,.24);backdrop-filter:blur(14px);color:var(--accent-bright)}
 /* 4.8.4: long pick instructions wrap instead of running off the screen under the ? button */
 #intersectBanner{white-space:normal;max-width:calc(100% - 124px);width:max-content;line-height:1.35;border-radius:16px}
+/* 4.8.18: a pick prompt has to be impossible to miss — filled brass banner, a pulse,
+   a glowing map edge, and a second line saying where to tap */
+#intersectBanner{background:linear-gradient(135deg,#f3cb73,#e2a644);color:#17110a;border:none;font-size:.95em;font-weight:800;letter-spacing:.04em;padding:10px 18px 9px;animation:pickPulse 1.6s ease-out infinite}
+#intersectBanner::before{content:"\1F446\FE0E  ";font-weight:400}
+#intersectBanner[data-hint]::after{content:attr(data-hint);display:block;font-size:.74em;font-weight:600;letter-spacing:.05em;opacity:.78;margin-top:2px}
+#intersectBanner.miss{animation:pickShake .4s ease-in-out}
+html.light-mode #intersectBanner{background:linear-gradient(135deg,#f3cb73,#e2a644);color:#17110a}
+#canvasWrap.picking::after{content:"";position:absolute;inset:0;z-index:40;pointer-events:none;box-shadow:inset 0 0 0 3px rgba(240,190,95,.8),inset 0 0 46px rgba(240,190,95,.28);animation:pickEdge 1.6s ease-in-out infinite}
+@keyframes pickPulse{0%{box-shadow:0 0 0 0 rgba(243,203,115,.65),0 12px 30px rgba(0,0,0,.4)}70%{box-shadow:0 0 0 14px rgba(243,203,115,0),0 12px 30px rgba(0,0,0,.4)}100%{box-shadow:0 0 0 0 rgba(243,203,115,0),0 12px 30px rgba(0,0,0,.4)}}
+@keyframes pickEdge{50%{opacity:.4}}
+@keyframes pickShake{0%,100%{transform:translateX(-50%)}20%{transform:translateX(calc(-50% - 9px))}40%{transform:translateX(calc(-50% + 9px))}60%{transform:translateX(calc(-50% - 6px))}80%{transform:translateX(calc(-50% + 6px))}}
+@media (prefers-reduced-motion:reduce){#intersectBanner,#intersectBanner.miss,#canvasWrap.picking::after{animation:none}}
 #northArrow{top:14px;right:66px;opacity:.92;filter:drop-shadow(0 5px 10px rgba(0,0,0,.65))}
 #helpBtn{top:12px;right:12px;width:42px;height:42px;border-radius:14px;background:linear-gradient(145deg,rgba(26,40,45,.94),rgba(11,18,21,.94));border:1px solid var(--border2);color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,.24)}
 #plotControls{right:10px;bottom:12px;display:grid;grid-template-columns:repeat(2,46px);gap:6px;padding:7px;border-radius:18px;background:linear-gradient(145deg,rgba(18,28,32,.86),rgba(8,13,15,.84));border:1px solid var(--border2);backdrop-filter:blur(18px);box-shadow:0 18px 48px rgba(0,0,0,.32)}
@@ -1442,7 +1454,7 @@ html.light-mode .job-all-row{background:rgba(0,0,0,.03)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.17";
+const APP_VERSION = "4.8.18";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -7831,6 +7843,35 @@ function _pickPoint(promptText, cb){
   };
 }
 
+/* 4.8.18: while the banner asks for a tap, the map edge glows and the banner says where to
+   tap. One observer covers every pick prompt in the app, however it was raised. */
+function _pickBannerSync(){
+  const b=document.getElementById("intersectBanner"), w=document.getElementById("canvasWrap");
+  if(!b||!w) return;
+  const on=b.classList.contains("visible");
+  w.classList.toggle("picking",on);
+  const t=b.textContent||"";
+  if(on&&/\btap\b/i.test(t)&&!/cancel/i.test(t)) b.setAttribute("data-hint", b._missHint||"on the map  ·  tap empty space to cancel");
+  else b.removeAttribute("data-hint");
+}
+function _pickMissed(){
+  const b=document.getElementById("intersectBanner"); if(!b) return;
+  b._missHint="missed — tap right on the point";
+  b.classList.remove("miss"); void b.offsetWidth; b.classList.add("miss");
+  _pickBannerSync();
+  clearTimeout(b._missT);
+  b._missT=setTimeout(()=>{b._missHint=null;b.classList.remove("miss");_pickBannerSync();},1800);
+}
+(function(){
+  const go=()=>{
+    const b=document.getElementById("intersectBanner");
+    if(!b||typeof MutationObserver==="undefined") return;
+    new MutationObserver(_pickBannerSync).observe(b,{attributes:true,attributeFilter:["class"],childList:true,characterData:true,subtree:true});
+    _pickBannerSync();
+  };
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",go); else go();
+})();
+
 function _drawPickedOverlay(){
   // Build tempGeom entries for picked points and connecting lines
   // Remove old pick geometry
@@ -7868,7 +7909,9 @@ function _pickPoints(count, promptFn, cb){
       cb(picked);
       return;
     }
-    _pickPoint(promptFn(picked.length,count), pt=>{
+    // 4.8.18: say which pick this is ("1 of 2") unless the prompt already does
+    const _pTxt=promptFn(picked.length,count);
+    _pickPoint(_pTxt+(count>1&&!/\bof\s*\d/i.test(_pTxt)?"  ·  "+(picked.length+1)+" of "+count:""), pt=>{
       if(!pt){
         _pickedPts=[];
         tempGeom=tempGeom.filter(g=>g._pick!==true);
@@ -18219,6 +18262,9 @@ function zoomToOccupied(){
       window._connClickNear=_near.map(o=>o.p);
       const hitPt=_near.length?_near[0].p:null;
       if(hitPt){ window._connClickHandler(hitPt); return; }
+      // 4.8.18: a near miss is not a cancel — shake the prompt and keep waiting
+      const _nearMiss=points.some(p=>Math.hypot(X(p.Easting)-mx,Y(p.Northing)-my)<PT_THRESH*2.5);
+      if(_nearMiss){ _pickMissed(); return; }
       // Tap empty space — cancel
       _connCancel(); return;
     }
