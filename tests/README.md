@@ -14,6 +14,7 @@ path to `index.html` as an optional argument and defaults to `./index.html`.
     node tests/jobmove-tests.js        # move / shift job
     node tests/app-smoke.js            # whole-app load test
     node tests/compat-tests.js         # every saved field survives save/reopen and the CSV copy; jobs and CSVs from older versions load whole; anchors survive and copied ones are caught
+    node tests/field-tests.js          # field-session findings (4.8.19): stakeout in angle-right mode, Bowditch holds the start, stacked-point chooser, FIT centring, deed undo step, far-import warning, 3D check shot, two-face description, GeoJSON lon/lat
 
 All of them must pass (or match the expected table) before a new `index.html` ships.
 

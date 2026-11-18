@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.18">
+<meta name="application-name" content="ChainLink-v4.8.19">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.18</title>
+<title>ChainLink Survey v4.8.19</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1051,6 +1051,8 @@ html.light-mode .sf-val{background:linear-gradient(145deg,#f7faf8,#fff)}
 .sf-val.active{border-color:rgba(255,217,138,.65);color:var(--accent-bright);box-shadow:0 0 0 3px rgba(230,183,95,.10),inset 0 2px 10px rgba(0,0,0,.33)}
 .sf-val.sf-desc{justify-content:flex-start;font-family:var(--font-ui);font-size:.88rem;color:var(--text2)}
 .sf-val.sf-desc.active{border-color:rgba(115,199,210,.6);box-shadow:0 0 0 3px rgba(115,199,210,.10)}
+/* 4.8.19: a carried-over description shows selected — the first key replaces it */
+.sf-val.sf-desc.fresh{background:rgba(115,199,210,.20)}
 .sf-numpad,.calc-grid{gap:7px;margin-top:9px}
 .sf-numpad button,.calc-grid button,.sf-quad-numrow button{min-height:50px;padding:9px 4px;border-radius:14px;background:linear-gradient(145deg,rgba(28,43,48,.96),rgba(14,22,25,.96));border:1px solid var(--border2);color:var(--text);font-family:var(--font-data);font-size:.96rem;box-shadow:inset 0 1px rgba(255,255,255,.03),0 7px 14px rgba(0,0,0,.11)}
 .sf-numpad button.np-ok,.calc-grid button.ok-btn{background:linear-gradient(135deg,#a2e5b3,#69bf7f);border:0;color:#071309;box-shadow:0 10px 24px rgba(105,191,127,.14)}
@@ -1454,7 +1456,7 @@ html.light-mode .job-all-row{background:rgba(0,0,0,.03)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.18";
+const APP_VERSION = "4.8.19";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -2531,7 +2533,7 @@ function _modeSwitchPrompt(){
   openModal((modal,close)=>{
     modal.innerHTML="<h2>Switch to "+to+" mode?</h2><p class='info'>"+
       (to==="3D"
-        ?"3D shots take "+(distMode==="HD"?"horizontal":"slope")+" distance, zenith angle, HI and target height, and compute elevations."
+        ?"3D shots take "+(distMode==="HD"?"horizontal":"slope")+" distance, vertical angle (VA), HI and target height, and compute elevations."
         :"2D shots take azimuth and horizontal distance only; elevations are not computed.")+
       " Points already stored are not changed.</p>";
     const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
@@ -3211,6 +3213,7 @@ function _folderBanner(msg){
     b.querySelector(".fb-go").onclick=()=>_folderResume();
   }
   b.querySelector(".fb-msg").textContent=msg;
+  b.querySelector(".fb-go").textContent=arguments[1]||"Resume";
   b.classList.add("show");
 }
 function _folderBannerHide(){const b=document.getElementById("folderBanner");if(b)b.classList.remove("show");}
@@ -3226,7 +3229,10 @@ async function _folderResume(){
 // on launch: pick the remembered folder back up
 async function _folderRestore(){
   if(typeof window.showDirectoryPicker!=="function") return;
-  const h=await _fsGet(); if(!h) return;
+  const h=await _fsGet();
+  // 4.8.19: no folder on record at all (site data partly cleared, or a job
+  // from before folders) — the CSV copy is off, so say so instead of nothing
+  if(!h){ if(_activeJobId) _folderBanner("No save folder — pick one so a CSV copy is kept","Pick folder"); return; }
   _dirSaved=h;
   if(await _dirPerm(h,false)){ _dirHandle=h; _folderBannerHide(); }
   else if(_activeJobId) _folderBanner("CSV copy paused — tap Resume to keep saving to “"+h.name+"”");
@@ -3670,13 +3676,19 @@ function exportKML(){
 function exportGeoJSON(){
   if(!requirePro("GeoJSON export")) return;
   const feats=[];
+  // 4.8.19: GeoJSON means WGS84 lon/lat (RFC 7946) — GIS tools put grid
+  // coordinates in the ocean. Anchored jobs export lon/lat with the grid
+  // values kept as properties; an unanchored job has no lon/lat to give.
+  const _geo=!!(typeof geoAnchor!=="undefined"&&geoAnchor);
+  const G=(E,N)=>{ if(!_geo) return [+E.toFixed(4),+N.toFixed(4)]; const ll=_jobToLL(E,N); return [+ll.lon.toFixed(8),+ll.lat.toFixed(8)]; };
   points.forEach(p=>{
     if(isNaN(p.Easting)||isNaN(p.Northing))return;
     feats.push({type:"Feature",
-      geometry:{type:"Point",coordinates:[+p.Easting.toFixed(4),+p.Northing.toFixed(4),+((p.Elevation||0).toFixed(4))]},
-      properties:{point:p.Point,desc:p.Description||"",type:p.Type||""}});
+      geometry:{type:"Point",coordinates:_geo?G(p.Easting,p.Northing):[+p.Easting.toFixed(4),+p.Northing.toFixed(4),+((p.Elevation||0).toFixed(4))]},
+      properties:_geo?{point:p.Point,desc:p.Description||"",type:p.Type||"",N:+p.Northing.toFixed(4),E:+p.Easting.toFixed(4),Z:+((p.Elevation||0).toFixed(4)),units}
+                     :{point:p.Point,desc:p.Description||"",type:p.Type||""}});
   });
-  const xy=q=>[+q.E.toFixed(4),+q.N.toFixed(4)];
+  const xy=q=>G(q.E,q.N);
   const connFeat=(c,kind)=>{
     let coords;
     if(c.type==="arc"){
@@ -3686,7 +3698,7 @@ function exportGeoJSON(){
     } else {
       const pa=points.find(p=>p.Point===c.from), pb=points.find(p=>p.Point===c.to);
       if(!pa||!pb)return;
-      coords=[[+pa.Easting.toFixed(4),+pa.Northing.toFixed(4)],[+pb.Easting.toFixed(4),+pb.Northing.toFixed(4)]];
+      coords=[G(pa.Easting,pa.Northing),G(pb.Easting,pb.Northing)];
     }
     feats.push({type:"Feature",
       geometry:{type:"LineString",coordinates:coords},
@@ -3698,13 +3710,39 @@ function exportGeoJSON(){
     const pts=_plPath(pl,4); if(pts.length<2)return;
     feats.push({type:"Feature",geometry:{type:"LineString",coordinates:pts.map(xy)},properties:{kind:"polyline",name:pl.name||""}});
   });
-  const gj={type:"FeatureCollection",
+  const gj=_geo?{type:"FeatureCollection",name:(jobName||"survey"),
+    grid_note:"Coordinates are WGS84 lon/lat via the "+geoAnchor.zoneName+" anchor; grid N/E/Z in "+units+" are in each point's properties",
+    features:feats}:{type:"FeatureCollection",
     crs_note:"Local grid coordinates (Easting, Northing"+(surveyMode==="3D"?", Elevation":"")+") in "+units+" — not lon/lat",
     features:feats};
   const blob=new Blob([JSON.stringify(gj,null,1)],{type:"application/geo+json"});
   _deliverFile(blob,(jobName||"survey")+".geojson");
 }
 
+/* 4.8.19: coordinates nowhere near the job are almost always a different
+   system — State Plane into an assumed 10,000 / 10,000 job, or ft vs m.
+   Returns true to go ahead now; otherwise asks, and calls proceed() on yes. */
+function _importFarGate(cs,label,proceed){
+  const own=points.filter(p=>isFinite(p.Easting)&&isFinite(p.Northing));
+  if(!own.length||!cs||!cs.length) return true;
+  const box=a=>{let n0=Infinity,n1=-Infinity,e0=Infinity,e1=-Infinity,sn=0,se=0;
+    a.forEach(q=>{sn+=q.N;se+=q.E;if(q.N<n0)n0=q.N;if(q.N>n1)n1=q.N;if(q.E<e0)e0=q.E;if(q.E>e1)e1=q.E;});
+    return{N:sn/a.length,E:se/a.length,r:Math.max(n1-n0,e1-e0)};};
+  const A=box(own.map(p=>({N:p.Northing,E:p.Easting}))), B=box(cs);
+  const d=Math.hypot(A.N-B.N,A.E-B.E);
+  const floor=units==="m"?6000:20000;
+  if(d<=Math.max(floor,10*Math.max(A.r,B.r))) return true;
+  const mi=units==="m"?(d/1000).toFixed(1)+" km":(d/5280).toFixed(1)+" mi";
+  openModal((m,close)=>{
+    m.innerHTML="<h2>⚠ Far from this job</h2><p class='info'>The "+cs.length+" coordinates in "+_esc(label)+
+      " are about <b>"+Math.round(d).toLocaleString()+" "+units+"</b> ("+mi+") from this job's points.</p>"+
+      "<p class='info'>That usually means a different coordinate system — State Plane vs. assumed (10,000 / 10,000), or feet vs. meters.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
+    mk("Import anyway","",()=>{close();proceed();});
+    mk("Cancel","ok",close);
+  });
+  return false;
+}
 /* ── IMPORT: DXF + LandXML (merge into current job) ───────────── */
 function _pickImportFile(accept,cb){
   const inp=document.createElement("input");
@@ -3750,7 +3788,10 @@ function _arcFromBulge(P,Q,bulge,style){
 }
 function importDXF(){
   if(!requirePro("DXF import")) return;
-  _pickImportFile(".dxf,application/dxf,text/plain",(text,fname)=>{
+  _pickImportFile(".dxf,application/dxf,text/plain",(text,fname)=>_importDXFText(text,fname));
+}
+function _importDXFText(text,fname,_gateOk){
+  {
     const lines=text.split(/\r\n|\r|\n/);
     const pairs=[];
     for(let i=0;i+1<lines.length;i+=2){
@@ -3771,6 +3812,10 @@ function importDXF(){
     const A=(ent,code)=>{const hit=ent.attrs.find(a=>a[0]===code);return hit?hit[1]:null;};
     const Af=(ent,code,d)=>{const v=A(ent,code);const f=parseFloat(v);return isNaN(f)?d:f;};
 
+    if(!_gateOk){
+      const cs=[]; ents.forEach(e=>{const x=Af(e,10,NaN),y=Af(e,20,NaN); if(isFinite(x)&&isFinite(y))cs.push({E:x,N:y});});
+      if(!_importFarGate(cs,fname,()=>_importDXFText(text,fname,true))) return;
+    }
     _takeSnapshot("Import DXF");
     let nPts=0,nLines=0,nArcs=0,nPl=0,skipped={};
     const before=points.length;
@@ -3860,7 +3905,7 @@ function importDXF(){
       {lbl:"Polylines:",val:String(nPl)},
       ...(skNames.length?[{lbl:"Skipped:",val:skNames.map(k=>k+"\u00d7"+skipped[k]).join(", ")}]:[]),
     ]);
-  });
+  }
 }
 function _brgPtArgs(cE,cN,R,brg){
   const p=_plArcPt(cE,cN,R,brg); return [p.E,p.N];
@@ -4069,13 +4114,20 @@ function _kmlBatches(){
 
 function importLandXML(){
   if(!requirePro("LandXML import")) return;
-  _pickImportFile(".xml,application/xml,text/xml",(text,fname)=>{
+  _pickImportFile(".xml,application/xml,text/xml",(text,fname)=>_importLandXMLText(text,fname));
+}
+function _importLandXMLText(text,fname,_gateOk){
+  {
     let doc;
     try{ doc=new DOMParser().parseFromString(text,"application/xml"); }
     catch(e){ alert("Couldn't parse XML."); return; }
     if(doc.querySelector("parsererror")){alert("Couldn't parse XML — file may be malformed.");return}
     const cg=doc.getElementsByTagName("CgPoint");
     if(!cg.length){alert("No CgPoint elements found — only point import is supported.");return}
+    if(!_gateOk){
+      const cs=[]; for(const el of cg){const t=(el.textContent||"").trim().split(/\s+/);const N=parseFloat(t[0]),E=parseFloat(t[1]);if(isFinite(N)&&isFinite(E))cs.push({N,E});}
+      if(!_importFarGate(cs,fname,()=>_importLandXMLText(text,fname,true))) return;
+    }
     _takeSnapshot("Import LandXML");
     let added=0,renumbered=0,skippedBad=0;
     for(const el of cg){
@@ -4098,7 +4150,7 @@ function importLandXML(){
       ...(renumbered?[{lbl:"Renumbered:",val:renumbered+" (number conflicts)"}]:[]),
       ...(skippedBad?[{lbl:"Skipped:",val:skippedBad+" (bad coordinates)"}]:[]),
     ]);
-  });
+  }
 }
 
 /* ── FIELDBOOK — chronological observation report (PDF or CSV) ── */
@@ -4160,7 +4212,7 @@ function exportFieldbookPDF(){
   // Portrait A4, multi-page, rendered 3× for crisp text
   const pageW=794, pageH=1123, RS=3, M=42, lineH=15, headH=92;
   const cols=is3D
-    ? [["Pt",34],["Inst Rdg",78],["True Az",78],["SD",58],["ZA",62],["HD",58],["TH",42],["N",70],["E",70],["Z",56],["Desc",96]]
+    ? [["Pt",34],["Inst Rdg",78],["True Az",78],["SD",58],["VA",62],["HD",58],["TH",42],["N",70],["E",70],["Z",56],["Desc",96]]
     : [["Pt",40],["Inst Rdg",92],["True Az",92],["HD",78],["N",96],["E",96],["Desc",120]];
   const pages=[];
   const fmt=(v,d)=>v==null||v===""?"":(typeof v==="number"?v.toFixed(d):String(v));
@@ -4188,7 +4240,7 @@ function exportFieldbookPDF(){
     ctx.fillText("FIELD BOOK — "+(jobName||"survey"),M,M+18);
     ctx.font="10px 'Courier New',monospace";
     const d=new Date();
-    ctx.fillText(d.toISOString().slice(0,10)+"   "+(is3D?"3D":"2D")+" mode   units: "+units+
+    ctx.fillText((d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"))+"   "+(is3D?"3D":"2D")+" mode   units: "+units+
       (combinedScaleFactor!==1?"   CSF "+combinedScaleFactor.toFixed(8):"")+
       "   page "+(pi+1)+"/"+pages.length,M,M+34);
     // Column header row
@@ -5324,8 +5376,8 @@ function takeShot(){
     _3dModeNoticeShown=true;
     const modeName = distMode==="HD"?"Horizontal Distance (HD)":"Slope Distance (SD)";
     const modeNote = distMode==="HD"
-      ? "You will enter horizontal distance + zenith angle."
-      : "You will enter slope distance + zenith angle.";
+      ? "You will enter horizontal distance + vertical angle (VA)."
+      : "You will enter slope distance + vertical angle (VA).";
     openModal((modal,close)=>{
       modal.innerHTML="<h2>3D Mode Active</h2>"+
         "<div class='result-box'>"+
@@ -5399,7 +5451,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
   };
   let activeField = "az";
   let formErr = "", vaSeen = false;   // 4.8.7: inline error text; zenith visited (3D)
-  const freshFields = new Set(["va","pt",...(prefillDesc?"desc":[])]); // th intentionally NOT fresh — carries over from last shot
+  const freshFields = new Set(["va","pt","desc"]); // 4.8.19: desc too (the old spread of "desc" added the letters d,e,s,c) // th intentionally NOT fresh — carries over from last shot
 
   openModal((modal, close)=>{
     const occ = currentPoint;
@@ -5414,7 +5466,7 @@ function _shotForm(prefillDesc, autoLine, onStore){
       else if(activeField==="dist" && fields.dist){ if(!azFilled()) return "az"; if(is3D && !vaSeen) return "va"; }
       return null;
     }
-    const storeLabel=()=>{ const n=nextField(); return n ? "NEXT ▸ "+({az:"ANGLE",dist:"DIST",va:"ZENITH"})[n] : "✓ STORE SHOT"; };
+    const storeLabel=()=>{ const n=nextField(); return n ? "NEXT ▸ "+({az:"ANGLE",dist:"DIST",va:"VA"})[n] : "✓ STORE SHOT"; };
     function syncStore(){ const sb=modal.querySelector(".np-ok"); if(sb) sb.textContent=storeLabel(); }
     function clearErr(){ if(!formErr) return; formErr=""; const e=modal.querySelector(".sf-err"); if(e) e.remove(); }
     function storeOrNext(){
@@ -5453,10 +5505,10 @@ function _shotForm(prefillDesc, autoLine, onStore){
       const descF = document.createElement("div"); descF.className="sf-field";
       descF.innerHTML=`<div class="sf-label">Description</div>`;
       const descV = document.createElement("div");
-      descV.className="sf-val sf-desc"+(activeField==="desc"?" active":"");
+      descV.className="sf-val sf-desc"+(activeField==="desc"?" active":"")+(activeField==="desc"&&freshFields.has("desc")&&fields.desc?" fresh":"");
       descV.textContent = fields.desc||"tap to enter";
       descV.style.color = fields.desc?"var(--text)":"var(--muted)";
-      descV.onclick=()=>{activeField="desc";render()};
+      descV.onclick=()=>{activeField="desc";freshFields.add("desc");render()};
       descF.appendChild(descV); r1.appendChild(descF);
       form.appendChild(r1);
 
@@ -5657,13 +5709,13 @@ function _shotForm(prefillDesc, autoLine, onStore){
         const alpha = document.createElement("div"); alpha.className="sf-alpha";
         [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -,./"].forEach(k=>{
           const b=document.createElement("button"); b.textContent=k===" "?"SPC":k;
-          b.onclick=()=>{fields.desc+=(k===" "?" ":k);renderDescOnly()};
+          b.onclick=()=>{const ch=(k===" "?" ":k);if(freshFields.has("desc")){fields.desc=ch;freshFields.delete("desc");}else fields.desc+=ch;renderDescOnly()};
           alpha.appendChild(b);
         });
         const bkb=document.createElement("button");bkb.textContent="⌫";bkb.className="sa-wide2";
-        bkb.onclick=()=>{fields.desc=fields.desc.slice(0,-1);renderDescOnly()};alpha.appendChild(bkb);
+        bkb.onclick=()=>{freshFields.delete("desc");fields.desc=fields.desc.slice(0,-1);renderDescOnly()};alpha.appendChild(bkb);
         const clb=document.createElement("button");clb.textContent="CLR";clb.className="sa-wide2";
-        clb.onclick=()=>{fields.desc="";renderDescOnly()};alpha.appendChild(clb);
+        clb.onclick=()=>{freshFields.delete("desc");fields.desc="";renderDescOnly()};alpha.appendChild(clb);
         const okb=document.createElement("button");okb.textContent="✓ Done";okb.className="sa-wide3";
         okb.style.cssText="border-color:var(--ok);color:var(--ok)";
         okb.onclick=()=>{activeField="az";render()};alpha.appendChild(okb);
@@ -5741,12 +5793,23 @@ function _shotForm(prefillDesc, autoLine, onStore){
       clearErr(); syncStore();
       // Keep fields.ih in sync with currentPoint.ih (set via _changeIH)
       fields.ih = (occ.ih||0).toFixed(3);
+      // 4.8.19: the ΔZ preview follows every keypress, not just a field change
+      const dzE=modal.querySelector(".sf-dz");
+      if(dzE){
+        const va=parseDMS(fields.va), sd=parseFloat(fields.dist), ih=parseFloat(fields.ih)||0, th=parseFloat(fields.th)||0;
+        if(!isNaN(va)&&!isNaN(sd)&&sd>0){
+          const dz=sd*Math.cos(va*Math.PI/180)+ih-th;
+          dzE.textContent="ΔZ "+(dz>=0?"+":"")+dz.toFixed(3);
+          dzE.style.color=dz>0?"var(--accent2)":dz<0?"var(--danger)":"var(--ok)";
+        } else { dzE.textContent="ΔZ —"; dzE.style.color="var(--muted)"; }
+      }
     }
     function renderDescOnly(){
       const descEl = modal.querySelector(".sf-val.sf-desc");
       if(descEl){
         descEl.textContent = fields.desc||"tap to enter";
         descEl.style.color = fields.desc?"var(--text)":"var(--muted)";
+        descEl.classList.toggle("fresh",freshFields.has("desc")&&!!fields.desc);
       }
     }
 
@@ -5858,7 +5921,7 @@ function _shotFormCheck(fields,is3D,occ,skipPt){
   if(isNaN(d)||d<=0) return {msg:fields.dist?"Bad distance.":"Enter a distance.",field:"dist"};
   if(is3D){
     const za=parseDMS(fields.va);
-    if(isNaN(za)||za<0||za>=360) return {msg:"Bad zenith angle — 90 = level, under 90 uphill.",field:"va"};
+    if(isNaN(za)||za<0||za>=360) return {msg:"Bad vertical angle (VA) — 90 = level, under 90 uphill.",field:"va"};
   }
   return null;
 }
@@ -5914,7 +5977,7 @@ function _processShot(fields, is3D, ih, occ){
   let E,N,Z,hd;
   if(is3D){
     let za = parseDMS(fields.va);
-    if(isNaN(za)||za<0||za>=360){alert("Bad zenith angle — 90=level, <90=uphill, >90=downhill.");takeShot();return}
+    if(isNaN(za)||za<0||za>=360){alert("Bad vertical angle (VA) — 90=level, <90=uphill, >90=downhill.");takeShot();return}
     if(za>180) za=360-za; // reverse-face reading: fold to direct (4.7.25)
     const th = parseFloat(fields.th)||0;
     const ihUsed = parseFloat(fields.ih)||0;
@@ -6071,6 +6134,7 @@ function _twoFaceParse(fields,is3D,occ){
 function _twoFaceCapture(occ,is3D){
   _shotForm("2F","none",(f1Fields)=>{
     const f1=_twoFaceParse(f1Fields,is3D,occ);
+    const _d1=((f1Fields&&f1Fields.desc)||"").trim()||"2F"; // 4.8.19: the description typed on face 1 is kept
     if(!f1){alert("Face 1 readings were incomplete \u2014 two-face cancelled.");return;}
     openModal((modal,close)=>{
       modal.innerHTML="<h2>\u21c4 Face 2</h2>"+
@@ -6085,8 +6149,9 @@ function _twoFaceCapture(occ,is3D){
       const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
       mk("Take Face 2 \u2192","ok",()=>{
         close();
-        _shotForm("2F","none",(f2Fields)=>{
+        _shotForm(_d1,"none",(f2Fields)=>{
           const f2=_twoFaceParse(f2Fields,is3D,occ);
+          window._twoFaceDesc=((f2Fields&&f2Fields.desc)||"").trim()||_d1;
           if(!f2){alert("Face 2 readings were incomplete \u2014 two-face cancelled.");return;}
           _twoFaceReduce(occ,is3D,f1,f2);
         });
@@ -6140,7 +6205,7 @@ function _showTwoFaceResult(avgAz,avgSD,avgVA,hd,collimErr,indexErr,E,N,Z,occ,is
       _takeSnapshot("Two-Face Shot");
       const newPt={
         Point:pointCounter++, Northing:N, Easting:E, Elevation:Z||0,
-        Type:"Shot", Description:"2F",
+        Type:"Shot", Description:window._twoFaceDesc||"2F",
         // 4.7.26: HorizDist was the averaged slope distance in 3D, stored as a
         // string, so unit conversion (typeof number) skipped it
         TrueAz:toDMS(avgAz), HorizDist:is3D?(hd||0):avgSD,
@@ -6180,11 +6245,30 @@ function checkShot(){
       const rdg=parseDMS(azStr);
       const rawAz=isAR?_arToAz(occ,rdg):rdg;
       if(isNaN(rawAz)){alert("Bad reading.");return}
-      calculatorInput(`Measured HD to #${knownPt.Point} (${units}):` ,"",distStr=>{
-        if(!distStr)return;
-        let measHD=parseFloat(distStr);
-        if(isNaN(measHD)||measHD<=0){alert("Bad distance.");return}
-        measHD=_applyPPM(measHD+prismConstant); // same corrections as a regular shot
+      // 4.8.19: in 3D (slope) mode the gun gives slope distance and VA — ask for those
+      const _cs3=surveyMode==="3D"&&distMode!=="HD";
+      const _getHD=cb=>{
+        if(!_cs3){
+          calculatorInput(`Measured HD to #${knownPt.Point} (${units}):`,"",s=>{
+            if(!s)return; const v=parseFloat(s);
+            if(isNaN(v)||v<=0){alert("Bad distance.");return}
+            cb(_applyPPM(v+prismConstant)); // same corrections as a regular shot
+          });
+          return;
+        }
+        calculatorInput(`Slope distance to #${knownPt.Point} (${units}):`,"",s=>{
+          if(!s)return; let sd=parseFloat(s);
+          if(isNaN(sd)||sd<=0){alert("Bad distance.");return}
+          calculatorInput("Vertical angle VA (DDD.MMSS, 90 = level):","90.0000",vs=>{
+            if(!vs)return; let va=parseDMS(vs);
+            if(isNaN(va)||va<=0||va>=360){alert("Bad vertical angle (VA).");return}
+            if(va>180)va=360-va;
+            sd=_applyPPM(sd+prismConstant);
+            cb(sd*Math.sin(va*Math.PI/180));
+          });
+        });
+      };
+      _getHD(measHD=>{
         // Compute measured position
         const trueAz=((rawAz%360)+360)%360;
         const measE=occ.Easting  + measHD*Math.sin(trueAz*Math.PI/180);
@@ -6199,7 +6283,7 @@ function checkShot(){
         showResult("Check Shot — #"+knownPt.Point,[
           {lbl:"Expected Az:",  val:fmtBrg(expectedAz)},
           {lbl:"Measured Az:",  val:fmtBrg(trueAz)},
-          {lbl:"Az Error:",     val:(dAz>=0?"+":"")+dAz.toFixed(4)+"°"},
+          {lbl:"Az Error:",     val:(dAz>=0?"+":"−")+toDMS(Math.abs(dAz))},
           {lbl:"Expected HD:",  val:expectedHD.toFixed(3)+" "+units},
           {lbl:"Measured HD:",  val:measHD.toFixed(3)+" "+units},
           {lbl:"HD Error:",     val:(dHD>=0?"+":"")+dHD.toFixed(3)+" "+units},
@@ -6349,7 +6433,10 @@ function _doStakeout(target,label,th){
   const occ=currentPoint;
   const hd=dist2D(occ,target);
   const az=azimuth(occ,target);
-  const inst=((az%360)+360)%360; // true azimuth — set instrument to this
+  // 4.8.19: in angle-right mode the circle is zeroed on the backsight, so the
+  // gun is turned to the angle right from it — not to the azimuth
+  const _bsS=hzMode==="ar"?_bsAzimuth(occ):NaN, _arS=!isNaN(_bsS);
+  const inst=_arS?(((az-_bsS)%360)+360)%360:((az%360)+360)%360;
   const dZ=target.Elevation-occ.Elevation;
   const rows=[
     {lbl:"From:",val:"#"+occ.Point},
@@ -6357,7 +6444,9 @@ function _doStakeout(target,label,th){
     ...(combinedScaleFactor&&combinedScaleFactor!==1?
       [{lbl:"Ground Dist:",val:(hd/combinedScaleFactor).toFixed(3)+" "+units}]:[]),
     {lbl:"True Az:",val:fmtBrg(az)},
-    {lbl:"Set Inst to:",val:fmtBrg(inst)},
+    ...(_arS?[{lbl:"Backsight:",val:_bsLabel(occ)},{lbl:"Set Inst to:",val:toDMS(inst)+" ∠ right"}]
+           :[{lbl:"Set Inst to:",val:fmtBrg(inst)}]),
+    ...(hzMode==="ar"&&!_arS?[{lbl:"Note:",val:"no backsight at #"+occ.Point+" — this is the azimuth"}]:[]),
   ];
   if(surveyMode==="3D"){
     // 4.7.25: no cut/fill is shown until the rod is actually shot. The old
@@ -6386,10 +6475,10 @@ function _doStakeout(target,label,th){
    Cut (+) = ground above grade; Fill (−) = ground below grade. */
 function _stakeMeasureRod(target,label,th){
   const occ=currentPoint; if(!occ){alert("Occupy a point first.");return}
-  calculatorInput("Zenith angle to rod (DDD.MMSS):","90.0000",zaStr=>{
+  calculatorInput("Vertical angle VA to rod (DDD.MMSS, 90 = level):","90.0000",zaStr=>{
     if(!zaStr)return;
     let za=parseDMS(zaStr);
-    if(isNaN(za)||za<0||za>=360){alert("Bad zenith angle.");return}
+    if(isNaN(za)||za<0||za>=360){alert("Bad vertical angle (VA).");return}
     if(za>180)za=360-za;
     calculatorInput(`Slope distance to rod (${units}):`,"",sdStr=>{
       if(!sdStr)return;
@@ -6835,7 +6924,7 @@ function _pointDetail(p){
         if(p.InstReading) rh+="<span class='lbl'>"+(p.HzMode==="AR"?"Angle right:":"Inst reading:")+"</span>&nbsp;<span class='val'>"+p.InstReading+"</span>"+
           (p.HzMode==="AR"&&typeof p.BSAz==="number"?"&nbsp;&nbsp;<span class='lbl'>BS:</span>&nbsp;<span class='val'>"+(p.BSPt!=null?"#"+p.BSPt+" · ":"")+_azLbl(p.BSAz)+"</span>":"")+"<br>";
         if(p.SlopeDist)   rh+="<span class='lbl'>Slope dist:</span>&nbsp;<span class='val'>"+Number(p.SlopeDist).toFixed(4)+" "+units+"</span>&nbsp;&nbsp;";
-        if(p.ZenithAngle) rh+="<span class='lbl'>Zenith:</span>&nbsp;<span class='val'>"+p.ZenithAngle+"</span>";
+        if(p.ZenithAngle) rh+="<span class='lbl'>VA:</span>&nbsp;<span class='val'>"+p.ZenithAngle+"</span>";
         if(p.LatOffset||p.VertOffset)
           rh+="<br><span class='lbl'>Lat off:</span>&nbsp;<span class='val'>"+(p.LatOffset||0)+" "+units+"</span>&nbsp;&nbsp;"+
               "<span class='lbl'>Vert off:</span>&nbsp;<span class='val'>"+(p.VertOffset||0)+" "+units+"</span>";
@@ -6883,7 +6972,7 @@ function _pointDetail(p){
                   const oldSD=String(p.SlopeDist||hd);
                   calculatorInput("Slope Dist [was "+oldSD+"]:",oldSD,newSD=>{
                     if(!newSD)return;
-                    calculatorInput("Zenith Angle (DDD.MMSS) [was "+p.ZenithAngle+"]:",p.ZenithAngle,newZA=>{
+                    calculatorInput("Vertical angle VA (DDD.MMSS) [was "+p.ZenithAngle+"]:",p.ZenithAngle,newZA=>{
                       if(!newZA)return;
                       const oldIH=String(p.IH||0);
                       calculatorInput("Inst Height (HI) [was "+oldIH+"]:",oldIH,newIH=>{
@@ -7085,10 +7174,10 @@ function enterPointManually(){
       const descF=document.createElement("div");descF.className="sf-field";
       descF.innerHTML=`<div class="sf-label">Description</div>`;
       const descV=document.createElement("div");
-      descV.className="sf-val sf-desc"+(activeField==="desc"?" active":"");
+      descV.className="sf-val sf-desc"+(activeField==="desc"?" active":"")+(activeField==="desc"&&freshFields.has("desc")&&fields.desc?" fresh":"");
       descV.textContent=fields.desc||"tap to enter";
       descV.style.color=fields.desc?"var(--text)":"var(--muted)";
-      descV.onclick=()=>{activeField="desc";render()};
+      descV.onclick=()=>{activeField="desc";freshFields.add("desc");render()};
       descF.appendChild(descV);r1.appendChild(descF);
       form.appendChild(r1);
 
@@ -7121,13 +7210,13 @@ function enterPointManually(){
         const alpha=document.createElement("div");alpha.className="sf-alpha";
         [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -,./"].forEach(k=>{
           const b=document.createElement("button");b.textContent=k===" "?"SPC":k;
-          b.onclick=()=>{fields.desc+=(k===" "?" ":k);
+          b.onclick=()=>{const ch=(k===" "?" ":k);if(freshFields.has("desc")){fields.desc=ch;freshFields.delete("desc");}else fields.desc+=ch;
             const d=modal.querySelector(".sf-val.sf-desc");
-            if(d){d.textContent=fields.desc||"tap to enter";d.style.color=fields.desc?"var(--text)":"var(--muted)";}
+            if(d){d.textContent=fields.desc||"tap to enter";d.style.color=fields.desc?"var(--text)":"var(--muted)";d.classList.remove("fresh");}
           };alpha.appendChild(b);
         });
         const bk=document.createElement("button");bk.textContent="⌫";bk.className="sa-wide2";
-        bk.onclick=()=>{fields.desc=fields.desc.slice(0,-1);render()};alpha.appendChild(bk);
+        bk.onclick=()=>{freshFields.delete("desc");fields.desc=fields.desc.slice(0,-1);render()};alpha.appendChild(bk);
         const cl=document.createElement("button");cl.textContent="CLR";cl.className="sa-wide2";
         cl.onclick=()=>{fields.desc="";render()};alpha.appendChild(cl);
         const ok=document.createElement("button");ok.textContent="✓ Done";ok.className="sa-wide3";
@@ -7337,9 +7426,9 @@ function _correctShot(pt,S){
             const thv=parseFloat(thStr); if(isNaN(thv)){alert("Bad TH.");return;}
             const dVcur=pt.Elevation - S.Elevation - ihv + thv;
             const zaDef=pt.ZenithAngle || _toDDMMSS(Math.atan2(curDist, dVcur)*180/Math.PI);
-            calculatorInput(`Corrected zenith angle (DDD.MMSS, 90=level) [${zaDef}]:`, zaDef, zStr=>{
+            calculatorInput(`Corrected vertical angle VA (DDD.MMSS, 90=level) [${zaDef}]:`, zaDef, zStr=>{
               if(zStr===null)return;
-              const za=parseDMS(zStr); if(isNaN(za)||za<=0||za>=180){alert("Bad zenith angle.");return;}
+              const za=parseDMS(zStr); if(isNaN(za)||za<=0||za>=180){alert("Bad vertical angle (VA).");return;}
               const newZ = S.Elevation + ihv - thv + d/Math.tan(za*Math.PI/180);
               proceed(newZ, za, ihv, thv);
             });
@@ -7375,6 +7464,8 @@ function settingsMenu(){
           if(fk)footKind=fk;
           try{_recomputeAreaLabels();}catch(e){}
           saveData();
+          try{resetPlot();}catch(e){}       // 4.8.19: every coordinate moved — re-fit
+          closeAllModals(); settingsMenu();  // and the (ft)/(m) labels follow
         };
         if(to==="m"){
           // 4.8.3: US survey ft first — it is the foot GPS / state plane use here
@@ -7384,7 +7475,7 @@ function settingsMenu(){
           mk("Convert — to US Survey ft (÷ 1200/3937)","ok",()=>{close();doConvert(3937/1200,"us");});
           mk("Convert — to International ft (÷ 0.3048)","blue",()=>{close();doConvert(1/0.3048,"intl");});
         }
-        mk("Relabel only — keep numbers","",()=>{close();units=to;btn.textContent=units;saveData();});
+        mk("Relabel only — keep numbers","",()=>{close();units=to;btn.textContent=units;saveData();closeAllModals();settingsMenu();});
         mk("Cancel","",close);
       });
     });
@@ -7594,8 +7685,9 @@ function _coordListParse(raw, order, sep){
   }
   return {rows:out, skipped, mode, sepMode};
 }
-function _coordListCommit(rows){
+function _coordListCommit(rows,_gateOk){
   if(!rows||!rows.length){ alert("No coordinate rows to import."); return; }
+  if(!_gateOk&&!_importFarGate(rows.map(r=>({N:r.N,E:r.E})),"the list",()=>_coordListCommit(rows,true))) return;
   _takeSnapshot("Import coordinate list");
   let next=_coordListNextNum();
   const added=[];
@@ -8300,6 +8392,7 @@ function _clearTransientMapSelections(redraw=false){
   window._connClickActive=false;
   window._connClickHandler=null;
   window._connClickCancelCb=null;
+  {const _pc=document.getElementById("pickChooser");if(_pc)_pc.remove();}
   if(typeof _pickedPts!=="undefined") _pickedPts=[];
   if(typeof _connFrom!=="undefined") _connFrom=null;
 
@@ -9089,7 +9182,7 @@ function _bowditchAdjust(poly,errN,errE,totalD){
   showResult("✓ Bowditch Adjusted",[
     {lbl:"Points adjusted:",val:String(lastIdx)},
     {lbl:"Sideshots moved:",val:String(carried)+" (with their station)"},
-    {lbl:"Traverse type:",val:isClosed?"Closed":"Open"},
+    {lbl:"Traverse type:",val:isClosed?"Closed":"Closed loop — #"+poly[poly.length-1].Point+" held to #"+poly[0].Point},
     {lbl:"Correction N:",val:(-errN).toFixed(4)+" "+units},
     {lbl:"Correction E:",val:(-errE).toFixed(4)+" "+units},
   ]);
@@ -10480,6 +10573,23 @@ function cogoScale(){
 // Module-level state for tap-to-connect
 let _connFrom = null;
 
+/* 4.8.19: which of several stacked points did the tap mean? A sheet over the
+   map; the pick in progress stays armed underneath. */
+function _pickChooser(grp){
+  const old=document.getElementById("pickChooser"); if(old) old.remove();
+  const ov=document.createElement("div"); ov.id="pickChooser"; ov.className="modal-overlay"; ov.style.zIndex="9000";
+  const m=document.createElement("div"); m.className="modal"; ov.appendChild(m);
+  m.innerHTML="<h2>Which point?</h2><p class='info'>"+grp.length+" points are on top of each other here.</p>";
+  const done=()=>ov.remove();
+  grp.slice().sort((a,b)=>a.Point-b.Point).forEach(p=>{
+    const b=document.createElement("button"); b.className="btn blue";
+    b.textContent="#"+p.Point+(p.Description?" · "+p.Description:"")+(p.Type==="Setup"?" (setup)":"");
+    b.onclick=()=>{done(); if(window._connClickActive&&window._connClickHandler) window._connClickHandler(p);};
+    m.appendChild(b);
+  });
+  const c=document.createElement("button"); c.className="btn"; c.textContent="Back to the map"; c.onclick=done; m.appendChild(c);
+  document.body.appendChild(ov);
+}
 function _connCancel(){
   // A user cancellation is different from a destructive state reset: give the
   // active picker its chance to clean tool-local state / return cb(null).
@@ -10488,6 +10598,7 @@ function _connCancel(){
   window._connClickActive=false;
   window._connClickHandler=null;
   window._connClickCancelCb=null;
+  {const _pc=document.getElementById("pickChooser");if(_pc)_pc.remove();}
   if(typeof _pickedPts!=="undefined") _pickedPts=[];
   tempGeom=[];
   tempIntersections=[];
@@ -10649,8 +10760,11 @@ function _viewTransform(w,h){
   const pad=44;
   const base=(Math.min(w,h)-pad*2)/rng;
   const scale=base*viewScale;
-  const offX=(w-rng*scale)/2-minE*scale+pad+viewOffsetX;
-  const offY=(h-rng*scale)/2-minN*scale+pad+viewOffsetY;
+  // 4.8.19: centre the data. The old form added the margin a second time, so a
+  // fitted job sat 44 px off centre and its east-most point landed on the
+  // screen edge — out of reach of a tap.
+  const offX=w/2-((minE+maxE)/2)*scale+viewOffsetX;
+  const offY=h/2-((minN+maxN)/2)*scale+viewOffsetY;
   return{scale,offX,offY,base,minE,maxE,minN,maxN,rng};
 }
 /* Zoom limits are expressed in GROUND resolution, not as a multiplier.
@@ -13660,6 +13774,7 @@ function _deedPickPOB(calls){
     mk("🖐 Slide & rotate to fit the imagery","blue",()=>{close();
       const c=document.getElementById("plotCanvas");
       const mid=_screenToWorld(c.clientWidth/2,c.clientHeight/2);
+      _takeSnapshot("Plot deed");
       _deedPlot=_mkDeed([{kind:"boundary",name:"Boundary",calls,pobE:mid?mid.E:0,pobN:mid?mid.N:0,ptNums:[],statedAcres:calls.statedAcres||null}],0);
       _deedRecompute();
       _deedAdjustStart();
@@ -13670,6 +13785,7 @@ function _deedPickPOB(calls){
   });
 }
 function _deedSet(calls,E,N){
+  _takeSnapshot(_deedPlot&&!_deedAppendMode?"Re-place deed":"Plot deed"); // 4.8.19: its own undo step
   _deedPlot=_mkDeed([{kind:"boundary",name:"Boundary",calls,pobE:E,pobN:N,ptNums:[],statedAcres:(calls.statedAcres||(_deedPlot&&_deedPlot.calls===calls&&_deedPlot.figures[0].statedAcres))||null}],0);
   _deedRecompute();saveData();
   if(window._deferredJobSetup){window._pendingSetup=window._deferredJobSetup;window._deferredJobSetup=null;}
@@ -14021,6 +14137,7 @@ function _deedResolveFigures(figs,E,N){
     if(!changed)break;
   }
   figs.forEach(f=>{if(placed.has(f))return;f.pobE=E;f.pobN=N;f.autoStacked=true;f.placementReason="unresolved reference";_deedSetComputed(f);stacked++;});
+  _takeSnapshot(_deedAppendMode&&_deedPlot?"Add deed":"Plot deed"); // 4.8.19: its own undo step
   const recName=window._deedPendingRecordName||("Deed "+(_deedRecordIds().length+1));
   const newRecordId=!figs.every(f=>f.recordId)?_deedAssignRecord(figs,recName):(figs[0]&&figs[0].recordId);
   window._deedPendingRecordName=null;
@@ -15129,7 +15246,7 @@ function _drawSatellite(ctx,w,h,T){
   ctx.setTransform(base);
   ctx.restore();
   // Nothing on screen yet — tell the user the imagery is on its way
-  if(_drawn===0&&_wanted>0){
+  if(_drawn===0&&_wanted>0&&!window._satExt){ // 4.8.19: screen only — not printed into a PDF plot
     ctx.save();
     ctx.font="bold 13px 'Courier New',monospace";
     ctx.textAlign="center";ctx.textBaseline="middle";
@@ -16711,7 +16828,7 @@ function plotPoints(extCtx,extW,extH){
   // Compensate viewScale/offsets so the view stays put; ◎ re-fits on demand.
   if(!extCtx){
     const pv=window._pvState;
-    if(pv&&pv.w===w&&pv.h===h&&(pv.minE!==T.minE||pv.minN!==T.minN||pv.rng!==T.rng)){
+    if(pv&&pv.w===w&&pv.h===h&&(pv.minE!==T.minE||pv.minN!==T.minN||pv.rng!==T.rng||pv.maxE!==T.maxE||pv.maxN!==T.maxN)){
       /* Compensation is bounded. viewScale is expressed RELATIVE to the data
          bbox, so holding apparent scale constant means multiplying viewScale
          by however much the bbox grew. That is right for adding a shot; it is
@@ -16724,11 +16841,14 @@ function plotPoints(extCtx,extW,extH){
          import anyway. */
       const want=pv.base*viewScale/T.base;
       const growth=pv.rng?T.rng/pv.rng:1;
-      if(isFinite(want)&&want>0&&growth>0.125&&growth<8){
+      // 4.8.19: and when the old and new extents don't even overlap (a ft↔m
+      // conversion, an undo of one) there is no view to keep — re-fit
+      const overlap=!(T.maxE<pv.minE||T.minE>pv.maxE||T.maxN<pv.minN||T.minN>pv.maxN);
+      if(isFinite(want)&&want>0&&growth>0.125&&growth<8&&overlap){
         viewScale=_clampZoom(want,T.base);
         const sc=T.base*viewScale;
-        viewOffsetX+=sc*((T.rng-pv.rng)/2+(T.minE-pv.minE));
-        viewOffsetY+=sc*((T.rng-pv.rng)/2+(T.minN-pv.minN));
+        viewOffsetX+=sc*(((T.minE+T.maxE)-(pv.minE+pv.maxE))/2);
+        viewOffsetY+=sc*(((T.minN+T.maxN)-(pv.minN+pv.maxN))/2);
       } else {
         viewScale=1;viewOffsetX=0;viewOffsetY=0;
       }
@@ -16737,12 +16857,12 @@ function plotPoints(extCtx,extW,extH){
     /* A non-finite viewScale makes every transform NaN and nothing on the
        canvas can recover from it — belt and braces. */
     if(!isFinite(viewScale)||viewScale<=0){viewScale=1;viewOffsetX=0;viewOffsetY=0;T=_viewTransform(w,h);}
-    window._pvState={w,h,minE:T.minE,minN:T.minN,rng:T.rng,base:T.base};
+    window._pvState={w,h,minE:T.minE,minN:T.minN,maxE:T.maxE,maxN:T.maxN,rng:T.rng,base:T.base};
   }
   const{scale,offX,offY}=T;
   const X=e=>e*scale+offX;
   const Y=n=>h-(n*scale+offY);
-  try{ _drawSatellite(ctx,w,h,T); }catch(e){}
+  window._satExt=!!extCtx; try{ _drawSatellite(ctx,w,h,T); }catch(e){} window._satExt=false;
   // Grid — ensure a sensible step even with 1 point (rng=1)
   // Minimum step = enough to show at least 3 grid lines across the view
   const minWorldStep = (Math.max(w,h)) / (T.scale * 3);
@@ -18261,7 +18381,15 @@ function zoomToOccupied(){
       const _near=points.map(p=>({p,d:Math.hypot(X(p.Easting)-mx,Y(p.Northing)-my)})).filter(o=>o.d<PT_THRESH).sort((a,b)=>a.d-b.d);
       window._connClickNear=_near.map(o=>o.p);
       const hitPt=_near.length?_near[0].p:null;
-      if(hitPt){ window._connClickHandler(hitPt); return; }
+      if(hitPt){
+        // 4.8.19: points sitting on top of each other (a closing shot on the
+        // start point, a check shot on a corner) — ask which one, rather than
+        // taking whichever is a fraction of a pixel closer
+        const hx=X(hitPt.Easting),hy=Y(hitPt.Northing);
+        const grp=_near.filter(o=>Math.hypot(X(o.p.Easting)-hx,Y(o.p.Northing)-hy)<6).map(o=>o.p);
+        if(grp.length>1){ _pickChooser(grp); return; }
+        window._connClickHandler(hitPt); return;
+      }
       // 4.8.18: a near miss is not a cancel — shake the prompt and keep waiting
       const _nearMiss=points.some(p=>Math.hypot(X(p.Easting)-mx,Y(p.Northing)-my)<PT_THRESH*2.5);
       if(_nearMiss){ _pickMissed(); return; }
@@ -18568,7 +18696,7 @@ function _pointContextMenu(p){
       boxHtml += `&nbsp;&nbsp;<span class="lbl" style="color:var(--muted)">SD:</span>&nbsp;<span class="val">${Number(p.SlopeDist).toFixed(3)}</span>`;
     }
     if(p.ZenithAngle){
-      boxHtml += `&nbsp;&nbsp;<span class="lbl" style="color:var(--muted)">ZA:</span>&nbsp;<span class="val">${p.ZenithAngle}</span>`;
+      boxHtml += `&nbsp;&nbsp;<span class="lbl" style="color:var(--muted)">VA:</span>&nbsp;<span class="val">${p.ZenithAngle}</span>`;
     }
     if(p.From){
       boxHtml += `<br><span class="lbl" style="color:var(--muted)">From occ:</span>&nbsp;<span class="val">#${p.From}</span>`;
@@ -20070,7 +20198,7 @@ function openWorkspace(name){
   const add=(t,s,c,f,b)=>_wsCard2(body,t,s,c,f,b);
   if(name==="field"){
     _wsGroup2(body,"Observation");add("Take Shot","Store a 2D or 3D observation","primary",takeShot,currentPoint?"OCC "+currentPoint.Point:null);add("Occupy Point","Move the instrument setup","blue",occupyPoint);add("Set Station","Enter known station coordinates","",setKnownStation);add("Check Shot","Compare against a known point","",checkShot);add("Two-Face Shot","Reduce Face 1 and Face 2","",twoFaceShot);add("Atmospheric PPM","Temperature and pressure correction",_ppmEnabled?"primary":"",atmosphericSetup,_ppmEnabled?"ON":null);
-    _wsGroup2(body,"Instrument");add("Survey Mode: "+surveyMode,surveyMode==="3D"?"Slope/HD + zenith, computes elevations":"Azimuth + horizontal distance","",_modeSwitchPrompt);add("Instrument Height HI",currentPoint?("Occupied #"+currentPoint.Point+" · "+(currentPoint.ih||0).toFixed(3)+" "+units):"Occupy a point first","",()=>_setupTapHI(),currentPoint&&!(currentPoint.ih>0)&&surveyMode==="3D"?"CHECK":null);add("Backsight",currentPoint?(_bsLabel(currentPoint)?"#"+currentPoint.Point+" → "+_bsLabel(currentPoint):"Not set · needed for angle-right shots"):"Occupy a point first","",()=>setBacksight(),hzMode==="ar"?"AR":null);add("Shot Result Screen",rapidShots?"Off · straight to the next shot":"Shown after every shot","",()=>_setRapidShots(!rapidShots),rapidShots?"OFF":null);add("Prism Constant",(_prismPresetMm()===0?"0":_prismPresetMm()===-30?"-30 mm":_prismPresetMm()===30?"+30 mm":(prismConstant||0).toFixed(4)+" "+units),"",()=>_setupTapPrism());add("Grid Scale CSF",(combinedScaleFactor>0?combinedScaleFactor:1).toFixed(8)+(combinedScaleFactor===1?" · off":""),"",()=>_setupTapCSF());
+    _wsGroup2(body,"Instrument");add("Survey Mode: "+surveyMode,surveyMode==="3D"?"Slope/HD + VA, computes elevations":"Azimuth + horizontal distance","",_modeSwitchPrompt);add("Instrument Height HI",currentPoint?("Occupied #"+currentPoint.Point+" · "+(currentPoint.ih||0).toFixed(3)+" "+units):"Occupy a point first","",()=>_setupTapHI(),currentPoint&&!(currentPoint.ih>0)&&surveyMode==="3D"?"CHECK":null);add("Backsight",currentPoint?(_bsLabel(currentPoint)?"#"+currentPoint.Point+" → "+_bsLabel(currentPoint):"Not set · needed for angle-right shots"):"Occupy a point first","",()=>setBacksight(),hzMode==="ar"?"AR":null);add("Shot Result Screen",rapidShots?"Off · straight to the next shot":"Shown after every shot","",()=>_setRapidShots(!rapidShots),rapidShots?"OFF":null);add("Prism Constant",(_prismPresetMm()===0?"0":_prismPresetMm()===-30?"-30 mm":_prismPresetMm()===30?"+30 mm":(prismConstant||0).toFixed(4)+" "+units),"",()=>_setupTapPrism());add("Grid Scale CSF",(combinedScaleFactor>0?combinedScaleFactor:1).toFixed(8)+(combinedScaleFactor===1?" · off":""),"",()=>_setupTapCSF());
     _wsGroup2(body,"Field data");add("Point List","Review and edit stored points","",pointListMenu,points.length+" PTS");add("Shift Elevations","Tie assumed elevations to a benchmark","",elevationShift);add("Flag Point","Mark control or questionable shots","",flagPoint);
   } else if(name==="records"){
     const ids=(typeof _deedRecordIds==="function"&&_deedPlot)?_deedRecordIds():[];
