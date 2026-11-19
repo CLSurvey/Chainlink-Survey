@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.20">
+<meta name="application-name" content="ChainLink-v4.8.21">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.20</title>
+<title>ChainLink Survey v4.8.21</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1456,7 +1456,7 @@ html.light-mode .job-all-row{background:rgba(0,0,0,.03)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.20";
+const APP_VERSION = "4.8.21";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -6437,29 +6437,18 @@ function redo(){ redoFromCanvas(); }
 
 
 /* ── 10. STAKEOUT ──────────────────────────────────────────────── */
-function stakeoutMenu(){
-  _setWorkspaceActive("stake");
-  openModal((modal,close)=>{
-    _helpContext="stakeout";
-    modal.innerHTML=`<h2>📍 Stakeout</h2><p class="info">Occupying: <b style="color:var(--accent)">#${currentPoint?currentPoint.Point:"—"}</b></p>`;
-    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className=`btn ${cls}`;b.textContent=t;b.onclick=fn;modal.appendChild(b)};
-    mk("Stake to Stored Point","ok",()=>{close();stakeStoredPoint()});
-    mk("Stake to Entered Coords","blue",()=>{close();stakeEnteredCoords()});
-    mk("Stake to Line","",()=>{close();stakeToLine()});
-    if(geoAnchor){
-      mk(_gpsStakeTarget?"📡 GPS Navigate: → #"+_gpsStakeTarget+" (tap to stop)":"📡 GPS Navigate to Point","accent",()=>{
-        close();
-        if(_gpsStakeTarget){_gpsStakeTarget=null;plotPoints();return;}
-        calculatorInput("Navigate to point #:","",pn=>{
-          if(pn===null||pn==="")return;
-          const pt=points.find(p=>p.Point===parseInt(pn,10));
-          if(!pt){alert("Point "+pn+" not found.");return;}
-          _gpsStakeTarget=pt.Point;
-          startLiveGps();plotPoints();
-        });
-      });
-    }
-    mk("Cancel","",close);
+/* 4.8.21: GPS Navigate runs straight from the Stake panel. It used to open a
+   "Stakeout" menu that repeated Stake Stored Point / Coordinates / Line — the
+   panel already has all three — and the panel listed that menu twice. */
+function gpsNavigate(){
+  if(_gpsStakeTarget){_gpsStakeTarget=null;plotPoints();return;}
+  if(!geoAnchor){alert("GPS Navigate needs the job anchored to the map.\n\nMap \u2192 Imagery / GPS \u2192 Anchor this job.");return;}
+  calculatorInput("Navigate to point #:","",pn=>{
+    if(pn===null||pn==="")return;
+    const pt=points.find(p=>p.Point===parseInt(pn,10));
+    if(!pt){alert("Point "+pn+" not found.");return;}
+    _gpsStakeTarget=pt.Point;
+    startLiveGps();plotPoints();
   });
 }
 function _doStakeout(target,label,th){
@@ -19494,7 +19483,7 @@ const HELP_TOPICS = [
   { id:"stakeout", section:"Stakeout", title:"Stakeout",
     preview:"Navigate to a stored point or entered coordinates",
     body:`<h3>Stakeout</h3>
-<p>Tap <strong>Stake → Stake Stored Point</strong> or <strong>Stake to Entered Coords</strong>.</p>
+<p>Tap <strong>Stake → Stake Stored Point</strong> or <strong>Stake Coordinates</strong>.</p>
 <p>Result shows: horizontal distance, true azimuth, instrument setting, and in 3D mode: target elevation, rod height (TH), and the vertical distance the instrument should read to the prism when the rod is on grade.</p>
 <h3>Measure Rod → Cut/Fill</h3>
 <p>Shoot the rod, then enter the zenith angle and slope distance. ChainLink computes the ground elevation at the rod and shows <strong>CUT</strong> (ground above grade) or <strong>FILL</strong> (ground below grade), plus how far to come in or go out. Cut/fill is only shown from a real shot.</p>
@@ -19636,7 +19625,7 @@ const HELP_TOPICS = [
   { id:"sat-navigate", section:"Satellite & GPS", title:"GPS Navigate — Walk to a Point",
     preview:"An arrow and distance guiding you to any point",
     body:`<h3>Walking to a Point You Can't See</h3>
-<p>Say point #12 is a corner marker somewhere in the brush. Open <strong>Stakeout → 📡 GPS Navigate to Point</strong>, enter 12, and the app draws a dashed line from the blue dot (you) to the target, with a live readout at the top:</p>
+<p>Say point #12 is a corner marker somewhere in the brush. Tap <strong>Stake → GPS Navigate</strong>, enter 12, and the app draws a dashed line from the blue dot (you) to the target, with a live readout at the top:</p>
 <p><strong>→ #12&nbsp;&nbsp;143.2 ft&nbsp;&nbsp;@ 61°23'</strong></p>
 <p>That's the distance left and the compass direction (61° is roughly northeast; 0° is north, 90° east, 180° south, 270° west). Walk, watch the number fall, and the readout turns <strong>green</strong> when you're within about 3 ft.</p>
 <h3>Stopping</h3>
@@ -20310,7 +20299,7 @@ function openWorkspace(name){
   } else if(name==="cogo"){
     _wsGroup2(body,"Coordinate geometry");add("Open COGO Tools","Inverse, projection, intersections and area","accent",cogoMenu);add("Inverse","Distance and direction between points","",cogoInverse);add("Area / Perimeter","Compute selected boundary area","",cogoArea);add("Rotate / Align","Transform stored job geometry","",cogoRotateAlign);add("Rectangle Layout","Square or rectangle corners from one side","",cogoRectangle);add("Draw Connection","Connect stored points","",drawConnection);
   } else if(name==="stake"){
-    _wsGroup2(body,"Layout");add("Stake Stored Point","Select a point from the plot","primary",stakeStoredPoint);add("Stake Coordinates","Enter target N, E and elevation","",stakeEnteredCoords);add("Stake Line / Arc","Select existing geometry","accent",stakeToLine);add("GPS Navigate","Walk to a point using phone GPS","",stakeoutMenu);add("All Stake Tools","Open the complete stakeout menu","",stakeoutMenu);
+    _wsGroup2(body,"Layout");add("Stake Stored Point","Select a point from the plot","primary",stakeStoredPoint);add("Stake Coordinates","Enter target N, E and elevation","",stakeEnteredCoords);add("Stake Line / Arc","Select existing geometry","accent",stakeToLine);add(_gpsStakeTarget?"Stop GPS Navigate":"GPS Navigate",_gpsStakeTarget?"Walking to #"+_gpsStakeTarget+" · tap to stop":(geoAnchor?"Walk to a point using phone GPS":"Anchor the job to the map first"),_gpsStakeTarget?"primary":"",gpsNavigate,_gpsStakeTarget?"ON":null);
   } else if(name==="map"){
     _wsGroup2(body,"Basemap and position");add("Imagery / GPS","Basemap, anchor, opacity and live marker","accent",satelliteMenu,satOn?"ON":null);add("Toggle Satellite","Switch imagery and GPS together",satOn?"primary":"",toggleSatAndGps);add("Fit All","Show every point and record","",resetPlot);add("Locate Occupied","Center on the occupied point","",zoomToOccupied);
     _wsGroup2(body,"Display");add(showLabels?"Hide Labels":"Show Labels","Point, line and record labels","",toggleLabels);add(showElevations?"Hide Elevations":"Show Elevations","Elevation annotations","",toggleElevations);add("Project Explorer","Records, points and layers","",()=>openProjectDrawer("layers"));
