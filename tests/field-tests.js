@@ -1,4 +1,5 @@
-// field-tests.js — regression checks for the 4.8.19 field-session findings.
+// field-tests.js — regression checks for the 4.8.19 field-session findings
+// and the 4.8.20 curve / offset-staking findings.
 // Runs the whole app in the compat sandbox (no browser).
 //   node tests/field-tests.js [path/to/index.html]
 'use strict';
@@ -121,6 +122,73 @@ console.log('— GeoJSON is lon/lat on an anchored job —');
   const g2=JSON.parse(sr(a,'window.__gj'));
   t('unanchored job stays on the grid, labelled', g2.features[0].geometry.coordinates[0]===5000&&!!g2.crs_note);
 }
+
+// ---- 4.8.20: a 3-point curve, offset 10 ft outside, staked ----
+// Center N10000 E10100, R 50, clockwise PC (N10050 E10100) → PT (N10000 E10150).
+const CURVE=`(function(){
+  units="ft"; surveyMode="3D"; distMode="SD"; hzMode="ar"; isPro=true; prismConstant=0;
+  points=[
+    {Point:1,Northing:10000,Easting:10000,Elevation:100,Type:"Setup",Description:"OCC",Flag:"",ih:5},
+    {Point:2,Northing:10050,Easting:10100,Elevation:95,Type:"Shot",Description:"PC",Flag:"",From:1},
+    {Point:3,Northing:10035.3553,Easting:10135.3553,Elevation:96,Type:"Shot",Description:"POC",Flag:"",From:1},
+    {Point:4,Northing:10000,Easting:10150,Elevation:97,Type:"Shot",Description:"PT",Flag:"",From:1},
+    {Point:5,Northing:10000,Easting:10200,Elevation:100,Type:"Shot",Description:"BS",Flag:"",From:1}];
+  pointCounter=6; plotConnections=[]; currentPoint=points[0]; currentPoint.bsPt=5;
+  _polylines=[{name:"CL",verts:[{E:10100,N:10050},{E:10150,N:10000}],segs:[{type:"arc",centerE:10100,centerN:10000,R:50,dir:"cw"}]}];
+  window.__rows=null; showResult=function(title,rows){window.__title=title;window.__rows=rows;};
+  window.__ans=[]; window.__prompts=[];
+  calculatorInput=function(label,def,cb){window.__prompts.push(label);cb(window.__ans.shift());};
+})()`;
+
+console.log('— Curve: forward tangent on a clockwise arc —');
+{
+  const a=boot(); sr(a,CURVE);
+  const az=Number(sr(a,'_plPointAtStaOff(_polylines[0],0,0).az'));
+  t('tangent at the PC is 90° (was 270°)', Math.abs(az-90)<1e-6, az);
+}
+
+console.log('— Curve: Offset Polyline puts LEFT outside a clockwise arc —');
+{
+  const a=boot(); sr(a,CURVE);
+  sr(a,'window.__ans=["-10"]; _offsetPolyline(_polylines[0],0)');
+  const o=JSON.parse(sr(a,'JSON.stringify(_polylines[1]||null)'));
+  t('−10 (left) on a clockwise arc → R 60', o&&Math.abs(o.segs[0].R-60)<1e-9, o&&o.segs[0]);
+  t('PC moved out to N10060', o&&Math.abs(o.verts[0].N-10060)<1e-6&&Math.abs(o.verts[0].E-10100)<1e-6, o&&o.verts[0]);
+  const z=JSON.parse(sr(a,'JSON.stringify(points.filter(p=>p.Description==="OFS").map(p=>p.Elevation))'));
+  t('offset points keep the curve elevations (95, 97)', z.length===2&&z[0]===95&&z[1]===97, z);
+}
+
+console.log('— Curve: Point at Sta/Offset —');
+{
+  const a=boot(); sr(a,CURVE);
+  const half=Number(sr(a,'_plTotalLen(_polylines[0])'))/2;
+  sr(a,'window.__ans=["'+half+'","-10"]; _plSetPointAtSta(_polylines[0])');
+  const r=rowsText(a);
+  t('mid-curve 10 L lands at N10042.426 E10142.426', /Northing: 10042\.426/.test(r)&&/Easting: 10142\.426/.test(r), r);
+  t('elevation interpolated from the PC/PT (96.000)', /Elevation: 96\.000/.test(r), r);
+}
+
+console.log('— Curve: Stake to Arc, 10 ft outside, angle right + 3D —');
+{
+  const a=boot(); sr(a,CURVE);
+  // rod exactly on the R 60 offset at mid-curve; backsight #5 is az 90°
+  const rod={N:10042.42641,E:10142.42641};
+  const az=Math.atan2(rod.E-10000,rod.N-10000)*180/Math.PI, hd=Math.hypot(rod.E-10000,rod.N-10000);
+  const ar=(az-90+360)%360, d=Math.floor(ar), mm=Math.floor((ar-d)*60), ss=((ar-d)*60-mm)*60;
+  const dms=d+'.'+String(mm).padStart(2,'0')+String(Math.round(ss*100)).padStart(4,'0');
+  const sd=hd/Math.sin(89*Math.PI/180);
+  sr(a,'_stlOff=10; window.__ans=["'+dms+'","'+sd.toFixed(4)+'","89.0000"]; _stlMeasure({kind:"arc",conn:{type:"arc",centerE:10100,centerN:10000,R:50,startAngle:Math.PI/2,endAngle:0,delta:-90,arcLen:78.54,from:2,to:4}})');
+  const pr=sr(a,'JSON.stringify(window.__prompts)'), r=rowsText(a);
+  t('asks angle right from the backsight', /Angle right to rodman, backsight/.test(pr), pr);
+  t('3D slope mode asks slope distance and VA', /Slope distance/.test(pr)&&/Vertical angle VA/.test(pr), pr);
+  t('stakes to R 60 (10 ft outside)', /staking R 60\.000/.test(r), r);
+  const off=(r.match(/Off target: ([\d.]+)/)||[])[1];
+  t('rod is on the offset', off===undefined?/ON OFFSET/.test(r):Number(off)<0.01, r);
+  t('reports 10.000 ft outside the arc', /From the arc: 10\.000 ft outside/.test(r), r);
+}
+
+console.log('— Curve: delta shown in d-m-s —');
+t('no decimal-degree delta left', !/Delta:"?,\s*val:[^}]*toFixed\(4\)\+"(°|\\u00b0)"/.test(html));
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);

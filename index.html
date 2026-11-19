@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="application-name" content="ChainLink-v4.8.19">
+<meta name="application-name" content="ChainLink-v4.8.20">
 <meta name="theme-color" content="#0a0905">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ChainLink">
-<title>ChainLink Survey v4.8.19</title>
+<title>ChainLink Survey v4.8.20</title>
 <!-- 4.7.29: search and link-preview metadata (the app had none) -->
 <meta name="description" content="Free total station data collector and COGO app for your phone. Record shots, stake out, and plot deeds on aerial imagery. Works offline, no account.">
 <meta name="robots" content="index,follow">
@@ -1456,7 +1456,7 @@ html.light-mode .job-all-row{background:rgba(0,0,0,.03)}
 ════════════════════════════════════════════════════════════════ */
 
 /* ── VERSION GUARD ─────────────────────────────────────────────── */
-const APP_VERSION = "4.8.19";
+const APP_VERSION = "4.8.20";
 
 /* ── PRO ENTITLEMENT ───────────────────────────────────────────────
  * Single switch controlling access to Pro features. Currently forced
@@ -4716,6 +4716,7 @@ function _plAddArc(conn){
 function _plHint(msg){
   const el=document.getElementById("_plBanner");
   if(el) el.textContent=msg;
+  const n=document.getElementById("contextName"); if(n&&window._plBuilding) n.textContent=msg; // 4.8.20: hints show in the bar
 }
 
 function _plUndo(){
@@ -4729,6 +4730,7 @@ function _plRedraw(){
   plotPoints();
   const el=document.getElementById("_plBanner");
   if(el&&_plDraft) el.textContent=_plDraft.verts.length+" vertices · "+_plDraft.segs.length+" segments";
+  if(window._plDockRefresh) window._plDockRefresh();
 }
 
 function cogoPolyline(){
@@ -4760,7 +4762,18 @@ function cogoPolyline(){
     };
     const _cancel=()=>{ window._plBuilding=false; window._plTap=null; _plDraft=null; plotPoints(); };
 
-    openModal((modal,close)=>{
+    // 4.8.20: Undo / Done / Cancel ride in the slim action bar — the sheet hid
+    // the lower half of the map, so points under it could not be tapped
+    const _plDock=()=>_contextDock("Polyline",_plDraft.verts.length+" pts · "+_plDraft.segs.length+" segs · "+name,[
+      ["Undo Last",()=>{_plUndo();_plDock();}],
+      ["Done",()=>{_plBan(false);_finish();},"primary"],
+      ["Cancel",()=>{_plBan(false);_cancel();}]],{noClose:true});
+    const _plBan=on=>{const b=document.getElementById("intersectBanner");if(!b)return;
+      if(on){b.textContent="◉ TAP POINTS IN ORDER — Done or Cancel below";b.classList.add("visible");}
+      else b.classList.remove("visible");};
+    window._plDockRefresh=()=>{ if(window._plBuilding&&_plDraft){ const n=document.getElementById("contextName"); if(n) n.textContent=_plDraft.verts.length+" pts · "+_plDraft.segs.length+" segs · "+name; } };
+    _plBan(true); _plDock();
+    if(false) openModal((modal,close)=>{
       modal.innerHTML="<h2>Build Polyline: "+name+"</h2>"+
         "<p class='info'>Tap points in order. If an existing arc already connects two consecutive points, that segment follows the arc automatically; otherwise it is straight. Tap a curved segment's arc to straighten it (or tap a different arc over the same span to switch).</p>"+
         "<p class='info' id='_plBanner'>0 vertices \u00b7 0 segments</p>";
@@ -4781,14 +4794,9 @@ function _polylineMenu(){
     _polylines.forEach((pl,i)=>{
       if(!pl.verts||!pl.segs)return; // skip legacy/empty
       mk(pl.name+" ("+pl.segs.length+" segs)","",()=>{
-        close();
-        openModal((m2,c2)=>{
-          m2.innerHTML="<h2>"+_esc(pl.name)+"</h2>";
-          const mk2=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m2.appendChild(b)};
-          mk2("Offset Polyline","ok",()=>{c2();_offsetPolyline(pl,i);});
-          mk2("Delete","danger",()=>{_polylines.splice(i,1);saveData();c2();plotPoints();});
-          mk2("Close","",c2);
-        });
+        // 4.8.20: the same sheet as tapping it on the map — Sta/Offset, Point at
+        // Sta/Offset, Offset, Break, Delete (this list had only Offset + Delete)
+        close(); _selPolyline=i; plotPoints(); _polylineActionMenu(i);
       });
     });
     mk("Close","",close);
@@ -4880,6 +4888,28 @@ function _parseSta(str){
   }
   return parseFloat(s);
 }
+/* 4.8.20: polyline vertices are bare E/N — the elevation lives on the point
+   sitting at the vertex. Points made along or beside a polyline take it from
+   there (interpolated by station) instead of 0, which made a 3D stakeout ask
+   for a 100 ft cut. */
+function _plVertZ(v){
+  if(!v) return NaN;
+  const p=points.find(q=>Math.abs(q.Easting-v.E)<0.01&&Math.abs(q.Northing-v.N)<0.01&&isFinite(q.Elevation)&&q.Elevation!==0);
+  return p?p.Elevation:NaN;
+}
+function _plZAtSta(pl,sta){
+  let cum=0;
+  for(let i=0;i<pl.segs.length;i++){
+    const g=_plSegGeom(pl,i); if(!g) continue;
+    if(sta<=cum+g.len+1e-9){
+      const z0=_plVertZ(pl.verts[i]), z1=_plVertZ(pl.verts[i+1]);
+      if(isFinite(z0)&&isFinite(z1)) return z0+(z1-z0)*Math.max(0,Math.min(1,(sta-cum)/(g.len||1)));
+      return isFinite(z0)?z0:(isFinite(z1)?z1:NaN);
+    }
+    cum+=g.len;
+  }
+  return NaN;
+}
 // Station/offset of a world point. Offset sign: + = right of travel.
 // Considers every segment whose perpendicular foot falls on it; best = min |offset|.
 function _plStaOffOfPoint(pl,E0,N0){
@@ -4938,7 +4968,7 @@ function _plPointAtStaOff(pl,sta,off){
       const E=g.centerE+r*Math.cos(a), N=g.centerN+r*Math.sin(a);
       // forward tangent azimuth at this station
       const radialBrg=((90-a*180/Math.PI)+360)%360;
-      const tanAz=((radialBrg+(g.dir==="cw"?-90:90))+360)%360;
+      const tanAz=((radialBrg+(g.dir==="cw"?90:-90))+360)%360; // 4.8.20: clockwise travel = radial + 90° (was reversed)
       return {E,N,az:tanAz};
     }
     cum+=g.len;
@@ -4974,12 +5004,14 @@ function _plSetPointAtSta(pl){
       const off=parseFloat(offStr)||0;
       const r=_plPointAtStaOff(pl,sta,off);
       if(!r){alert("Offset collapses an arc at that station — reduce it.");return}
+      const z=_plZAtSta(pl,sta);
       showResult("Point at "+_fmtSta(sta)+(off!==0?(" / "+Math.abs(off).toFixed(3)+(off>=0?" R":" L")):"")+" — "+_esc(pl.name),[
         {lbl:"Northing:",val:r.N.toFixed(4)},
         {lbl:"Easting:",val:r.E.toFixed(4)},
+        {lbl:"Elevation:",val:isFinite(z)?z.toFixed(3)+" (from the curve)":"— (no elevations on the curve points)"},
         {lbl:"Fwd Tangent:",val:fmtBrg(r.az)},
       ],[
-        {txt:"Save as Point",cls:"ok",fn:()=>_saveCogoPoint({Northing:r.N,Easting:r.E,Elevation:0},null,null,
+        {txt:"Save as Point",cls:"ok",fn:()=>_saveCogoPoint({Northing:r.N,Easting:r.E,Elevation:isFinite(z)?z:0},null,null,
           "STA "+_fmtSta(sta)+(off!==0?(off>=0?" R":" L")+Math.abs(off).toFixed(2):""))},
         {txt:"Another Station",cls:"blue",fn:()=>_plSetPointAtSta(pl)},
         {txt:"Done",cls:"",fn:()=>{_selPolyline=-1;plotPoints();}},
@@ -5012,7 +5044,9 @@ function _offsetPolyline(pl,plIdx){
       const P=pl.verts[i], Q=pl.verts[i+1], s=pl.segs[i];
       if(!P||!Q)continue;
       if(s.type==="arc"){
-        const newR = s.dir==="cw"? s.R+d : s.R-d; // +d = right of travel
+        // 4.8.20: +d = right of travel, and on a clockwise arc right is the INSIDE —
+        // this was reversed, so a 10 ft LEFT (outside) offset was built 10 ft inside
+        const newR = s.dir==="cw"? s.R-d : s.R+d;
         if(newR<=0){alert("Offset collapses an arc (radius \u2264 0). Reduce the distance.");_selPolyline=-1;plotPoints();return;}
         const bP=_plBearing(s.centerE,s.centerN,P.E,P.N);
         const bQ=_plBearing(s.centerE,s.centerN,Q.E,Q.N);
@@ -5055,14 +5089,15 @@ function _offsetPolyline(pl,plIdx){
     }
 
     // 3. Materialize → new points + connections + a new polyline
-    const ptNum=(E,N)=>{
+    const ptNum=(E,N,Z)=>{
       let n=pointCounter; while(_ptExists(n))n++;
-      points.push({Point:n,Northing:N,Easting:E,Elevation:0,Type:"COGO",Flag:"",Description:"OFS"});
+      points.push({Point:n,Northing:N,Easting:E,Elevation:isFinite(Z)?Z:0,Type:"COGO",Flag:"",Description:"OFS"});
       pointCounter=n+1; return n;
     };
     const vCoord=[{E:seg[0].aE,N:seg[0].aN}];
     for(let i=0;i<seg.length;i++) vCoord.push({E:seg[i].bE,N:seg[i].bN});
-    const vNums=vCoord.map(c=>ptNum(c.E,c.N));
+    const vZ=pl.verts.map(_plVertZ); // 4.8.20: keep each vertex's elevation
+    const vNums=vCoord.map((c,k)=>ptNum(c.E,c.N,vZ[k]));
 
     const newSegs=[];
     for(let i=0;i<seg.length;i++){
@@ -6511,12 +6546,40 @@ function stakeToLine(){
   if(!plotConnections.length&&!_nDeed){alert("No lines or arcs drawn yet. Draw one first, then stake to it.");return}
   window._stlActive=true;
   window._stlPickActive=true;   // waiting for a line/arc tap on the plot
+  _stlOff=0;                    // 4.8.20: a new staking session starts on the line
   const bn=document.getElementById("intersectBanner");
   bn.textContent="\u25c9 TAP A LINE OR ARC TO STAKE \u2014 or tap empty space to cancel";
   bn.classList.add("visible");
   plotPoints();
 }
 
+/* 4.8.20: design offset for Stake to Line / Arc. + = outside an arc, or right
+   of a line looking from its first point to its second; 0 = on it. Every rod
+   shot then reports the moves onto that parallel line/curve. */
+let _stlOff=0;
+function _stlOffTxt(arc){
+  if(!_stlOff) return arc?"on the arc":"on the line";
+  return Math.abs(_stlOff).toFixed(3)+" "+units+" "+(arc?(_stlOff>0?"outside":"inside"):(_stlOff>0?"right":"left"));
+}
+function _stlSetOffset(conn){
+  const arc=conn.type==="arc";
+  const ask=sign=>calculatorInput("Offset distance ("+units+"):",_stlOff?Math.abs(_stlOff).toFixed(3):"",v=>{
+    if(v===null||v===""){_stlSelectGeom(conn);return;}
+    const d=parseFloat(v);
+    if(isNaN(d)||d<0){alert("Enter a distance.");_stlSelectGeom(conn);return;}
+    if(arc&&sign<0&&d>=conn.R){alert("That offset reaches the arc's center (R "+conn.R.toFixed(3)+") — reduce it.");_stlSelectGeom(conn);return;}
+    _stlOff=sign*d; _stlSelectGeom(conn);
+  });
+  openModal((m,close)=>{
+    m.innerHTML="<h2>Design offset</h2><p class='info'>Stake parallel to the "+(arc?"arc":"line #"+conn.from+" "+"\u2192 #"+conn.to)+
+      " instead of on it. Every rod shot then tells you how to move onto the offset.</p>";
+    const mk=(t,cls,fn)=>{const b=document.createElement("button");b.className="btn "+cls;b.textContent=t;b.onclick=fn;m.appendChild(b)};
+    if(arc){ mk("Outside the arc","ok",()=>{close();ask(1);}); mk("Inside the arc","ok",()=>{close();ask(-1);}); }
+    else   { mk("Right of #"+conn.from+" "+"\u2192 #"+conn.to,"ok",()=>{close();ask(1);}); mk("Left of #"+conn.from+" "+"\u2192 #"+conn.to,"ok",()=>{close();ask(-1);}); }
+    mk("On the "+(arc?"arc":"line")+" (no offset)","",()=>{close();_stlOff=0;_stlSelectGeom(conn);});
+    mk("Cancel","",()=>{close();_stlSelectGeom(conn);});
+  });
+}
 // Geometry chosen — set up the staking session for a line or an arc.
 function _stlSelectGeom(conn){
   const occ=currentPoint;
@@ -6531,10 +6594,12 @@ function _stlSelectGeom(conn){
       {lbl:"Occupied:",val:"#"+occ.Point+(occ.Description?" \u2014 "+_esc(occ.Description):"")},
       {lbl:"Arc R:",val:conn.R.toFixed(3)+" "+units},
       {lbl:"Arc Len:",val:conn.arcLen.toFixed(3)+" "+units},
-      {lbl:"Delta:",val:conn.delta.toFixed(4)+"\u00b0"},
-      {lbl:"",val:"Shoot the rodman then enter az + dist below"},
+      {lbl:"Delta:",val:toDMS(Math.abs(conn.delta))},
+      {lbl:"Stake:",val:_stlOffTxt(true)},
+      {lbl:"",val:"Shoot the rodman then enter the reading + distance"},
     ],[
       {txt:"Enter Shot","cls":"ok",fn:()=>_stlMeasure(geom)},
+      {txt:_stlOff?"Change Offset":"Set Offset","cls":"blue",fn:()=>_stlSetOffset(conn)},
       {txt:"Change Geometry","cls":"",fn:()=>{tempGeom=[];tempIntersections=[];plotPoints();stakeToLine()}},
       {txt:"Cancel","cls":"",fn:()=>{window._stlActive=false;tempGeom=[];tempIntersections=[];plotPoints()}},
     ]);
@@ -6551,9 +6616,11 @@ function _stlSelectGeom(conn){
       {lbl:"Line:",val:"#"+pA.Point+" \u2192 #"+pB.Point},
       {lbl:"Line Az:",val:fmtBrg(lineAz)},
       {lbl:"Line Length:",val:lineDist.toFixed(3)+" "+units},
-      {lbl:"",val:"Shoot the rodman then enter az + dist below"},
+      {lbl:"Stake:",val:_stlOffTxt(false)},
+      {lbl:"",val:"Shoot the rodman then enter the reading + distance"},
     ],[
       {txt:"Enter Shot","cls":"ok",fn:()=>_stlMeasure(geom)},
+      {txt:_stlOff?"Change Offset":"Set Offset","cls":"blue",fn:()=>_stlSetOffset(conn)},
       {txt:"Change Geometry","cls":"",fn:()=>{tempGeom=[];tempIntersections=[];plotPoints();stakeToLine()}},
       {txt:"Cancel","cls":"",fn:()=>{window._stlActive=false;tempGeom=[];tempIntersections=[];plotPoints()}},
     ]);
@@ -6587,25 +6654,52 @@ function _stlMeasure(geom){
     if(!pA||!pB){alert("Could not resolve line endpoints.");window._stlActive=false;return;}
     geom={kind:"line",pA,pB};
   }
-  calculatorInput("Instrument reading to rodman (DDD.MMSS):",_lastStlAz,azStr=>{
+  // 4.8.20: angle-right mode reads the angle from the backsight (it was taken
+  // as an azimuth); 3D slope mode reads slope distance + VA (it asked for HD)
+  const bsAz=hzMode==="ar"?_bsAzimuth(occ):NaN, isAR=!isNaN(bsAz);
+  const s3=surveyMode==="3D"&&distMode!=="HD";
+  calculatorInput(isAR?"Angle right to rodman, backsight "+_bsLabel(occ)+" (DDD.MMSS):":"Instrument reading to rodman (DDD.MMSS):",_lastStlAz,azStr=>{
     if(!azStr)return;
-    const rawAz=parseDMS(azStr);
-    if(isNaN(rawAz)){alert("Bad azimuth.");return;}
-    const trueAz=((rawAz%360)+360)%360;
-    _lastStlAz=toDMS(trueAz); // save for next time
-    calculatorInput("Horiz Distance to rodman ("+units+"):","",distStr=>{
-      if(!distStr)return;
-      let hd=parseFloat(distStr);
-      if(isNaN(hd)||hd<=0){alert("Bad distance.");return;}
-      hd=_applyPPM(hd+prismConstant); // same corrections as a shot (4.7.25)
-      _stlCompute(geom,trueAz,hd);
+    const raw=parseDMS(azStr);
+    if(isNaN(raw)){alert("Bad angle.");return;}
+    _lastStlAz=azStr; // the reading, for Measure Again
+    const trueAz=(((isAR?raw+bsAz:raw)%360)+360)%360;
+    if(!s3){
+      calculatorInput("Horiz Distance to rodman ("+units+"):","",distStr=>{
+        if(!distStr)return;
+        let hd=parseFloat(distStr);
+        if(isNaN(hd)||hd<=0){alert("Bad distance.");return;}
+        hd=_applyPPM(hd+prismConstant); // same corrections as a shot (4.7.25)
+        _stlCompute(geom,trueAz,hd);
+      });
+      return;
+    }
+    calculatorInput("Slope distance to rodman ("+units+"):","",sdStr=>{
+      if(!sdStr)return;
+      let sd=parseFloat(sdStr);
+      if(isNaN(sd)||sd<=0){alert("Bad distance.");return;}
+      calculatorInput("Vertical angle VA (DDD.MMSS, 90 = level):","90.0000",vaStr=>{
+        if(!vaStr)return;
+        let va=parseDMS(vaStr);
+        if(isNaN(va)||va<=0||va>=360){alert("Bad vertical angle (VA).");return;}
+        if(va>180)va=360-va;
+        sd=_applyPPM(sd+prismConstant);
+        _stlCompute(geom,trueAz,sd*Math.sin(va*Math.PI/180));
+      });
     });
   });
 }
 
 function _stlCompute(geom,trueAz,hd,skipZoom){
   if(geom.kind==="arc") return _stlComputeArc(geom.conn,trueAz,hd,skipZoom);
-  const pA=geom.pA, pB=geom.pB;
+  let pA=geom.pA, pB=geom.pB;
+  const bA=pA, bB=pB;
+  if(_stlOff){ // 4.8.20: stake to the parallel line at the design offset
+    const dE0=pB.Easting-pA.Easting, dN0=pB.Northing-pA.Northing, L0=Math.hypot(dE0,dN0)||1;
+    const rE=dN0/L0, rN=-dE0/L0;          // unit vector to the right of A→B
+    pA={Point:pA.Point,Easting:pA.Easting+_stlOff*rE,Northing:pA.Northing+_stlOff*rN};
+    pB={Point:pB.Point,Easting:pB.Easting+_stlOff*rE,Northing:pB.Northing+_stlOff*rN};
+  }
   const occ=currentPoint;
   const rayR=trueAz*Math.PI/180;
   const rayUE=Math.sin(rayR), rayUN=Math.cos(rayR);
@@ -6648,6 +6742,7 @@ function _stlCompute(geom,trueAz,hd,skipZoom){
     {type:"segment",E1:occ.Easting,N1:occ.Northing,E2:shotE,N2:shotN,
      color:"rgba(240,160,32,.6)"},
   ];
+  if(_stlOff) tempGeom.push({type:"segment",E1:bA.Easting,N1:bA.Northing,E2:bB.Easting,N2:bB.Northing,color:"rgba(74,158,255,.35)"});
   tempIntersections=[{Easting:shotE,Northing:shotN}];
   if(landE!==null){
     tempGeom.push({type:"segment",E1:shotE,N1:shotN,E2:landE,N2:landN,
@@ -6667,13 +6762,14 @@ function _stlCompute(geom,trueAz,hd,skipZoom){
   const rows=[
     {lbl:"Occupied:",val:"#"+occ.Point},
     {lbl:"Shot Az:",val:fmtBrg(trueAz)+"  Dist: "+hd.toFixed(3)+" "+units},
+    ...(_stlOff?[{lbl:"Target:",val:_stlOffTxt(false)+" of #"+bA.Point+" "+"\u2192 #"+bB.Point}]:[]),
   ];
 
   // Slide L/R
   if(latMove===null){
     rows.push({lbl:"SLIDE:",val:"Ray parallel to line"});
   } else if(Math.abs(latMove)<0.005){
-    rows.push({lbl:"SLIDE:",val:"✓ ON LINE"});
+    rows.push({lbl:"SLIDE:",val:_stlOff?"✓ ON OFFSET":"✓ ON LINE"});
   } else {
     rows.push({lbl:"SLIDE "+(latMove>0?"RIGHT ▶":"◄ LEFT")+":",
                val:Math.abs(latMove).toFixed(3)+" "+units});
@@ -6685,7 +6781,7 @@ function _stlCompute(geom,trueAz,hd,skipZoom){
   } else if(crossDist<0){
     rows.push({lbl:"IN/OUT:",val:"Line is behind you"});
   } else if(Math.abs(inOutMove)<0.005){
-    rows.push({lbl:"IN/OUT:",val:"✓ ON LINE"});
+    rows.push({lbl:"IN/OUT:",val:_stlOff?"✓ ON OFFSET":"✓ ON LINE"});
   } else {
     rows.push({lbl:"MOVE "+(inOutMove>0?"OUT ▶":"◄ IN")+":",
                val:Math.abs(inOutMove).toFixed(3)+" "+units});
@@ -6708,11 +6804,13 @@ function _stlComputeArc(conn,trueAz,hd,skipZoom){
   const rayUE=Math.sin(rayR), rayUN=Math.cos(rayR);
   const shotE=occ.Easting + hd*rayUE;
   const shotN=occ.Northing + hd*rayUN;
-  const cE=conn.centerE, cN=conn.centerN, R=conn.R;
+  const cE=conn.centerE, cN=conn.centerN, R0=conn.R;
+  const R=conn.R+_stlOff;   // 4.8.20: stake to the concentric curve at the design offset
+  if(R<=0){alert("That offset reaches the arc's center — reduce it.");return;}
 
   // Perpendicular (radial) offset — the true distance off the curve, for reference/QC
   const r0=Math.hypot(shotE-cE, shotN-cN);
-  const radialOff=r0-R;                       // + = rodman outside the arc
+  const radialOff=r0-R;                       // + = rodman outside the target curve
   const radE=r0>1e-9?(shotE-cE)/r0:1, radN=r0>1e-9?(shotN-cN)/r0:0;
   const perpLandE=cE+R*radE, perpLandN=cN+R*radN;
 
@@ -6753,6 +6851,8 @@ function _stlComputeArc(conn,trueAz,hd,skipZoom){
   tempGeom=[
     {type:"bndarc",cx:cE,cy:cN,R:R,tA:conn.startAngle,tB:conn.endAngle,
      dt:conn.endAngle-conn.startAngle,color:"rgba(74,158,255,.6)"},
+    ...(_stlOff?[{type:"bndarc",cx:cE,cy:cN,R:R0,tA:conn.startAngle,tB:conn.endAngle,
+     dt:conn.endAngle-conn.startAngle,color:"rgba(74,158,255,.3)"}]:[]),
     {type:"segment",E1:occ.Easting,N1:occ.Northing,E2:shotE,N2:shotN,color:"rgba(240,160,32,.6)"},
   ];
   tempIntersections=[{Easting:shotE,Northing:shotN}];
@@ -6771,13 +6871,13 @@ function _stlComputeArc(conn,trueAz,hd,skipZoom){
   const rows=[
     {lbl:"Occupied:",val:"#"+occ.Point},
     {lbl:"Shot Az:",val:fmtBrg(trueAz)+"  Dist: "+hd.toFixed(3)+" "+units},
-    {lbl:"Arc R:",val:R.toFixed(3)+" "+units},
+    {lbl:"Arc R:",val:R0.toFixed(3)+" "+units+(_stlOff?"  \u2192 staking R "+R.toFixed(3)+" ("+_stlOffTxt(true)+")":"")},
   ];
   // SLIDE L/R (hold distance, step perpendicular onto the arc)
   if(latMove===null){
     rows.push({lbl:"SLIDE:",val:"Slide misses the arc"});
   } else if(Math.abs(latMove)<0.005){
-    rows.push({lbl:"SLIDE:",val:"\u2713 ON ARC"});
+    rows.push({lbl:"SLIDE:",val:(_stlOff?"\u2713 ON OFFSET":"\u2713 ON ARC")});
   } else {
     rows.push({lbl:"SLIDE "+(latMove>0?"RIGHT \u25b6":"\u25c4 LEFT")+":",
                val:Math.abs(latMove).toFixed(3)+" "+units+(slOnArc?"":" (ext)")});
@@ -6788,16 +6888,17 @@ function _stlComputeArc(conn,trueAz,hd,skipZoom){
   } else if(ioBehind){
     rows.push({lbl:"IN/OUT:",val:"Arc is behind you"});
   } else if(Math.abs(inOutMove)<0.005){
-    rows.push({lbl:"IN/OUT:",val:"\u2713 ON ARC"});
+    rows.push({lbl:"IN/OUT:",val:(_stlOff?"\u2713 ON OFFSET":"\u2713 ON ARC")});
   } else {
     rows.push({lbl:"MOVE "+(inOutMove>0?"OUT \u25b6":"\u25c4 IN")+":",
                val:Math.abs(inOutMove).toFixed(3)+" "+units+(ioOnArc?"":" (ext)")});
   }
   // Perpendicular offset — reference QC value (how far off the curve)
   if(Math.abs(radialOff)>=0.005){
-    rows.push({lbl:"Perp offset:",val:Math.abs(radialOff).toFixed(3)+" "+units+
+    rows.push({lbl:_stlOff?"Off target:":"Perp offset:",val:Math.abs(radialOff).toFixed(3)+" "+units+
                (radialOff>0?" outside":" inside")});
   }
+  if(_stlOff) rows.push({lbl:"From the arc:",val:Math.abs(r0-R0).toFixed(3)+" "+units+(r0-R0>=0?" outside":" inside")});
 
   const geom={kind:"arc",conn};
   showResult("Stake to Arc",rows,[
@@ -10114,7 +10215,7 @@ function _storeDrawArc(center,R,startBrg,endBrg,dir){
     {lbl:"Center E:",val:center.Easting.toFixed(3)},
     {lbl:"Radius:",  val:R.toFixed(3)+" "+units},
     {lbl:"Arc Len:", val:arcLen.toFixed(3)+" "+units},
-    {lbl:"Delta:",   val:delta.toFixed(4)+"°"},
+    {lbl:"Delta:",   val:toDMS(Math.abs(delta))},
     {lbl:"Chord:",   val:chord.toFixed(3)+" "+units},
   ]);
 }
@@ -10207,7 +10308,7 @@ function _generateArcPoints(center,R,startBrg,endBrg,dir,interval){
       showResult("✓ Arc Generated",[
         {lbl:"Points:",val:String(newPts.length)},
         {lbl:"Arc Length:",val:arcLen.toFixed(3)+" "+units},
-        {lbl:"Delta:",val:delta.toFixed(4)+"°"},
+        {lbl:"Delta:",val:toDMS(Math.abs(delta))},
         {lbl:"Chord:",val:chord.toFixed(3)+" "+units},
         {lbl:"Radius:",val:R.toFixed(3)+" "+units},
       ]);
@@ -19330,9 +19431,9 @@ const HELP_TOPICS = [
     preview:"Chain points, lines, and arcs into a named polyline",
     body:`<h3>Build Polyline</h3>
 <p>Tap <strong>COGO → Open COGO Tools → Build Polyline</strong>, name it, then tap points in order on the plot. If an existing arc already connects two consecutive points, the segment follows the arc automatically; otherwise it's straight.</p>
-<p>Tap a curved segment's arc to straighten it, or tap a different arc over the same span to switch. <strong>Undo Last</strong> removes the last vertex. Tap <strong>Done</strong> to store.</p>
+<p>Tap a curved segment's arc to straighten it, or tap a different arc over the same span to switch. <strong>Undo Last</strong>, <strong>Done</strong> and <strong>Cancel</strong> sit in the slim bar at the bottom, so the whole map stays tappable. Tap <strong>Done</strong> to store.</p>
 <h3>Polyline Manager</h3>
-<p>Tap <strong>COGO → Open COGO Tools → Polyline Manager</strong> to list stored polylines. From there you can <strong>Offset Polyline</strong> (parallel copy left or right of travel, arcs offset by adjusting radius) or <strong>Delete</strong>.</p>
+<p>Tap <strong>COGO → Open COGO Tools → Polyline Manager</strong> to list stored polylines. Pick one for <strong>Sta/Offset of a Point</strong>, <strong>Point at Sta/Offset</strong>, <strong>Offset Polyline</strong> (parallel copy left or right of travel, arcs offset by adjusting radius), <strong>Break</strong> or <strong>Delete</strong>. Points made along or beside a polyline take their elevation from the curve's points.</p>
 <p>You can also tap any line or arc that belongs to a polyline — a polyline action button appears in its context menu.</p>
 <p>Polylines are saved with the job and restore from CSV backups.</p>
 <div class="tip">Classic use: building a road centerline of tangents and curves, then offsetting it to get edge-of-pavement or right-of-way lines.</div>`},
@@ -19406,7 +19507,9 @@ const HELP_TOPICS = [
     body:`<h3>Stake to Line or Arc</h3>
 <p>Tap <strong>Stake → Stake Line / Arc</strong>, then <strong>tap any drawn line or arc</strong> on the plot to select it — no need to pick endpoints. The chosen geometry highlights in blue.</p>
 <h3>Take a Shot</h3>
-<p>Shoot the rodman, then enter the instrument reading (azimuth) and horizontal distance. The corrections are reported from the instrument operator's perspective.</p>
+<p>Shoot the rodman, then enter the reading — the angle right from the backsight in angle-right mode, the azimuth otherwise — and the distance (slope distance and Vertical Angle (VA) in 3D slope mode). The corrections are reported from the instrument operator's perspective.</p>
+<h3>Design Offset</h3>
+<p>Tap <strong>Set Offset</strong> to stake parallel to the line (right or left) or the arc (outside or inside), e.g. 10 ft outside. Every rod shot then reports the moves onto the offset.</p>
 <h3>Line Results</h3>
 <ul>
 <li><strong>SLIDE L/R</strong> — move the rod perpendicular to the line of sight onto the line.</li>
